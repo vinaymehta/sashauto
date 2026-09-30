@@ -1,0 +1,15 @@
+# Original uploaded workbooks are retained permanently. Pick the service with
+# ACTIVE_STORAGE_SERVICE. The local disk service must sit on a persistent,
+# backed-up volume in production.
+local:
+  service: Disk
+  root: <%= ENV["STORAGE_ROOT"].presence || Rails.root.join("storage") %>
+
+# S3-compatible object storage. Add `gem "aws-sdk-s3", require: false` to the Gemfile before selecting it.
+amazon:
+  service: S3
+  access_key_id: <%= ENV["S3_ACCESS_KEY_ID"] %>
+  secret_access_key: <%= ENV["S3_SECRET_ACCESS_KEY"] %>
+  region: <%= ENV["S3_REGION"] %>
+  bucket: <%= ENV["S3_BUCKET"] %>
+  endpoint: <%= ENV["S3_ENDPOINT"] %>

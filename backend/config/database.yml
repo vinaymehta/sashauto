@@ -1,0 +1,12 @@
+default: &default
+  adapter: postgresql
+  encoding: unicode
+  max_connections: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+
+development:
+  <<: *default
+  database: order_tracker_development
+
+production:
+  <<: *default
+  url: <%= ENV["DATABASE_URL"] %>

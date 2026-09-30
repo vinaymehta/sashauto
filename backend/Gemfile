@@ -1,0 +1,29 @@
+source "https://rubygems.org"
+
+gem "rails", "~> 8.1.3", ">= 8.1.3.1"
+gem "pg", "~> 1.1"
+gem "puma", ">= 5.0"
+
+# Password hashing for has_secure_password
+gem "bcrypt", "~> 3.1.7"
+
+# Background jobs (upload processing, email delivery). Requires Redis as its job store.
+gem "sidekiq", "~> 8.1"
+
+# Rate-limit counter store shared across Puma processes (reuses Sidekiq's Redis)
+gem "redis", "~> 5.4"
+
+# Excel (.xlsx) parsing
+gem "roo", "~> 3.0"
+
+gem "tzinfo-data", platforms: %i[ windows jruby ]
+gem "bootsnap", require: false
+
+group :development do
+  # Loads backend/.env into ENV in development only (production uses real environment variables).
+  gem "dotenv", "~> 3.1"
+  gem "debug", platforms: %i[ mri windows ], require: "debug/prelude"
+  gem "bundler-audit", require: false
+  gem "brakeman", require: false
+  gem "rubocop-rails-omakase", require: false
+end

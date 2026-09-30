@@ -1,0 +1,55 @@
+module Api
+  class ProductsController < ApplicationController
+    SORTS = {
+      "part_number" => "products.part_number", "commodity_type" => "products.commodity_type",
+      "source" => "products.source", "updated_at" => "products.updated_at"
+    }.freeze
+
+    def index
+      scope = Product.all
+      if params[:q].present?
+        term = "%#{Product.sanitize_sql_like(params[:q].to_s.strip.first(100))}%"
+        scope = scope.where("part_number ILIKE :t OR commodity_type ILIKE :t", t: term)
+      end
+      scope = scope.where(id: ProductConflict.open.select(:product_id)) if params[:conflicts] == "open"
+      scope = scope.where(source: params[:source]) if Product::SOURCES.include?(params[:source])
+      scope, sort, direction = apply_sort(scope, SORTS, default: "part_number")
+
+      products, meta = paginate(scope)
+      meta = meta.merge(sort: sort, direction: direction)
+      conflicts = ProductConflict.open.includes(:upload_batch).where(product_id: products.map(&:id)).order(:created_at).group_by(&:product_id)
+      render json: { data: products.map { |p| Serializers.product(p, open_conflicts: conflicts.fetch(p.id, [])) }, meta: meta }
+    end
+
+    def create
+      product = Product.new(part_number: params.require(:part_number), commodity_type: params[:commodity_type],
+                            source: "manual", created_by: current_user)
+      if product.save
+        audit("product.created", subject: product, part_number: product.part_number, commodity_type: product.commodity_type)
+        render json: { data: Serializers.product(product) }, status: :created
+      else
+        render_validation_errors(product)
+      end
+    rescue ActiveRecord::RecordNotUnique
+      render_error "A product with this Part Number already exists.", :unprocessable_content
+    end
+
+    # Part Number is the product identity and cannot be edited; only Commodity Type can.
+    def update
+      product = Product.find(params[:id])
+      before = product.commodity_type
+      if product.update(commodity_type: params[:commodity_type])
+        audit("product.updated", subject: product, commodity_type_before: before, commodity_type_after: product.commodity_type)
+        render json: { data: Serializers.product(product, open_conflicts: product.product_conflicts.open.includes(:upload_batch)) }
+      else
+        render_validation_errors(product)
+      end
+    end
+
+    private
+
+    def render_validation_errors(product)
+      render_error product.errors.full_messages.to_sentence, :unprocessable_content, details: product.errors.to_hash
+    end
+  end
+end

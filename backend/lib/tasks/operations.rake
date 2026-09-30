@@ -1,0 +1,93 @@
+namespace :users do
+  desc "Create or update a user. EMAIL=... NAME=... ROLE=admin|warehouse_manager (password is prompted)"
+  task create: :environment do
+    require "io/console"
+    email = ENV.fetch("EMAIL") { abort "EMAIL is required" }
+    role = ENV.fetch("ROLE", "warehouse_manager")
+    password = ENV["PASSWORD"].presence || begin
+      print "Password (min 12 characters): "
+      $stdin.noecho(&:gets).to_s.chomp.tap { puts }
+    end
+
+    user = User.find_or_initialize_by(email: email.strip.downcase)
+    user.assign_attributes(name: ENV.fetch("NAME", user.name || email), role: role, password: password, active: true)
+    if user.save
+      AuditLog.record(user.previously_new_record? ? "user.created" : "user.updated", subject: user, role: user.role, via: "rake")
+      puts "#{user.previously_new_record? ? 'Created' : 'Updated'} #{user.role} #{user.email}"
+    else
+      abort user.errors.full_messages.to_sentence
+    end
+  end
+
+  desc "Deactivate a user. EMAIL=..."
+  task deactivate: :environment do
+    user = User.find_by!(email: ENV.fetch("EMAIL").strip.downcase)
+    user.update!(active: false)
+    AuditLog.record("user.deactivated", subject: user, via: "rake")
+    puts "Deactivated #{user.email}"
+  end
+end
+
+namespace :uploads do
+  desc "Re-enqueue uploads stuck in pending/processing (e.g. Redis was down). OLDER_THAN_MINUTES=15"
+  task reenqueue_stale: :environment do
+    cutoff = Integer(ENV.fetch("OLDER_THAN_MINUTES", 15)).minutes.ago
+    UploadBatch.where(status: %w[pending processing]).where(updated_at: ...cutoff).find_each do |batch|
+      Uploads::ProcessJob.perform_later(batch.id)
+      puts "Re-enqueued upload batch #{batch.id}"
+    end
+  end
+end
+
+namespace :notifications do
+  desc "Enqueue delivery for every pending or failed notification"
+  task redeliver: :environment do
+    Notification.undelivered.find_each do |notification|
+      Notifications::DeliverJob.perform_later(notification.id)
+      puts "Enqueued notification #{notification.id} (#{notification.status}, #{notification.attempts} attempts)"
+    end
+  end
+end
+
+namespace :mail do
+  desc "Send a test email with the current mail settings. TO=you@company.com"
+  task test: :environment do
+    to = ENV["TO"].presence || abort("Usage: bin/rails mail:test TO=you@company.com")
+    method = ActionMailer::Base.delivery_method
+    ActionMailer::Base.mail(from: AppConfig.mail_from, to: to, subject: "Order Change Tracker test email",
+                            body: "SMTP is configured correctly (delivery method: #{method}).").deliver_now
+    puts method == :smtp ? "Sent to #{to} via #{AppConfig.env('SMTP_ADDRESS')}." : "SMTP_ADDRESS is not set, so the email was written to tmp/mails/ instead."
+  rescue Net::SMTPAuthenticationError => e
+    abort "SMTP login failed: #{e.message.strip}\nFor Gmail, SMTP_PASSWORD must be a 16-character App Password, not your normal password."
+  rescue StandardError => e
+    abort "Sending failed: #{e.class}: #{e.message}"
+  end
+end
+
+namespace :orders do
+  desc "Fill the display-only order columns of existing uploads from their stored original files (safe to re-run)"
+  task backfill_details: :environment do
+    fields = ExcelImport::OrderRowParser::DETAIL_TYPES.keys
+    UploadBatch.completed.order(:version_number).find_each do |batch|
+      pending = batch.order_snapshot_rows.where(details_loaded: false)
+      next puts("#{batch.id}: already complete") unless pending.exists?
+
+      result = batch.file.open do |file|
+        abort "Checksum mismatch for upload #{batch.id}" unless Digest::SHA256.file(file.path).hexdigest == batch.file_sha256
+        ExcelImport::OrderRowParser.new(ExcelImport::WorkbookReader.new(file.path)).call
+      end
+      by_key = result.rows.index_by { |row| row[:business_key_hash] }
+
+      updated = 0
+      OrderSnapshotRow.transaction do
+        pending.find_each do |row|
+          source = by_key[row.business_key_hash] or next
+          OrderSnapshotRow.where(id: row.id, details_loaded: false)
+                          .update_all(source.slice(*fields).merge(details_loaded: true))
+          updated += 1
+        end
+      end
+      puts "#{batch.id}: filled #{updated} rows"
+    end
+  end
+end
