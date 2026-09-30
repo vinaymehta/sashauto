@@ -56,7 +56,8 @@ Rails.application.configure do
   # Set host to be used by links generated in mailer templates.
   config.action_mailer.default_url_options = { host: URI(AppConfig.app_url).host }
   config.action_mailer.raise_delivery_errors = true
-  config.action_mailer.delivery_method = :smtp
+  # Resend API when RESEND_API_KEY is set, otherwise SMTP.
+  config.action_mailer.delivery_method = AppConfig.mail_delivery_method || :smtp
   config.action_mailer.smtp_settings = AppConfig.smtp_settings
 
   # Specify outgoing SMTP server. Remember to add smtp/* credentials via bin/rails credentials:edit.

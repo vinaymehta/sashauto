@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { formatDate } from "@/lib/format";
 import { CheckIcon, CloseIcon, FilterIcon } from "../icons";
 import { Button } from "./button";
 import { Sheet } from "./sheet";
@@ -11,15 +12,43 @@ export interface FilterGroup {
   options: { value: string; label: string }[];
   /** For sort-style groups: the option used when nothing is chosen (no "All" entry is shown). */
   defaultValue?: string;
+  /** "date-range" renders From/To date inputs stored under `${key}_from` / `${key}_to`. */
+  type?: "choice" | "date-range";
 }
 
 export type FilterValues = Record<string, string>;
 
 // A group counts as active only when it differs from its default.
-const isActive = (g: FilterGroup, values: FilterValues) => !!values[g.key] && values[g.key] !== g.defaultValue;
+const isActive = (g: FilterGroup, values: FilterValues) =>
+  g.type === "date-range"
+    ? !!(values[`${g.key}_from`] || values[`${g.key}_to`])
+    : !!values[g.key] && values[g.key] !== g.defaultValue;
 
-// "Filter" button that opens the filters in the right-hand side panel. Choices apply immediately;
-// "" means no filter for that group. Active filters are listed as removable chips by <FilterChips>.
+function DateRange({ group, values, onChange }: { group: FilterGroup; values: FilterValues; onChange: (key: string, value: string) => void }) {
+  const from = values[`${group.key}_from`] ?? "";
+  const to = values[`${group.key}_to`] ?? "";
+  const input = "h-9 w-full rounded-md border border-neutral-300 bg-white px-3 text-sm text-ink transition-colors hover:border-neutral-400 focus:border-neutral-500 focus:outline-none";
+  return (
+    <div className="grid grid-cols-2 gap-3 px-4 py-3">
+      <label className="space-y-1.5 text-xs font-medium text-ink-muted">
+        From
+        <input type="date" value={from} max={to || undefined} className={input}
+               onChange={(e) => onChange(`${group.key}_from`, e.target.value)} />
+      </label>
+      <label className="space-y-1.5 text-xs font-medium text-ink-muted">
+        To
+        <input type="date" value={to} min={from || undefined} className={input}
+               onChange={(e) => onChange(`${group.key}_to`, e.target.value)} />
+      </label>
+    </div>
+  );
+}
+
+const NAVBAR_HEIGHT = 56;
+
+// "Filter" button that opens the filters in the right-hand side panel, level with its list card.
+// Choices apply immediately; "" means no filter for that group. Active filters are listed as
+// removable chips by <FilterChips>.
 export function FilterMenu({ groups, values, onChange, onClear }: {
   groups: FilterGroup[];
   values: FilterValues;
@@ -28,13 +57,24 @@ export function FilterMenu({ groups, values, onChange, onClear }: {
   align?: "left" | "right";
 }) {
   const [open, setOpen] = useState(false);
+  const [top, setTop] = useState(NAVBAR_HEIGHT);
+  const trigger = useRef<HTMLButtonElement>(null);
   const active = groups.filter((g) => isActive(g, values)).length;
+
+  // Start the panel level with the list card the button sits in (below the page header and its
+  // actions), but never above the navbar.
+  function openPanel() {
+    const cardTop = trigger.current?.closest("section")?.getBoundingClientRect().top ?? NAVBAR_HEIGHT;
+    setTop(Math.round(Math.max(NAVBAR_HEIGHT, cardTop)));
+    setOpen(true);
+  }
 
   return (
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        ref={trigger}
+        onClick={openPanel}
         aria-haspopup="dialog"
         aria-expanded={open}
         className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-md px-3 text-base font-medium transition-colors duration-150 ${
@@ -52,6 +92,7 @@ export function FilterMenu({ groups, values, onChange, onClear }: {
 
       <Sheet
         open={open}
+        top={top}
         onClose={() => setOpen(false)}
         title="Filters"
         description={active ? `${active} filter${active === 1 ? "" : "s"} applied. Changes apply immediately.` : "Changes apply immediately."}
@@ -63,12 +104,13 @@ export function FilterMenu({ groups, values, onChange, onClear }: {
           </>
         }
       >
-        <div className="space-y-4">
+        <div className="space-y-3">
           {groups.map((group) => {
             const options = group.defaultValue !== undefined ? group.options : [{ value: "", label: "All" }, ...group.options];
             return (
               <section key={group.key} className="overflow-hidden rounded-lg border border-line bg-white shadow-card">
-                <h3 className="border-b border-neutral-100 px-5 py-3 text-sm font-semibold text-ink">{group.label}</h3>
+                <h3 className="border-b border-neutral-100 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-ink-muted">{group.label}</h3>
+                {group.type === "date-range" ? <DateRange group={group} values={values} onChange={onChange} /> : (
                 <div role="radiogroup" aria-label={group.label} className="divide-y divide-neutral-100">
                   {options.map((option) => {
                     const selected = (values[group.key] || group.defaultValue || "") === option.value;
@@ -79,13 +121,13 @@ export function FilterMenu({ groups, values, onChange, onClear }: {
                         role="radio"
                         aria-checked={selected}
                         onClick={() => onChange(group.key, option.value === group.defaultValue ? "" : option.value)}
-                        className={`flex w-full items-center justify-between gap-3 px-5 py-2.5 text-left text-sm transition-colors hover:bg-neutral-50 ${
+                        className={`flex w-full items-center justify-between gap-3 px-4 py-2 text-left text-sm transition-colors hover:bg-neutral-50 ${
                           selected ? "font-medium text-ink" : "text-ink-muted"
                         }`}
                       >
                         <span className="flex items-center gap-3">
                           <span aria-hidden className={`flex h-4 w-4 items-center justify-center rounded-full border transition-colors ${
-                            selected ? "border-neutral-900 bg-neutral-900 text-white" : "border-neutral-300"
+                            selected ? "border-accent bg-accent text-white" : "border-neutral-300"
                           }`}>
                             {selected && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
                           </span>
@@ -96,6 +138,7 @@ export function FilterMenu({ groups, values, onChange, onClear }: {
                     );
                   })}
                 </div>
+                )}
               </section>
             );
           })}
@@ -112,8 +155,15 @@ export function FilterChips({ groups, values, onChange, onClear }: {
   onClear: () => void;
 }) {
   const chips = groups.flatMap((g) => {
-    const option = isActive(g, values) ? g.options.find((o) => o.value === values[g.key]) : undefined;
-    return option ? [{ key: g.key, label: `${g.label}: ${option.label}` }] : [];
+    if (!isActive(g, values)) return [];
+    if (g.type === "date-range") {
+      const from = values[`${g.key}_from`];
+      const to = values[`${g.key}_to`];
+      const text = from && to ? `${formatDate(from)} – ${formatDate(to)}` : from ? `from ${formatDate(from)}` : `until ${formatDate(to)}`;
+      return [{ key: g.key, label: `${g.label}: ${text}`, keys: [`${g.key}_from`, `${g.key}_to`] }];
+    }
+    const option = g.options.find((o) => o.value === values[g.key]);
+    return option ? [{ key: g.key, label: `${g.label}: ${option.label}`, keys: [g.key] }] : [];
   });
   if (chips.length === 0) return null;
 
@@ -122,7 +172,7 @@ export function FilterChips({ groups, values, onChange, onClear }: {
       {chips.map((chip) => (
         <span key={chip.key} className="inline-flex items-center gap-1 rounded-md border border-neutral-900 bg-white py-0.5 pl-2.5 pr-1 text-xs font-medium text-neutral-900">
           {chip.label}
-          <button type="button" onClick={() => onChange(chip.key, "")} aria-label={`Remove filter ${chip.label}`}
+          <button type="button" onClick={() => chip.keys.forEach((k) => onChange(k, ""))} aria-label={`Remove filter ${chip.label}`}
                   className="rounded-full p-0.5 text-ink-faint transition-colors hover:bg-subtle hover:text-ink">
             <CloseIcon size={12} />
           </button>

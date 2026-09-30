@@ -232,4 +232,5 @@ export interface OrdersPage {
   data: OrderRow[];
   meta: PageMeta & { sort?: string; direction?: "asc" | "desc" };
   source: { uploaded_at: string; original_filename: string; upload_id: number } | null;
+  facets: { ship_to_locations: string[]; commodity_types: string[] } | null;
 }

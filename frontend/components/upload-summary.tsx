@@ -10,15 +10,15 @@ import { TINTS, type Tint } from "./ui/tint";
 function Kpi({ label, value, tone, hint, icon, tint = "neutral" }: {
   label: string; value: ReactNode; tone?: "up" | "down"; hint?: string; icon: ReactNode; tint?: Tint;
 }) {
-  const color = tone === "up" ? "text-inc" : tone === "down" ? "text-dec" : "text-ink";
+  const color = tone === "up" ? "text-inc" : tone === "down" ? "text-dec" : "text-neutral-900";
   const t = TINTS[tint];
   return (
     <div className={`bg-white bg-gradient-to-b ${t.wash} via-white to-white rounded-xl border border-neutral-200 px-4 py-4`}>
       <div className="flex items-start justify-between gap-2">
-        <dt className="truncate text-xs font-medium text-ink-muted leading-tight">{label}</dt>
+        <dt className="mb-1.5 truncate text-xs font-medium leading-tight text-neutral-400">{label}</dt>
         <span aria-hidden className={`-mr-0.5 -mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${t.chip} text-neutral-400`}>{icon}</span>
       </div>
-      <dd className={`tabular mt-2 flex items-baseline gap-1 text-xl font-semibold tracking-tight ${color}`}>
+      <dd className={`tabular mt-0.5 flex items-baseline gap-1 text-2xl font-bold tracking-tight ${color}`}>
         {tone && value !== 0 && value !== "0" && (
           <svg aria-hidden width="9" height="9" viewBox="0 0 10 10" className={`self-center ${tone === "down" ? "rotate-180" : ""}`}>
             <path d="M5 1.5 9 7.5H1z" fill="currentColor" />
@@ -103,7 +103,7 @@ export function VersionKpis({ upload }: { upload: UploadDetail }) {
       ];
 
   return (
-    <dl className={`grid gap-3 ${baseline ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-2 sm:grid-cols-3 lg:grid-cols-5"}`}>
+    <dl className={`grid gap-4 ${baseline ? "grid-cols-2 md:grid-cols-4" : "grid-cols-2 md:grid-cols-4 lg:grid-cols-5"}`}>
       {kpis}
     </dl>
   );

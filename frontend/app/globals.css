@@ -5,7 +5,7 @@
 
   /* Strict monochrome palette (Tailwind neutral scale). Status and direction are carried by
      tone, weight, icons and signs, never by hue. */
-  --color-canvas: #fafafa;        /* neutral-50: page background */
+  --color-canvas: #f4f5f7;        /* cool light gray page background (mail-client look) */
   --color-surface: #ffffff;       /* cards, tables */
   --color-subtle: #f5f5f5;        /* neutral-100: hover, tints */
   --color-line: #e5e5e5;          /* neutral-200: card borders */
@@ -15,8 +15,15 @@
   --color-ink-soft: #404040;      /* neutral-700: secondary button text */
   --color-ink-muted: #737373;     /* neutral-500: secondary details */
   --color-ink-faint: #a3a3a3;     /* neutral-400: decorative only */
-  --color-accent: #171717;        /* neutral-900: primary buttons */
-  --color-accent-hover: #262626;  /* neutral-800 */
+  --color-accent: #3b72e0;        /* blue: primary buttons, current page, active controls */
+  --color-accent-hover: #2f61c7;
+
+  /* Navigation chrome (sidebar + top bar): dark navy. */
+  --color-nav: #1d2636;
+  --color-nav-raised: #2c3a51;    /* active item */
+  --color-nav-line: #2e394b;
+  --color-nav-text: #c9d1dd;
+  --color-nav-label: #6f9cf2;     /* section labels, e.g. WORKSPACE */
 
   /* Status tones */
   --color-up: #171717;            /* success: dark text on a light tint */
@@ -47,8 +54,8 @@
   --color-series-a: #1baf7a;
   --color-series-b: #e87ba4;
   /* Stat tile accents: soft tint behind a darker icon. */
-  --color-tint-violet: #efedf9;
-  --color-tint-violet-ink: #4a3aa7;
+  --color-tint-violet: #e8effc;   /* accent tint (blue, follows the theme) */
+  --color-tint-violet-ink: #3b72e0;
   --color-tint-aqua: #e7f6ef;
   --color-tint-aqua-ink: #0f7a55;
   --color-tint-amber: #fdf4e1;

@@ -56,9 +56,15 @@ namespace :mail do
     method = ActionMailer::Base.delivery_method
     ActionMailer::Base.mail(from: AppConfig.mail_from, to: to, subject: "Order Change Tracker test email",
                             body: "SMTP is configured correctly (delivery method: #{method}).").deliver_now
-    puts method == :smtp ? "Sent to #{to} via #{AppConfig.env('SMTP_ADDRESS')}." : "SMTP_ADDRESS is not set, so the email was written to tmp/mails/ instead."
+    puts case method
+    when :resend then "Sent to #{to} via Resend."
+    when :smtp then "Sent to #{to} via #{AppConfig.env('SMTP_ADDRESS')}."
+    else "No RESEND_API_KEY or SMTP_ADDRESS is set, so the email was written to tmp/mails/ instead."
+    end
   rescue Net::SMTPAuthenticationError => e
     abort "SMTP login failed: #{e.message.strip}\nFor Gmail, SMTP_PASSWORD must be a 16-character App Password, not your normal password."
+  rescue Resend::Error => e
+    abort "Resend rejected the email: #{e.message}\nCheck RESEND_API_KEY and that MAIL_FROM uses your verified Resend domain."
   rescue StandardError => e
     abort "Sending failed: #{e.class}: #{e.message}"
   end

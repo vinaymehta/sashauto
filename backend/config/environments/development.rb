@@ -32,7 +32,10 @@ Rails.application.configure do
   # Don't care if the mailer can't send.
   config.action_mailer.raise_delivery_errors = true
   # Without SMTP settings, emails are written to tmp/mails for inspection.
-  if AppConfig.env("SMTP_ADDRESS")
+  case AppConfig.mail_delivery_method
+  when :resend
+    config.action_mailer.delivery_method = :resend
+  when :smtp
     config.action_mailer.delivery_method = :smtp
     config.action_mailer.smtp_settings = AppConfig.smtp_settings
   else

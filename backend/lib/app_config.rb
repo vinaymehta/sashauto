@@ -10,8 +10,10 @@ module AppConfig
     env("REDIS_URL", "redis://localhost:6379/0")
   end
 
+  # Resend sends from an address on the verified domain (RESEND_FROM); SMTP uses MAIL_FROM.
   def mail_from
-    env("MAIL_FROM", env("SMTP_USERNAME", "order-tracker@localhost"))
+    fallback = env("MAIL_FROM", env("SMTP_USERNAME", "order-tracker@localhost"))
+    mail_delivery_method == :resend ? env("RESEND_FROM", fallback) : fallback
   end
 
   # Comma-separated. When blank, notifications go to every active Admin user.
@@ -26,6 +28,13 @@ module AppConfig
 
   def max_upload_bytes
     Integer(env("MAX_UPLOAD_BYTES", 20.megabytes))
+  end
+
+  # :resend when a Resend API key is configured, :smtp when an SMTP server is, otherwise nil.
+  def mail_delivery_method
+    return :resend if env("RESEND_API_KEY")
+    return :smtp if env("SMTP_ADDRESS")
+    nil
   end
 
   def smtp_settings

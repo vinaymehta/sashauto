@@ -11,7 +11,7 @@ import { ChevronLeftIcon, DownloadIcon } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/feedback";
 import { DetectionSkeleton, Skeleton } from "@/components/ui/skeleton";
-import { PageHeader, Panel } from "@/components/ui/panel";
+import { PageHeader } from "@/components/ui/panel";
 
 export default function UploadDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -39,15 +39,6 @@ export default function UploadDetailPage() {
     );
   }
 
-  const meta: [string, string][] = [
-    ["Original file", upload.original_filename],
-    ["Size", formatBytes(upload.byte_size)],
-    ["Uploaded by", upload.uploaded_by ?? "—"],
-    ["Uploaded at", formatDateTime(upload.uploaded_at)],
-    ["Compared with", upload.status === "completed" ? (upload.previous_version ? "Previous upload" : "Nothing (first upload)") : "—"],
-    ["SHA-256", upload.file_sha256],
-  ];
-
   return (
     <>
       <div className="mb-5 flex items-center justify-between gap-3">
@@ -61,19 +52,19 @@ export default function UploadDetailPage() {
       </div>
       <PageHeader
         title={`Upload · ${formatDateTime(upload.completed_at ?? upload.uploaded_at)}`}
-        description={<span className="inline-flex items-center gap-2"><UploadStatusBadge status={upload.status} /> {upload.original_filename}</span>}
+        description={
+          <>
+            <span className="inline-flex items-center gap-2"><UploadStatusBadge status={upload.status} /> {upload.original_filename}</span>
+            {/* File details (formerly the "File" card) as a compact info bar under the title. */}
+            <span className="mt-2 flex flex-wrap gap-4 font-mono text-xs text-neutral-500">
+              <span>Size: {formatBytes(upload.byte_size)}</span>
+              <span>Uploaded by: {upload.uploaded_by ?? "—"}</span>
+              <span title={upload.file_sha256}>SHA-256: {upload.file_sha256.slice(0, 12)}…</span>
+            </span>
+          </>
+        }
       />
       <div className="space-y-6">
-        <Panel title="File">
-          <dl className="grid gap-x-8 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
-            {meta.map(([label, value]) => (
-              <div key={label} className="min-w-0">
-                <dt className="text-ink-muted">{label}</dt>
-                <dd className={`mt-0.5 truncate text-ink ${label === "SHA-256" ? "font-mono text-xs" : ""}`} title={value}>{value}</dd>
-              </div>
-            ))}
-          </dl>
-        </Panel>
         <UploadResult upload={upload} onChanged={reload} />
       </div>
     </>

@@ -12,6 +12,8 @@ module Notifications
     # notification is never sent again.
     def perform(notification_id)
       notification = Notification.find(notification_id)
+      error = nil
+
       notification.with_lock do
         return if notification.sent?
 
@@ -23,16 +25,25 @@ module Notifications
 
         begin
           raise NoRecipients, "No admin recipient configured (set ADMIN_NOTIFICATION_EMAILS or create an Admin user)" if notification.recipients.empty?
-          QuantityChangeMailer.with(notification: notification).changes_detected.deliver_now
+          message = QuantityChangeMailer.with(notification: notification).changes_detected.deliver_now
         rescue StandardError => e
-          notification.update!(status: "failed", last_error: "#{e.class}: #{e.message}".first(2000))
-          AuditLog.record("notification.failed", subject: notification, attempt: notification.attempts, error: e.class.name)
-          raise
+          error = e
         end
 
-        notification.update!(status: "sent", sent_at: Time.current, last_error: nil)
-        AuditLog.record("notification.sent", subject: notification, recipients: notification.recipients)
+        if error
+          # Saved inside the transaction and NOT re-raised here, so the failure is committed and
+          # visible in the UI; the error is re-raised after the lock is released (Sidekiq retries).
+          notification.update!(status: "failed", last_error: "#{error.class}: #{error.message}".first(2000))
+          AuditLog.record("notification.failed", subject: notification, attempt: notification.attempts, error: error.class.name)
+        else
+          # With Resend, message_id is Resend's email id (useful for looking the email up in Resend).
+          notification.update!(status: "sent", sent_at: Time.current, last_error: nil,
+                               provider_message_id: message&.message_id)
+          AuditLog.record("notification.sent", subject: notification, recipients: notification.recipients)
+        end
       end
+
+      raise error if error
     end
   end
 end

@@ -36,18 +36,18 @@ export function AppShell({ children }: { children: ReactNode }) {
   const current = NAV.find((item) => item.match(pathname));
   const nav = (
     <nav className="space-y-1">
-      <p className="px-3 pb-1.5 text-2xs font-semibold uppercase tracking-wider text-neutral-500">Workspace</p>
+      <p className="px-3 pb-1.5 text-2xs font-semibold uppercase tracking-wider text-nav-label">Workspace</p>
       {NAV.map(({ href, label, icon: Icon, match }) => {
         const active = match(pathname);
         return (
           <Link key={href} href={href} onClick={closeDrawer} aria-current={active ? "page" : undefined}
                 className={`relative flex items-center gap-2.5 rounded-md px-3 py-2 text-base transition-all duration-150 ${
                   active
-                    ? "bg-neutral-100/70 font-medium text-neutral-900"
-                    : "font-normal text-neutral-400 hover:bg-white/5 hover:text-white"
+                    ? "bg-nav-raised font-semibold text-white"
+                    : "font-normal text-nav-text hover:bg-white/5 hover:text-white"
                 }`}>
             <span className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${
-              active ? "text-neutral-900" : "text-neutral-500"
+              active ? "text-white" : "text-nav-text/70"
             }`}>
               <Icon size={15} />
             </span>
@@ -61,15 +61,15 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <ToastProvider>
       <div className="min-h-screen lg:flex">
-        <aside className="hidden w-60 shrink-0 border-r border-neutral-700/70 bg-neutral-800 lg:sticky lg:top-0 lg:block lg:h-screen">
-          <div className="flex h-14 items-center border-b border-neutral-700/70 bg-neutral-800 px-4"><Brand /></div>
+        <aside className="hidden w-60 shrink-0 border-r border-nav-line bg-nav lg:sticky lg:top-0 lg:block lg:h-screen">
+          <div className="flex h-14 items-center border-b border-nav-line bg-nav px-4"><Brand /></div>
           <div className="px-3 py-4">{nav}</div>
         </aside>
 
         {drawerOpen && (
           <div className="fixed inset-0 z-40 animate-fade-in bg-ink/25 lg:hidden">
-            <div ref={drawer} className="h-full w-72 animate-slide-in border-r border-neutral-700/70 bg-neutral-800 shadow-modal">
-              <div className="flex h-14 items-center justify-between border-b border-neutral-700/70 bg-neutral-800 px-4">
+            <div ref={drawer} className="h-full w-72 animate-slide-in border-r border-nav-line bg-nav shadow-modal">
+              <div className="flex h-14 items-center justify-between border-b border-nav-line bg-nav px-4">
                 <Brand />
                 <button onClick={closeDrawer} aria-label="Close menu" className="rounded p-1 text-neutral-400 hover:bg-white/10 hover:text-white"><CloseIcon size={18} /></button>
               </div>
@@ -79,7 +79,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         )}
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-neutral-700/70 bg-neutral-800 px-4 text-white sm:px-6">
+          <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-nav-line bg-nav px-4 text-white sm:px-6">
             <button onClick={() => setDrawerOpen(true)} aria-label="Open menu"
                     className="-ml-1 rounded-md p-1.5 text-neutral-300 hover:bg-white/10 hover:text-white lg:hidden">
               <MenuIcon />

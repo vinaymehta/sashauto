@@ -9,6 +9,8 @@ class QuantityChangeMailer < ApplicationMailer
     @total = @notification.change_count
     @url = "#{AppConfig.app_url}/detect"
 
-    mail(to: @notification.recipients, subject: @notification.subject)
+    # Idempotency key: a Sidekiq retry of the same notification is never delivered twice by Resend.
+    mail(to: @notification.recipients, subject: @notification.subject,
+         options: { idempotency_key: "notification-#{@notification.id}" })
   end
 end

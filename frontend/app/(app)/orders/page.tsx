@@ -12,6 +12,7 @@ import { ListToolbar } from "@/components/ui/list-toolbar";
 import { PageHeader, Panel } from "@/components/ui/panel";
 import { SearchInput } from "@/components/ui/search-input";
 import { TableSkeleton } from "@/components/ui/skeleton";
+import { FilterChips, FilterMenu, type FilterGroup } from "@/components/ui/filter-menu";
 import { SortTh } from "@/components/ui/sort-header";
 import { Pagination, Table, Td } from "@/components/ui/table";
 
@@ -60,8 +61,20 @@ export default function OrdersPage() {
   const term = useDebounced(search.trim());
 
   const { data, error, loading } = useApi<OrdersPage>("/api/orders", {
-    search: term, sort: list.sort, direction: list.direction, page: list.page, per_page: list.perPage,
+    search: term, ...list.filters, sort: list.sort, direction: list.direction, page: list.page, per_page: list.perPage,
   });
+
+  // Keep the last known option lists so the panel does not empty while a filtered page loads.
+  const [facets, setFacets] = useState<OrdersPage["facets"]>(null);
+  if (data?.facets && data.facets !== facets) setFacets(data.facets);
+  const filters: FilterGroup[] = [
+    { key: "type", label: "Type", options: [{ value: "Order", label: "Order" }, { value: "Firm", label: "Firm" }, { value: "Forecast", label: "Forecast" }] },
+    { key: "ship_to", label: "Ship To Location", options: (facets?.ship_to_locations ?? []).map((v) => ({ value: v, label: v })) },
+    { key: "ship_date", label: "Ship date", type: "date-range", options: [] },
+    { key: "commodity_type", label: "Commodity Type", options: (facets?.commodity_types ?? []).map((v) => ({ value: v, label: v })) },
+  ];
+  const filtered = term !== "" || Object.values(list.filters).some(Boolean);
+  const clearAll = () => { list.clearFilters(); setSearch(""); };
 
   const source = data?.source;
 
@@ -83,7 +96,9 @@ export default function OrdersPage() {
         <ListToolbar summary={data ? `${formatCount(data.meta.total)} order row${data.meta.total === 1 ? "" : "s"}` : ""}>
           <SearchInput label="Search orders" placeholder="Search PO, part, commodity, type, location…" value={search}
                        onSearch={(v) => { setSearch(v); list.resetPage(); }} className="w-full sm:w-80" />
+          <FilterMenu groups={filters} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
         </ListToolbar>
+        <FilterChips groups={filters} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
 
         {error ? (
           <div className="p-4"><Alert title="Could not load orders">{error.message}</Alert></div>
@@ -91,9 +106,9 @@ export default function OrdersPage() {
           <TableSkeleton rows={10} columns={10} />
         ) : data && data.data.length === 0 ? (
           <EmptyState
-            title={term ? "No order rows match" : "No order data yet"}
-            description={term ? "Try a different search." : "Upload a Supplier Requirements export on Upload / Detection."}
-            action={term ? <Button size="sm" onClick={() => { setSearch(""); list.resetPage(); }}>Clear search</Button> : undefined}
+            title={filtered ? "No order rows match" : "No order data yet"}
+            description={filtered ? "Try a different search or clear the filters." : "Upload a Supplier Requirements export on Upload / Detection."}
+            action={filtered ? <Button size="sm" onClick={clearAll}>Clear search and filters</Button> : undefined}
           />
         ) : data ? (
           <div className={`transition-opacity duration-200 ${loading ? "opacity-50" : ""}`}>

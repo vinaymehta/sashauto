@@ -10,6 +10,9 @@ gem "bcrypt", "~> 3.1.7"
 # Background jobs (upload processing, email delivery). Requires Redis as its job store.
 gem "sidekiq", "~> 8.1"
 
+# Email delivery through the Resend API (ActionMailer delivery method :resend)
+gem "resend", "~> 1.0"
+
 # Rate-limit counter store shared across Puma processes (reuses Sidekiq's Redis)
 gem "redis", "~> 5.4"
 

@@ -53,10 +53,10 @@ function Tile({ label, value, detail, href, icon, tint = "neutral" }: {
   const body = (
     <>
       <div className="flex items-start justify-between gap-3">
-        <p className="truncate text-xs font-medium text-ink-muted">{label}</p>
+        <p className="mb-1.5 truncate text-xs font-medium text-neutral-400">{label}</p>
         <span aria-hidden className="-mr-1 -mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center text-neutral-400">{icon}</span>
       </div>
-      <p className="tabular -mt-1 text-2xl font-semibold tracking-tight text-ink">{value}</p>
+      <p className="tabular -mt-1 text-2xl font-bold tracking-tight text-neutral-900">{value}</p>
       {detail && <p className="mt-1 truncate text-sm text-ink-muted">{detail}</p>}
     </>
   );
@@ -133,15 +133,13 @@ export default function DashboardPage() {
           </div>
         )}
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
           <Tile label="Latest upload" value={formatUploadParts(latest.completed_at!)[0]} href="/orders" icon={<FileIcon size={16} />} tint="neutral"
                 detail={`${formatUploadParts(latest.completed_at!)[1]} · ${formatRelative(latest.completed_at)}`} />
           <Tile label="Latest changes" value={formatCount(latestChanges)} href="/detect" icon={<ArrowUpDownIcon size={16} />} tint="direction"
                 detail={latest.previous_version ? `↑ ${formatCount(latest.increase_count)} · ↓ ${formatCount(latest.decrease_count)}` : "First upload, not compared"} />
           <Tile label="Changes · 30 days" value={formatCount(month.increases + month.decreases)} icon={<HistoryIcon size={16} />} tint="violet"
                 detail={`↑ ${formatCount(month.increases)} · ↓ ${formatCount(month.decreases)}`} />
-          <Tile label="Successful uploads" value={formatCount(totals.versions)} href="/uploads" icon={<UploadIcon size={16} />} tint="aqua"
-                detail={totals.failed_uploads ? `${totals.failed_uploads} rejected upload${totals.failed_uploads === 1 ? "" : "s"}` : "No rejected uploads"} />
           <Tile label="Products" value={formatCount(totals.products)} href="/products" icon={<BoxIcon size={16} />} tint="amber"
                 detail={totals.open_conflicts ? `${totals.open_conflicts} open conflict${totals.open_conflicts === 1 ? "" : "s"}` : `${formatCount(totals.emails_sent)} alert email${totals.emails_sent === 1 ? "" : "s"} sent`} />
         </div>
@@ -231,8 +229,8 @@ export default function DashboardPage() {
 function DashboardSkeleton() {
   return (
     <div role="status" aria-label="Loading" className="space-y-5">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        {Array.from({ length: 5 }, (_, i) => (
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        {Array.from({ length: 4 }, (_, i) => (
           <div key={i} className="rounded-lg border border-line bg-white px-6 py-5 shadow-card">
             <Skeleton className="h-3 w-24" /><Skeleton className="mt-3 h-7 w-16" /><Skeleton className="mt-2 h-3.5 w-32" />
           </div>

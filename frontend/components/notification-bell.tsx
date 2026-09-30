@@ -72,7 +72,7 @@ export function NotificationBell() {
       >
         <BellIcon />
         {unread > 0 && (
-          <span className="absolute right-1 top-1 flex animate-pop-in h-4 min-w-4 items-center justify-center rounded-full bg-white px-1 text-2xs font-semibold leading-none text-neutral-900 ring-2 ring-neutral-800">
+          <span className="absolute right-1 top-1 flex animate-pop-in h-4 min-w-4 items-center justify-center rounded-full bg-white px-1 text-2xs font-semibold leading-none text-neutral-900 ring-2 ring-nav">
             {unread > 9 ? "9+" : unread}
           </span>
         )}

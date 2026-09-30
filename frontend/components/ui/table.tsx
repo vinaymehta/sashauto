@@ -89,7 +89,7 @@ export function Pagination({ meta, onPage, onPerPage, noun = "rows" }: {
               <span key={`gap-${i}`} className="px-1 text-ink-faint">…</span>
             ) : (
               <button key={item} type="button" onClick={() => onPage(item)} aria-current={item === meta.page ? "page" : undefined}
-                      className={`${pageButton} ${item === meta.page ? "bg-neutral-900 font-medium text-white" : "text-neutral-700 hover:bg-neutral-100"}`}>
+                      className={`${pageButton} ${item === meta.page ? "bg-accent font-medium text-white" : "text-neutral-700 hover:bg-neutral-100"}`}>
                 {item}
               </button>
             ),

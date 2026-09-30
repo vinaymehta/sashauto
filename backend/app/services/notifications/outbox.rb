@@ -23,11 +23,11 @@ module Notifications
 
     # TEMPORARY: every notification email goes to this address.
     # To restore normal behaviour, delete TEMPORARY_RECIPIENTS and uncomment the original line below.
-    TEMPORARY_RECIPIENTS = [ "iamnitin931@gmail.com" ].freeze
+    # TEMPORARY_RECIPIENTS = [ "" ].freeze
 
     def recipients
-      TEMPORARY_RECIPIENTS
-      # AppConfig.admin_notification_emails.presence || User.active.admins.order(:id).pluck(:email)
+       # TEMPORARY_RECIPIENTS
+       AppConfig.admin_notification_emails.presence || User.active.admins.order(:id).pluck(:email)
     end
   end
 end

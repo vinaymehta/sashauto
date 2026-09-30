@@ -39,7 +39,7 @@ export default function UploadAndDetectPage() {
             <button
               type="button"
               onClick={() => setShowUpload(true)}
-              className="inline-flex items-center gap-2 bg-neutral-900 text-white hover:bg-neutral-800 text-sm font-medium px-4 py-2 rounded-lg transition-all duration-200"
+              className="inline-flex items-center gap-2 bg-accent text-white hover:bg-accent-hover text-sm font-medium px-4 py-2 rounded-lg transition-all duration-200"
             >
               <UploadIcon size={15} />
               Upload new file

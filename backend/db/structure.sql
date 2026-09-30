@@ -229,6 +229,7 @@ CREATE TABLE public.notifications (
     sent_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
+    provider_message_id character varying,
     CONSTRAINT notifications_kind_valid CHECK (((kind)::text = 'quantity_changes'::text)),
     CONSTRAINT notifications_status_valid CHECK (((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('sent'::character varying)::text, ('failed'::character varying)::text])))
 );
@@ -1117,6 +1118,7 @@ ALTER TABLE ONLY public.upload_batches
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260930090001'),
 ('20260929120001'),
 ('20260929100001'),
 ('20260929090009'),

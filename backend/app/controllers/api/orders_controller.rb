@@ -31,18 +31,42 @@ module Api
       latest = UploadBatch.latest_completed
       return render(json: { data: [], meta: pagination_meta(0).last, source: nil }) if latest.nil?
 
-      scope = search(latest.order_snapshot_rows, (params[:search].presence || params[:q]).to_s.strip.first(100))
+      dataset = latest.order_snapshot_rows
+      scope = filter(search(dataset, (params[:search].presence || params[:q]).to_s.strip.first(100)))
       scope, sort, direction = apply_sort(scope, SORTS, default: DEFAULT_SORT)
 
       rows, meta = paginate(scope)
       render json: {
         data: rows.map { |row| Serializers.order_row(row) },
         meta: meta.merge(sort: sort, direction: direction),
-        source: { uploaded_at: latest.completed_at, original_filename: latest.original_filename, upload_id: latest.id }
+        source: { uploaded_at: latest.completed_at, original_filename: latest.original_filename, upload_id: latest.id },
+        # Values present in the current data, for the filter panel.
+        facets: {
+          ship_to_locations: dataset.distinct.order(:ship_to_location).pluck(:ship_to_location),
+          commodity_types: dataset.where.not(commodity_type: nil).distinct.order(:commodity_type).pluck(:commodity_type)
+        }
       }
     end
 
     private
+
+    # Exact-match filters plus an inclusive ship date range (ISO dates; invalid dates are ignored).
+    def filter(scope)
+      scope = scope.where(order_type: params[:type]) if OrderRows::Normalizer::ORDER_TYPES.include?(params[:type])
+      scope = scope.where(ship_to_location: params[:ship_to].to_s) if params[:ship_to].present?
+      scope = scope.where(commodity_type: params[:commodity_type].to_s) if params[:commodity_type].present?
+      from = iso_date(params[:ship_date_from])
+      to = iso_date(params[:ship_date_to])
+      scope = scope.where(ship_date: from..) if from
+      scope = scope.where(ship_date: ..to) if to
+      scope
+    end
+
+    def iso_date(value)
+      Date.iso8601(value.to_s) if value.present?
+    rescue Date::Error
+      nil
+    end
 
     def search(scope, term)
       return scope if term.empty?

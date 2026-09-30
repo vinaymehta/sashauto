@@ -36,7 +36,8 @@ module Serializers
   end
 
   def notification(notification)
-    notification.slice(:id, :status, :recipients, :subject, :change_count, :attempts, :last_error, :last_attempt_at, :sent_at)
+    notification.slice(:id, :status, :recipients, :subject, :change_count, :attempts, :last_error, :last_attempt_at, :sent_at,
+                       :provider_message_id)
   end
 
   def quantity_change(change)
