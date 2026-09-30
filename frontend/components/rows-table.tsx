@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { SnapshotRowsPage } from "@/lib/types";
 import { formatCount, formatDate, formatQty } from "@/lib/format";
+import { AGE_FILTER, AgeLegend, ageRowProps, todayParam } from "./age";
 import { useApi, useDebounced } from "./use-api";
 import { useListQuery } from "./use-list-query";
 import { Badge } from "./ui/badge";
@@ -12,33 +13,33 @@ import { SearchInput } from "./ui/search-input";
 import { Alert, EmptyState } from "./ui/feedback";
 import { FilterChips, FilterMenu, type FilterGroup } from "./ui/filter-menu";
 import { TableSkeleton } from "./ui/skeleton";
-import { Pagination, Table, Td, Th } from "./ui/table";
+import { SortTh } from "./ui/sort-header";
+import { Pagination, Table, Td } from "./ui/table";
 
 // The stored order rows of one version: what the uploaded workbook contained after
 // normalization (one row per order key; merged duplicates list all their Excel rows).
 export function RowsTable({ uploadId }: { uploadId: number }) {
-  const list = useListQuery();
+  const list = useListQuery({}, 10, { key: "excel_row", direction: "asc" });
   const [search, setSearch] = useState("");
   const [shipTos, setShipTos] = useState<string[]>([]);
   const q = useDebounced(search.trim());
 
   const { data, error, loading } = useApi<SnapshotRowsPage>(`/api/uploads/${uploadId}/rows`, {
-    q, ...list.filters, page: list.page, per_page: list.perPage,
+    q, ...list.filters, today: todayParam(), sort: list.sort, direction: list.direction, page: list.page, per_page: list.perPage,
   });
   if (data && data.ship_to_locations.join() !== shipTos.join()) setShipTos(data.ship_to_locations);
 
   const filters: FilterGroup[] = [
-    { key: "sort", label: "Sort by", defaultValue: "excel_row", options: [
-      { value: "excel_row", label: "Excel row" }, { value: "ship_date", label: "Ship date" },
-      { value: "po", label: "PO" }, { value: "part", label: "Part number" },
-    ] },
     { key: "type", label: "Type", options: [{ value: "Order", label: "Order" }, { value: "Firm", label: "Firm" }, { value: "Forecast", label: "Forecast" }] },
     { key: "quantity", label: "Quantity taken from", options: [
       { value: "qty", label: "Qty" }, { value: "previous_qty", label: "Previous Qty (Qty blank)" }, { value: "unknown", label: "Unknown (both blank)" },
     ] },
     ...(shipTos.length > 1 ? [{ key: "ship_to", label: "Ship To Location", options: shipTos.map((s) => ({ value: s, label: s })) }] : []),
+    AGE_FILTER,
   ];
   const filtered = q !== "" || Object.values(list.filters).some(Boolean);
+  const sortProps = { sort: list.sort, direction: list.direction, onSort: list.toggleSort };
+  const [today] = useState(() => new Date());
 
   return (
     <div>
@@ -48,6 +49,7 @@ export function RowsTable({ uploadId }: { uploadId: number }) {
         <FilterMenu groups={filters} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
       </ListToolbar>
       <FilterChips groups={filters} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
+      <AgeLegend />
 
       {error ? (
         <div className="p-4"><Alert title="Could not load the rows">{error.message}</Alert></div>
@@ -61,21 +63,21 @@ export function RowsTable({ uploadId }: { uploadId: number }) {
           <Table dense>
             <thead>
               <tr>
-                <Th align="right">Excel Row</Th>
-                <Th>Type</Th>
-                <Th>PO / Line</Th>
-                <Th>Part Number</Th>
-                <Th>Commodity Type</Th>
-                <Th>Ship Date</Th>
-                <Th>Ship To</Th>
-                <Th align="right">Qty</Th>
-                <Th align="right">Previous Qty</Th>
-                <Th align="right">Compared Qty</Th>
+                <SortTh label="Excel Row" sortKey="excel_row" align="right" {...sortProps} />
+                <SortTh label="Type" sortKey="type" {...sortProps} />
+                <SortTh label="PO / Line" sortKey="po" {...sortProps} />
+                <SortTh label="Part Number" sortKey="part_number" {...sortProps} />
+                <SortTh label="Commodity Type" sortKey="commodity_type" {...sortProps} />
+                <SortTh label="Ship Date" sortKey="ship_date" {...sortProps} />
+                <SortTh label="Ship To" sortKey="ship_to" {...sortProps} />
+                <SortTh label="Qty" sortKey="qty" align="right" {...sortProps} />
+                <SortTh label="Previous Qty" sortKey="previous_qty" align="right" {...sortProps} />
+                <SortTh label="Compared Qty" sortKey="effective_qty" align="right" {...sortProps} />
               </tr>
             </thead>
             <tbody>
               {data.data.map((r) => (
-                <tr key={r.id} className="transition-colors hover:bg-canvas">
+                <tr key={r.id} {...ageRowProps(r.ship_date, today)}>
                   <Td align="right" className="text-ink-muted" title={r.source_row_numbers.length > 1 ? "Duplicate rows merged into one order row" : undefined}>
                     {r.source_row_numbers.join(", ")}
                   </Td>

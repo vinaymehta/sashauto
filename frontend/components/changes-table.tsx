@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { Paginated, QuantityChange } from "@/lib/types";
 import { formatCount, formatDate, formatDifference, formatQty } from "@/lib/format";
+import { AGE_FILTER, AgeLegend, ageRowProps, todayParam } from "./age";
 import { useApi, useDebounced } from "./use-api";
 import { useListQuery } from "./use-list-query";
 import { ChangeArrow } from "./direction";
@@ -22,6 +23,7 @@ const FILTERS: FilterGroup[] = [
   ] },
   { key: "direction", label: "Change", options: [{ value: "increase", label: "↑ Quantity up" }, { value: "decrease", label: "↓ Quantity down" }] },
   { key: "type", label: "Type", options: [{ value: "Order", label: "Order" }, { value: "Firm", label: "Firm" }, { value: "Forecast", label: "Forecast" }] },
+  AGE_FILTER,
 ];
 
 export function ChangesTable({ uploadId, emptyDescription }: { uploadId: number; emptyDescription?: string }) {
@@ -30,10 +32,11 @@ export function ChangesTable({ uploadId, emptyDescription }: { uploadId: number;
   const q = useDebounced(search.trim());
 
   const { data, error, loading } = useApi<Paginated<QuantityChange>>(`/api/uploads/${uploadId}/changes`, {
-    q, ...list.filters, page: list.page, per_page: list.perPage,
+    q, ...list.filters, today: todayParam(), page: list.page, per_page: list.perPage,
   });
   const filtered = q !== "" || Object.values(list.filters).some(Boolean);
   const clearAll = () => { list.clearFilters(); setSearch(""); };
+  const [today] = useState(() => new Date());
 
   return (
     <div>
@@ -43,6 +46,7 @@ export function ChangesTable({ uploadId, emptyDescription }: { uploadId: number;
         <FilterMenu groups={FILTERS} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
       </ListToolbar>
       <FilterChips groups={FILTERS} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
+      <AgeLegend />
 
       {error ? (
         <div className="p-4"><Alert title="Could not load changes">{error.message}</Alert></div>
@@ -81,7 +85,7 @@ export function ChangesTable({ uploadId, emptyDescription }: { uploadId: number;
             </thead>
             <tbody>
               {data.data.map((c) => (
-                <tr key={c.id} className="transition-colors hover:bg-canvas">
+                <tr key={c.id} {...ageRowProps(c.ship_date, today, "hover:bg-canvas")}>
                   <Td className="font-medium">{c.po_number}</Td>
                   <Td className="text-ink-muted">{c.po_line_number}</Td>
                   <Td>{c.part_number}</Td>

@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 import type { OrderRow, OrdersPage } from "@/lib/types";
 import { formatCount, formatDate, formatDateTime, formatQty } from "@/lib/format";
 import { DownloadIcon } from "@/components/icons";
+import { AGE_FILTER, AgeLegend, ageRowProps, todayParam } from "@/components/age";
 import { useApi, useDebounced } from "@/components/use-api";
 import { useListQuery } from "@/components/use-list-query";
 import { Button } from "@/components/ui/button";
@@ -61,7 +62,7 @@ export default function OrdersPage() {
   const term = useDebounced(search.trim());
 
   const { data, error, loading } = useApi<OrdersPage>("/api/orders", {
-    search: term, ...list.filters, sort: list.sort, direction: list.direction, page: list.page, per_page: list.perPage,
+    search: term, ...list.filters, today: todayParam(), sort: list.sort, direction: list.direction, page: list.page, per_page: list.perPage,
   });
 
   // Keep the last known option lists so the panel does not empty while a filtered page loads.
@@ -72,11 +73,13 @@ export default function OrdersPage() {
     { key: "ship_to", label: "Ship To Location", options: (facets?.ship_to_locations ?? []).map((v) => ({ value: v, label: v })) },
     { key: "ship_date", label: "Ship date", type: "date-range", options: [] },
     { key: "commodity_type", label: "Commodity Type", options: (facets?.commodity_types ?? []).map((v) => ({ value: v, label: v })) },
+    AGE_FILTER,
   ];
   const filtered = term !== "" || Object.values(list.filters).some(Boolean);
   const clearAll = () => { list.clearFilters(); setSearch(""); };
 
   const source = data?.source;
+  const [today] = useState(() => new Date());
 
   return (
     <>
@@ -99,6 +102,7 @@ export default function OrdersPage() {
           <FilterMenu groups={filters} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
         </ListToolbar>
         <FilterChips groups={filters} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
+        <AgeLegend />
 
         {error ? (
           <div className="p-4"><Alert title="Could not load orders">{error.message}</Alert></div>
@@ -123,7 +127,7 @@ export default function OrdersPage() {
               </thead>
               <tbody>
                 {data.data.map((row) => (
-                  <tr key={row.id} className="transition-colors duration-150 hover:bg-neutral-50/50">
+                  <tr key={row.id} {...ageRowProps(row.ship_date, today)}>
                     {COLUMNS.map((c) => (
                       <Td key={c.key} align={c.align === "right" ? "right" : "left"}>{c.render(row)}</Td>
                     ))}

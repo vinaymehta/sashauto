@@ -61,6 +61,30 @@ class ApplicationController < ActionController::API
     [ scope.reorder(order).order(scope.arel_table[:id].public_send(direction)), key, direction ]
   end
 
+  AGE_GROUPS = %w[green yellow red future].freeze
+
+  # Age group of an order row = days since its ship date: green 0-30, yellow 31-60, red over 60,
+  # future = ship date after today. "Today" is the browser's date (param `today`, within a day of the
+  # server's) so filters match the colours the user sees; otherwise the server date.
+  def filter_by_age(scope)
+    return scope unless AGE_GROUPS.include?(params[:age])
+
+    today = request_today
+    case params[:age]
+    when "green" then scope.where(ship_date: (today - 30)..today)
+    when "yellow" then scope.where(ship_date: (today - 60)..(today - 31))
+    when "red" then scope.where(ship_date: ...(today - 60))
+    when "future" then scope.where(ship_date: (today + 1)..)
+    end
+  end
+
+  def request_today
+    date = Date.iso8601(params[:today].to_s) if params[:today].present?
+    date && (date - Date.current).abs <= 1 ? date : Date.current
+  rescue Date::Error
+    Date.current
+  end
+
   # Server-side offset pagination. Returns [records, meta]; a page past the end is clamped to the last page.
   def paginate(scope)
     total = scope.count

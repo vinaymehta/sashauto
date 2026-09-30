@@ -55,6 +55,7 @@ module Api
       scope = scope.where(order_type: params[:type]) if OrderRows::Normalizer::ORDER_TYPES.include?(params[:type])
       scope = scope.where(ship_to_location: params[:ship_to].to_s) if params[:ship_to].present?
       scope = scope.where(commodity_type: params[:commodity_type].to_s) if params[:commodity_type].present?
+      scope = filter_by_age(scope)
       from = iso_date(params[:ship_date_from])
       to = iso_date(params[:ship_date_to])
       scope = scope.where(ship_date: from..) if from

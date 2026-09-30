@@ -50,6 +50,7 @@ module Api
       scope = batch.quantity_changes
       scope = scope.where(direction: params[:direction]) if QuantityChange::DIRECTIONS.include?(params[:direction])
       scope = scope.where(order_type: params[:type]) if OrderRows::Normalizer::ORDER_TYPES.include?(params[:type])
+      scope = filter_by_age(scope)
       if params[:q].present?
         term = "%#{QuantityChange.sanitize_sql_like(params[:q].to_s.strip.first(100))}%"
         scope = scope.where("po_number ILIKE :t OR part_number ILIKE :t OR commodity_type ILIKE :t", t: term)
@@ -60,11 +61,14 @@ module Api
       render json: { data: changes.map { |c| Serializers.quantity_change(c) }, meta: meta }
     end
 
+    # Uploaded-rows sort keys => fixed SQL (whitelist). "po" and "part" kept for older links.
     ROW_SORTS = {
-      "ship_date" => [ :ship_date, :po_number, :po_line_number ],
-      "po" => [ :po_number, :po_line_number, :ship_date ],
-      "part" => [ :part_number, :ship_date ],
-      "excel_row" => Arel.sql("source_row_numbers[1]")
+      "excel_row" => "order_snapshot_rows.source_row_numbers[1]", "type" => "order_snapshot_rows.order_type",
+      "po" => "order_snapshot_rows.po_number", "part" => "order_snapshot_rows.part_number",
+      "part_number" => "order_snapshot_rows.part_number", "commodity_type" => "order_snapshot_rows.commodity_type",
+      "ship_date" => "order_snapshot_rows.ship_date", "ship_to" => "order_snapshot_rows.ship_to_location",
+      "qty" => "order_snapshot_rows.qty", "previous_qty" => "order_snapshot_rows.previous_qty",
+      "effective_qty" => "order_snapshot_rows.effective_qty"
     }.freeze
     QUANTITY_SOURCES = %w[qty previous_qty unknown].freeze
 
@@ -75,13 +79,15 @@ module Api
       scope = scope.where(order_type: params[:type]) if OrderRows::Normalizer::ORDER_TYPES.include?(params[:type])
       scope = scope.where(quantity_source: params[:quantity]) if QUANTITY_SOURCES.include?(params[:quantity])
       scope = scope.where(ship_to_location: params[:ship_to].to_s.upcase) if params[:ship_to].present?
+      scope = filter_by_age(scope)
       if params[:q].present?
         term = "%#{OrderSnapshotRow.sanitize_sql_like(params[:q].to_s.strip.first(100))}%"
         scope = scope.where("po_number ILIKE :t OR part_number ILIKE :t OR commodity_type ILIKE :t", t: term)
       end
-      scope = scope.order(ROW_SORTS.fetch(params[:sort].to_s, ROW_SORTS["excel_row"])).order(:id)
+      scope, sort, direction = apply_sort(scope, ROW_SORTS, default: "excel_row")
 
       rows, meta = paginate(scope)
+      meta = meta.merge(sort: sort, direction: direction)
       render json: { data: rows.map { |r| Serializers.snapshot_row(r) }, meta: meta,
                      ship_to_locations: batch.order_snapshot_rows.distinct.order(:ship_to_location).pluck(:ship_to_location) }
     end

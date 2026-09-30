@@ -61,11 +61,19 @@
   --color-tint-amber: #fdf4e1;
   --color-tint-amber-ink: #8a5a00;
 
+  /* Orders age groups (days since the ship date): whole-row tints. */
+  --color-age-green: #eaf6ee;
+  --color-age-green-ink: #17693f;
+  --color-age-yellow: #fdf5d8;
+  --color-age-yellow-ink: #8a5a00;
+  --color-age-red: #fbe9e6;
+  --color-age-red-ink: #a8321f;
+
   /* Quantity direction: the one deliberate exception to monochrome, used only for increase/decrease
      (chart, arrows, differences). Validated colour-blind-safe pair. */
-  --color-inc: #1d6aa3;
-  --color-inc-mark: #2a7fb8;
-  --color-inc-bg: #edf4fa;
+  --color-inc: #17693f;           /* green: quantity up */
+  --color-inc-mark: #2f9160;
+  --color-inc-bg: #eef6f1;
   --color-dec: #a8321f;
   --color-dec-mark: #c4513d;
   --color-dec-bg: #fbefed;

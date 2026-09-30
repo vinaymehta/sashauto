@@ -28,8 +28,8 @@
           <td style="padding:8px 10px;color:#171717;white-space:nowrap;"><%= change.ship_date.strftime("%-d %b %Y") %></td>
           <td style="padding:8px 10px;color:#737373;text-align:right;"><%= format_qty(change.old_qty) %></td>
           <td style="padding:8px 10px;color:#171717;text-align:right;"><%= format_qty(change.new_qty) %></td>
-          <td style="padding:8px 10px;text-align:right;white-space:nowrap;font-weight:600;color:<%= up ? "#1d6aa3" : "#a8321f" %>;"><%= format_difference(change.difference) %></td>
-          <td style="padding:8px 10px;text-align:center;font-size:15px;font-weight:700;color:<%= up ? "#1d6aa3" : "#a8321f" %>;"><%= up ? "&uarr;".html_safe : "&darr;".html_safe %></td>
+          <td style="padding:8px 10px;text-align:right;white-space:nowrap;font-weight:600;color:<%= up ? "#17693f" : "#a8321f" %>;"><%= format_difference(change.difference) %></td>
+          <td style="padding:8px 10px;text-align:center;font-size:15px;font-weight:700;color:<%= up ? "#17693f" : "#a8321f" %>;"><%= up ? "&uarr;".html_safe : "&darr;".html_safe %></td>
         </tr>
       <% end %>
     </tbody>
