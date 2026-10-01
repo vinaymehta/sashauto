@@ -1,0 +1,10 @@
+<%= "Below MOQ" %>
+<%= @batch.original_filename %> · uploaded by <%= @batch.uploaded_by.name %> on <%= @batch.completed_at.utc.strftime("%-d %b %Y, %H:%M UTC") %>
+
+<%= @total %> order row(s) now have a Qty below the Part Number's MOQ.
+
+PO Number | Part Number | Type | Ship Date | Qty | MOQ
+<% @alerts.each do |alert| %><%= alert.po_number %> | <%= alert.part_number %> | <%= alert.order_type %> | <%= alert.ship_date.strftime("%-d %b %Y") %> | <%= format_qty(alert.qty) %> | <%= format_qty(alert.moq) %>
+<% end %><% if @total > @alerts.size %>Showing the first <%= @alerts.size %> of <%= @total %> MOQ alerts.
+<% end %>
+View MOQ alerts: <%= @url %>

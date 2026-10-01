@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { formatDate } from "@/lib/format";
 import { CheckIcon, CloseIcon, FilterIcon } from "../icons";
 import { Button } from "./button";
@@ -44,9 +44,7 @@ function DateRange({ group, values, onChange }: { group: FilterGroup; values: Fi
   );
 }
 
-const NAVBAR_HEIGHT = 56;
-
-// "Filter" button that opens the filters in the right-hand side panel, level with its list card.
+// "Filter" button that opens the filters in the right-hand side panel.
 // Choices apply immediately; "" means no filter for that group. Active filters are listed as
 // removable chips by <FilterChips>.
 export function FilterMenu({ groups, values, onChange, onClear }: {
@@ -57,24 +55,13 @@ export function FilterMenu({ groups, values, onChange, onClear }: {
   align?: "left" | "right";
 }) {
   const [open, setOpen] = useState(false);
-  const [top, setTop] = useState(NAVBAR_HEIGHT);
-  const trigger = useRef<HTMLButtonElement>(null);
   const active = groups.filter((g) => isActive(g, values)).length;
-
-  // Start the panel level with the list card the button sits in (below the page header and its
-  // actions), but never above the navbar.
-  function openPanel() {
-    const cardTop = trigger.current?.closest("section")?.getBoundingClientRect().top ?? NAVBAR_HEIGHT;
-    setTop(Math.round(Math.max(NAVBAR_HEIGHT, cardTop)));
-    setOpen(true);
-  }
 
   return (
     <>
       <button
         type="button"
-        ref={trigger}
-        onClick={openPanel}
+        onClick={() => setOpen(true)}
         aria-haspopup="dialog"
         aria-expanded={open}
         className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-md px-3 text-base font-medium transition-colors duration-150 ${
@@ -92,7 +79,6 @@ export function FilterMenu({ groups, values, onChange, onClear }: {
 
       <Sheet
         open={open}
-        top={top}
         onClose={() => setOpen(false)}
         title="Filters"
         description={active ? `${active} filter${active === 1 ? "" : "s"} applied. Changes apply immediately.` : "Changes apply immediately."}

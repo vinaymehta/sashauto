@@ -1,0 +1,10 @@
+<%= "Address changes detected" %>
+<%= @batch.original_filename %> · uploaded by <%= @batch.uploaded_by.name %> on <%= @batch.completed_at.utc.strftime("%-d %b %Y, %H:%M UTC") %>
+
+<%= @total %> existing order row(s) changed Ship To Address compared with the previous upload.
+
+PO Number | Part Number | Ship Date | Old Address | New Address
+<% @changes.each do |change| %><%= change.po_number %> | <%= change.part_number %> | <%= change.ship_date.strftime("%-d %b %Y") %> | <%= change.old_address.presence || "—" %> | <%= change.new_address.presence || "—" %>
+<% end %><% if @total > @changes.size %>Showing the first <%= @changes.size %> of <%= @total %> address changes.
+<% end %>
+View all changes: <%= @url %>

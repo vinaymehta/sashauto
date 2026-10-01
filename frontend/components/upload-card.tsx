@@ -49,12 +49,19 @@ export function UploadCard({ onFinished }: { onFinished: (upload: UploadDetail) 
     reported.current = upload.id;
     window.dispatchEvent(new Event(ACTIVITY_CHANGED_EVENT));
     if (upload.status === "completed") {
-      const changes = (upload.stats.increase_count ?? 0) + (upload.stats.decrease_count ?? 0);
+      const n = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
+      const found = [
+        [(upload.stats.increase_count ?? 0) + (upload.stats.decrease_count ?? 0), "quantity change"],
+        [upload.stats.address_change_count ?? 0, "address change"],
+        [upload.stats.moq_alert_count ?? 0, "MOQ alert"],
+      ].filter(([count]) => (count as number) > 0).map(([count, noun]) => n(count as number, noun as string));
       notify(upload.previous_version === null
-        ? "First upload stored. Changes are detected from the next upload."
-        : `Upload processed: ${changes === 0 ? "no quantity changes" : `${changes} quantity change${changes === 1 ? "" : "s"}`}.`);
+        ? "File validated and stored. Changes are detected from the next upload."
+        : `File validated and comparison complete: ${found.length ? found.join(", ") : "no changes"}.`);
     } else {
-      notify("The upload was rejected. See the problems listed below.", "error");
+      notify(upload.error_code === "processing_error"
+        ? "The upload could not be processed because of an internal error. Nothing was imported."
+        : "The upload was rejected. See the problems listed below.", "error");
     }
     onFinished(upload);
   }, [upload, notify, onFinished]);

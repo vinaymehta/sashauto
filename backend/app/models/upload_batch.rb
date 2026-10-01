@@ -8,7 +8,9 @@ class UploadBatch < ApplicationRecord
   has_many :order_rows
   has_many :quantity_changes
   has_many :address_changes
-  has_one :notification
+  has_many :moq_alerts
+  has_many :notifications
+  has_many :ageing_digests
 
   validates :status, inclusion: { in: STATUSES }
   validates :original_filename, :file_sha256, :byte_size, presence: true

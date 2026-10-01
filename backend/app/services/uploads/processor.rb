@@ -59,7 +59,8 @@ module Uploads
     end
 
     def commit!(result)
-      notification = nil
+      notifications = []
+      ageing_digest = nil
 
       UploadBatch.transaction do
         UploadBatch.connection.execute("SELECT pg_advisory_xact_lock(#{VERSION_LOCK_KEY})")
@@ -72,6 +73,7 @@ module Uploads
         conflicts = Products::SyncFromUpload.call(@batch, result.rows)
         stats = previous && Comparison::QuantityComparator.call(current_batch_id: @batch.id, previous_batch_id: previous.id)
         address_changes = previous ? Comparison::AddressComparator.call(current_batch_id: @batch.id, previous_batch_id: previous.id) : nil
+        moq_alerts = Comparison::MoqChecker.call(current_batch_id: @batch.id, previous_batch_id: previous&.id)
 
         warnings = result.warnings.dup
         if conflicts.positive?
@@ -84,21 +86,21 @@ module Uploads
           previous_upload_batch: previous, completed_at: Time.current,
           source_row_count: result.source_row_count, row_count: result.rows.size,
           duplicate_rows_merged: result.duplicate_rows_merged, unknown_quantity_count: result.unknown_quantity_count,
-          warnings: warnings, address_change_count: address_changes, **stats.to_h
+          warnings: warnings, address_change_count: address_changes, moq_alert_count: moq_alerts, **stats.to_h
         )
 
         change_count = stats ? stats.increase_count + stats.decrease_count : 0
-        # One email for both kinds of change.
-        if change_count.positive? || address_changes.to_i.positive?
-          notification = Notifications::Outbox.enqueue_quantity_changes(@batch, change_count, address_changes.to_i)
-        end
+        # A separate email for each kind with rows: quantity changes, address changes, MOQ alerts, ageing.
+        notifications = Notifications::Outbox.enqueue_for_upload(@batch, quantity: change_count, address: address_changes.to_i, moq: moq_alerts)
+        ageing_digest = Ageing::DigestBuilder.call(batch: @batch, today: Time.find_zone!(AppConfig.ageing_time_zone).today)
         AuditLog.record("upload.completed", user: @batch.uploaded_by, subject: @batch,
                         version: @batch.version_number, rows: result.rows.size, changes: change_count,
-                        address_changes: address_changes.to_i)
+                        address_changes: address_changes.to_i, moq_alerts: moq_alerts)
       end
 
-      # After commit: the outbox row is durable, so a lost enqueue can be redelivered later.
-      Notifications::Outbox.dispatch(notification) if notification
+      # After commit: the outbox rows are durable, so a lost enqueue can be redelivered later.
+      notifications.each { |notification| Notifications::Outbox.dispatch(notification) }
+      Ageing::DigestBuilder.dispatch(ageing_digest) if ageing_digest
     end
 
     def insert_snapshot_rows(rows)

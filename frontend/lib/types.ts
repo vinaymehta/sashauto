@@ -48,14 +48,19 @@ export interface UploadStats {
   new_row_count: number | null;
   missing_row_count: number | null;
   address_change_count?: number | null;
+  moq_alert_count?: number | null;
 }
 
-export interface NotificationInfo {
+// One email sent for an upload; each kind has its own template.
+export type EmailKind = "quantity_changes" | "address_changes" | "moq_alerts" | "ageing";
+
+export interface EmailInfo {
   id: number;
+  kind: EmailKind;
+  count: number;
   status: "pending" | "sent" | "failed";
   recipients: string[];
   subject: string;
-  change_count: number;
   attempts: number;
   last_error: string | null;
   last_attempt_at: string | null;
@@ -71,7 +76,7 @@ export interface UploadDetail extends UploadSummary {
   problem_columns: Record<string, number>;
   warnings: UploadWarning[];
   stats: UploadStats;
-  notification: NotificationInfo | null;
+  emails: EmailInfo[];
 }
 
 export type Direction = "increase" | "decrease";
@@ -109,6 +114,7 @@ export interface Product {
   id: number;
   part_number: string;
   commodity_type: string | null;
+  moq: string | null;
   source: "upload" | "manual";
   created_at: string;
   updated_at: string;
@@ -250,6 +256,16 @@ export interface OrdersPage {
   source: { uploaded_at: string; original_filename: string; upload_id: number } | null;
   facets: { ship_to_locations: string[]; commodity_types: string[] } | null;
   columns?: { key: string; label: string }[];
+}
+
+export interface MoqAlert {
+  id: number;
+  po_number: string;
+  part_number: string;
+  order_type: OrderType;
+  ship_date: string;
+  qty: string;
+  moq: string;
 }
 
 export interface AddressChange {

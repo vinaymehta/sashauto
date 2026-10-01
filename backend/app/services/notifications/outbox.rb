@@ -3,25 +3,29 @@ module Notifications
   module Outbox
     module_function
 
-    # Must be called inside the upload's commit transaction.
-    # One email per upload covering quantity and Ship To Address changes. A quantity-only email keeps
-    # its original subject.
-    def enqueue_quantity_changes(batch, change_count, address_change_count = 0)
-      Notification.create!(
-        upload_batch: batch, kind: "quantity_changes", status: "pending", recipients: recipients,
-        change_count: change_count, address_change_count: address_change_count,
-        subject: subject(batch, change_count, address_change_count)
-      )
+    SUBJECTS = {
+      "quantity_changes" => "Quantity changes detected", "address_changes" => "Address changes detected",
+      "moq_alerts" => "Below MOQ"
+    }.freeze
+
+    # Must be called inside the upload's commit transaction. One email per kind that has rows, each with
+    # its own template. Returns the created notifications.
+    def enqueue_for_upload(batch, quantity:, address:, moq:)
+      { "quantity_changes" => quantity, "address_changes" => address, "moq_alerts" => moq }.filter_map do |kind, count|
+        next unless count.positive?
+
+        Notification.create!(
+          upload_batch: batch, kind: kind, status: "pending", recipients: recipients, subject: subject(batch, kind, count),
+          change_count: kind == "quantity_changes" ? count : 0,
+          address_change_count: kind == "address_changes" ? count : 0,
+          moq_alert_count: kind == "moq_alerts" ? count : 0
+        )
+      end
     end
 
-    def subject(batch, quantity, address)
-      rows = ->(n) { "#{n} order row#{'s' unless n == 1}" }
-      detail =
-        if address.zero? then "Quantity changes detected: #{rows.(quantity)}"
-        elsif quantity.zero? then "Address changes detected: #{rows.(address)}"
-        else "Order changes detected: #{quantity} quantity, #{address} address"
-        end
-      "#{detail} (upload of #{batch.completed_at.utc.strftime('%-d %b %Y, %H:%M UTC')})"
+    def subject(batch, kind, count)
+      "#{SUBJECTS.fetch(kind)}: #{count} order row#{'s' unless count == 1} " \
+        "(upload of #{batch.completed_at.utc.strftime('%-d %b %Y, %H:%M UTC')})"
     end
 
     # Hands a committed outbox record to Sidekiq. If Redis is unavailable the record stays pending

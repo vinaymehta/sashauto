@@ -16,4 +16,5 @@ class Product < ApplicationRecord
                           if: :will_save_change_to_part_number?
   validates :commodity_type, length: { maximum: 100 }
   validates :source, inclusion: { in: SOURCES }
+  validates :moq, numericality: { greater_than: 0, less_than: 1_000_000_000_000 }, allow_nil: true
 end

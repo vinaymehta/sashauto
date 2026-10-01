@@ -1,21 +1,15 @@
 <div style="max-width:760px;margin:0 auto;background:#ffffff;border:1px solid #e5e5e5;border-radius:8px;padding:24px;">
-  <% if @preview %>
-    <p style="margin:0 0 12px;padding:8px 12px;background:#f5f5f5;border-radius:6px;color:#404040;font-size:13px;">
-      Test preview: rows currently in each age band. Nothing was marked as notified.
-    </p>
-  <% end %>
   <h1 style="font-size:20px;font-weight:600;margin:0 0 4px;color:#171717;">Order ageing</h1>
   <p style="margin:0 0 20px;color:#737373;">
     <%= @digest.row_count %> order row<%= "s" unless @digest.row_count == 1 %>
-    <%= @preview ? "are 30 or more days past their ship date" : "reached 30, 60 or 90 days past their ship date" %>
-    as of <%= @today.strftime("%-d %b %Y") %>.
+    (one per PO Number, Part Number and Type, latest ship date) are 30 or more days past their ship date as of <%= @today.strftime("%-d %b %Y") %>.
   </p>
   <% @bands.each do |threshold, rows| %>
     <% next if rows.empty? %>
     <% bg, ink = AgeingMailer::BAND_COLORS[threshold] %>
     <h2 style="font-size:15px;font-weight:600;margin:20px 0 8px;color:<%= ink %>;">
       <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:<%= ink %>;margin-right:6px;"></span>
-      <%= AgeingMailer::BAND_TITLES[threshold] %> (<%= rows.size %>)
+      <%= AgeingMailer::BAND_TITLES[threshold] %> (<%= @digest.counts[threshold.to_s] || rows.size %>)
     </h2>
     <table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;font-size:13px;">
       <thead>
@@ -43,6 +37,9 @@
         <% end %>
       </tbody>
     </table>
+    <% if (@digest.counts[threshold.to_s] || 0) > rows.size %>
+      <p style="margin:8px 0 0;color:#737373;">Showing the first <%= rows.size %> of <%= @digest.counts[threshold.to_s] %> rows.</p>
+    <% end %>
   <% end %>
   <p style="margin:20px 0 0;"><a href="<%= @url %>" style="color:#171717;">Open the Orders page</a></p>
 </div>

@@ -2,12 +2,11 @@
 
 import { useState, type ReactNode } from "react";
 import type { OrderRow, OrdersPage } from "@/lib/types";
-import { formatCount, formatDate, formatDateTime, formatQty } from "@/lib/format";
+import { formatCount, formatDate, formatQty } from "@/lib/format";
 import { ChevronRightSmallIcon, DownloadIcon } from "@/components/icons";
 import { cell, HistoryPanel } from "@/components/orders/history-row";
 import { RelatedLink } from "@/components/orders/related-popover";
 import { AGE_FILTER, AgeLegend, ageRowProps, todayParam } from "@/components/age";
-import { AgeingEmailMenu } from "@/components/ageing-email-menu";
 import { useApi, useDebounced } from "@/components/use-api";
 import { useListQuery } from "@/components/use-list-query";
 import { Button } from "@/components/ui/button";
@@ -88,24 +87,16 @@ export default function OrdersPage() {
   const COLUMNS = buildColumns(sourceColumns, data?.data ?? []);
 
   const source = data?.source;
-  // Row whose history is open in the side panel; the panel starts level with the list card.
-  const [selected, setSelected] = useState<{ row: OrderRow; top: number } | null>(null);
-  const openHistory = (row: OrderRow, e: React.MouseEvent<HTMLElement>) => {
-    const cardTop = e.currentTarget.closest("section")?.getBoundingClientRect().top ?? 56;
-    setSelected({ row, top: Math.round(Math.max(56, cardTop)) });
-  };
+  // Row whose history is open in the side panel.
+  const [selected, setSelected] = useState<OrderRow | null>(null);
   const [today] = useState(() => new Date());
 
   return (
     <>
       <PageHeader
         title="Orders"
-        description={source
-          ? <>Current rows (latest ship date per PO, Part and Type) from <span className="font-medium text-ink">{source.original_filename}</span>, uploaded {formatDateTime(source.uploaded_at)}. Click a row to open its history.</>
-          : "The latest uploaded order data."}
         actions={source && (
           <div className="flex items-center gap-2">
-            <AgeingEmailMenu />
             <a href={`/api/uploads/${source.upload_id}/download`} download>
               <Button><DownloadIcon size={15} className="text-ink-muted" />Download .xlsx</Button>
             </a>
@@ -146,12 +137,12 @@ export default function OrdersPage() {
               </thead>
               <tbody>
                 {data.data.map((row) => {
-                  const open = selected?.row.id === row.id;
+                  const open = selected?.id === row.id;
                   const tint = ageRowProps(row.ship_date, today);
                   const history = row.history_count ?? 0;
                   return (
                       <tr key={row.id} className={`cursor-pointer ${tint.className} ${open ? "shadow-[inset_3px_0_0_var(--color-accent)]" : ""}`} title={tint.title}
-                          onClick={(e) => openHistory(row, e)} aria-haspopup="dialog" aria-expanded={open}>
+                          onClick={() => setSelected(row)} aria-haspopup="dialog" aria-expanded={open}>
                         <Td className="w-10 pr-0! text-ink-muted">
                           <span className="inline-flex items-center gap-1">
                             <ChevronRightSmallIcon size={14} className={open ? "text-accent" : ""} />
@@ -169,7 +160,7 @@ export default function OrdersPage() {
             <Pagination meta={data.meta} onPage={list.setPage} onPerPage={list.setPerPage} noun="order rows" />
           </div>
         ) : null}
-        {selected && <HistoryPanel key={selected.row.id} row={selected.row} top={selected.top} today={today} onClose={() => setSelected(null)} />}
+        {selected && <HistoryPanel key={selected.id} row={selected} today={today} onClose={() => setSelected(null)} />}
       </Panel>
     </>
   );

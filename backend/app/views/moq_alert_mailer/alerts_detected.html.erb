@@ -1,0 +1,37 @@
+<div style="max-width:760px;margin:0 auto;background:#ffffff;border:1px solid #e5e5e5;border-radius:8px;padding:24px;">
+  <h1 style="font-size:20px;font-weight:600;margin:0 0 4px;color:#171717;">Below MOQ</h1>
+  <p style="margin:0 0 16px;color:#737373;">
+    <%= @batch.original_filename %> · uploaded by <%= @batch.uploaded_by.name %> on <%= @batch.completed_at.utc.strftime("%-d %b %Y, %H:%M UTC") %>
+  </p>
+  <p style="margin:0 0 12px;color:#171717;">
+    <strong><%= @total %></strong> order row<%= "s" unless @total == 1 %> now ha<%= @total == 1 ? "s" : "ve" %> a Qty below the Part Number's MOQ.
+  </p>
+  <table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;font-size:13px;">
+    <thead>
+      <tr style="text-align:left;color:#404040;background:#fafafa;border-bottom:1px solid #e5e5e5;">
+        <th style="padding:8px 10px;font-weight:600;">PO Number</th>
+        <th style="padding:8px 10px;font-weight:600;">Part Number</th>
+        <th style="padding:8px 10px;font-weight:600;">Type</th>
+        <th style="padding:8px 10px;font-weight:600;">Ship Date</th>
+        <th style="padding:8px 10px;font-weight:600;text-align:right;">Qty</th>
+        <th style="padding:8px 10px;font-weight:600;text-align:right;">MOQ</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% @alerts.each do |alert| %>
+        <tr style="border-bottom:1px solid #f5f5f5;">
+          <td style="padding:8px 10px;color:#171717;"><%= alert.po_number %></td>
+          <td style="padding:8px 10px;color:#171717;"><%= alert.part_number %></td>
+          <td style="padding:8px 10px;color:#171717;"><%= alert.order_type %></td>
+          <td style="padding:8px 10px;color:#171717;white-space:nowrap;"><%= alert.ship_date.strftime("%-d %b %Y") %></td>
+          <td style="padding:8px 10px;color:#a8321f;text-align:right;font-weight:600;"><%= format_qty(alert.qty) %></td>
+          <td style="padding:8px 10px;color:#171717;text-align:right;"><%= format_qty(alert.moq) %></td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+  <% if @total > @alerts.size %>
+    <p style="margin:12px 0 0;color:#737373;">Showing the first <%= @alerts.size %> of <%= @total %> MOQ alerts.</p>
+  <% end %>
+  <p style="margin:20px 0 0;"><a href="<%= @url %>" style="color:#171717;">View MOQ alerts in the dashboard</a></p>
+</div>

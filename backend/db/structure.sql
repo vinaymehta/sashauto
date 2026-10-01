@@ -226,7 +226,7 @@ CREATE TABLE public.ageing_digests (
     sent_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT ageing_digests_mode_valid CHECK (((mode)::text = ANY ((ARRAY['scheduled'::character varying, 'manual'::character varying, 'preview'::character varying, 'baseline'::character varying])::text[]))),
+    CONSTRAINT ageing_digests_mode_valid CHECK (((mode)::text = ANY ((ARRAY['scheduled'::character varying, 'manual'::character varying, 'preview'::character varying, 'baseline'::character varying, 'upload'::character varying])::text[]))),
     CONSTRAINT ageing_digests_status_valid CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'sent'::character varying, 'failed'::character varying, 'skipped'::character varying])::text[])))
 );
 
@@ -333,6 +333,46 @@ ALTER SEQUENCE public.audit_logs_id_seq OWNED BY public.audit_logs.id;
 
 
 --
+-- Name: moq_alerts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.moq_alerts (
+    id bigint NOT NULL,
+    upload_batch_id bigint NOT NULL,
+    order_row_id bigint NOT NULL,
+    product_id bigint NOT NULL,
+    group_key character varying(64) NOT NULL,
+    po_number character varying NOT NULL,
+    part_number character varying NOT NULL,
+    order_type character varying NOT NULL,
+    ship_date date NOT NULL,
+    qty numeric(15,3) NOT NULL,
+    moq numeric(15,3) NOT NULL,
+    new_alert boolean NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: moq_alerts_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.moq_alerts_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: moq_alerts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.moq_alerts_id_seq OWNED BY public.moq_alerts.id;
+
+
+--
 -- Name: notifications; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -352,7 +392,8 @@ CREATE TABLE public.notifications (
     updated_at timestamp(6) without time zone NOT NULL,
     provider_message_id character varying,
     address_change_count integer DEFAULT 0 NOT NULL,
-    CONSTRAINT notifications_kind_valid CHECK (((kind)::text = 'quantity_changes'::text)),
+    moq_alert_count integer DEFAULT 0 NOT NULL,
+    CONSTRAINT notifications_kind_valid CHECK (((kind)::text = ANY ((ARRAY['quantity_changes'::character varying, 'address_changes'::character varying, 'moq_alerts'::character varying])::text[]))),
     CONSTRAINT notifications_status_valid CHECK (((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('sent'::character varying)::text, ('failed'::character varying)::text])))
 );
 
@@ -552,6 +593,8 @@ CREATE TABLE public.products (
     first_seen_upload_batch_id bigint,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
+    moq numeric(15,3),
+    CONSTRAINT products_moq_positive CHECK (((moq IS NULL) OR (moq > (0)::numeric))),
     CONSTRAINT products_source_valid CHECK (((source)::text = ANY (ARRAY[('upload'::character varying)::text, ('manual'::character varying)::text])))
 );
 
@@ -667,6 +710,7 @@ CREATE TABLE public.upload_batches (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     address_change_count integer,
+    moq_alert_count integer,
     CONSTRAINT upload_batches_status_valid CHECK (((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('processing'::character varying)::text, ('completed'::character varying)::text, ('failed'::character varying)::text]))),
     CONSTRAINT upload_batches_version_iff_completed CHECK ((((status)::text = 'completed'::text) = (version_number IS NOT NULL)))
 );
@@ -776,6 +820,13 @@ ALTER TABLE ONLY public.ageing_notifications ALTER COLUMN id SET DEFAULT nextval
 --
 
 ALTER TABLE ONLY public.audit_logs ALTER COLUMN id SET DEFAULT nextval('public.audit_logs_id_seq'::regclass);
+
+
+--
+-- Name: moq_alerts id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.moq_alerts ALTER COLUMN id SET DEFAULT nextval('public.moq_alerts_id_seq'::regclass);
 
 
 --
@@ -899,6 +950,14 @@ ALTER TABLE ONLY public.audit_logs
 
 
 --
+-- Name: moq_alerts moq_alerts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.moq_alerts
+    ADD CONSTRAINT moq_alerts_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: notifications notifications_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -999,10 +1058,10 @@ CREATE UNIQUE INDEX index_active_storage_variant_records_uniqueness ON public.ac
 
 
 --
--- Name: index_address_changes_on_batch_and_group; Type: INDEX; Schema: public; Owner: -
+-- Name: index_address_changes_on_batch_and_row; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX index_address_changes_on_batch_and_group ON public.address_changes USING btree (upload_batch_id, group_key);
+CREATE UNIQUE INDEX index_address_changes_on_batch_and_row ON public.address_changes USING btree (upload_batch_id, order_row_id);
 
 
 --
@@ -1097,6 +1156,34 @@ CREATE INDEX index_audit_logs_on_user_id ON public.audit_logs USING btree (user_
 
 
 --
+-- Name: index_moq_alerts_on_batch_and_group; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_moq_alerts_on_batch_and_group ON public.moq_alerts USING btree (upload_batch_id, group_key);
+
+
+--
+-- Name: index_moq_alerts_on_batch_and_new; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_moq_alerts_on_batch_and_new ON public.moq_alerts USING btree (upload_batch_id, new_alert);
+
+
+--
+-- Name: index_moq_alerts_on_order_row_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_moq_alerts_on_order_row_id ON public.moq_alerts USING btree (order_row_id);
+
+
+--
+-- Name: index_moq_alerts_on_product_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_moq_alerts_on_product_id ON public.moq_alerts USING btree (product_id);
+
+
+--
 -- Name: index_notifications_on_status; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1104,10 +1191,10 @@ CREATE INDEX index_notifications_on_status ON public.notifications USING btree (
 
 
 --
--- Name: index_notifications_on_upload_batch_id; Type: INDEX; Schema: public; Owner: -
+-- Name: index_notifications_on_upload_batch_id_and_kind; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX index_notifications_on_upload_batch_id ON public.notifications USING btree (upload_batch_id);
+CREATE UNIQUE INDEX index_notifications_on_upload_batch_id_and_kind ON public.notifications USING btree (upload_batch_id, kind);
 
 
 --
@@ -1342,6 +1429,13 @@ CREATE TRIGGER audit_logs_append_only BEFORE DELETE OR UPDATE ON public.audit_lo
 
 
 --
+-- Name: moq_alerts moq_alerts_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER moq_alerts_append_only BEFORE DELETE OR UPDATE ON public.moq_alerts FOR EACH ROW EXECUTE FUNCTION public.reject_history_mutation();
+
+
+--
 -- Name: order_rows order_rows_append_only; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -1450,6 +1544,14 @@ ALTER TABLE ONLY public.ageing_notifications
 
 
 --
+-- Name: moq_alerts fk_rails_5735834603; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.moq_alerts
+    ADD CONSTRAINT fk_rails_5735834603 FOREIGN KEY (order_row_id) REFERENCES public.order_rows(id);
+
+
+--
 -- Name: quantity_changes fk_rails_6db61947e6; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1490,6 +1592,14 @@ ALTER TABLE ONLY public.products
 
 
 --
+-- Name: moq_alerts fk_rails_b49d84f22c; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.moq_alerts
+    ADD CONSTRAINT fk_rails_b49d84f22c FOREIGN KEY (upload_batch_id) REFERENCES public.upload_batches(id);
+
+
+--
 -- Name: order_snapshot_rows fk_rails_b4e1f58c36; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1527,6 +1637,14 @@ ALTER TABLE ONLY public.upload_batches
 
 ALTER TABLE ONLY public.active_storage_attachments
     ADD CONSTRAINT fk_rails_c3b3935057 FOREIGN KEY (blob_id) REFERENCES public.active_storage_blobs(id);
+
+
+--
+-- Name: moq_alerts fk_rails_d1ebb4b42e; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.moq_alerts
+    ADD CONSTRAINT fk_rails_d1ebb4b42e FOREIGN KEY (product_id) REFERENCES public.products(id);
 
 
 --
@@ -1600,6 +1718,9 @@ ALTER TABLE ONLY public.address_changes
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261001140001'),
+('20261001120001'),
+('20261001090001'),
 ('20260930170001'),
 ('20260930150001'),
 ('20260930120001'),

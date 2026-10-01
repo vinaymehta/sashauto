@@ -21,11 +21,16 @@ module Activity
       { items: items.map(&:to_h), unread_count: items.count { |item| seen.nil? || item.at > seen } }
     end
 
+    EMAIL_TITLES = {
+      "quantity_changes" => "Quantity change", "address_changes" => "Address change",
+      "moq_alerts" => "MOQ alert", "ageing" => "Ageing"
+    }.freeze
+
     private
 
     def upload_items
       UploadBatch.where(status: %w[completed failed])
-                 .includes(:uploaded_by, :notification)
+                 .includes(:uploaded_by, :notifications, :ageing_digests)
                  .order(Arel.sql("COALESCE(completed_at, failed_at) DESC"))
                  .limit(LIMIT)
                  .flat_map { |batch| items_for(batch) }
@@ -40,7 +45,7 @@ module Activity
                           description: "#{batch.original_filename} · #{by}", at: batch.failed_at, href: href) ]
       end
 
-      changes = batch.previous_upload_batch_id ? batch.increase_count + batch.decrease_count + batch.address_change_count.to_i : nil
+      changes = batch.previous_upload_batch_id ? batch.increase_count + batch.decrease_count + batch.address_change_count.to_i + batch.moq_alert_count.to_i : nil
       title =
         if changes.nil? then "First upload stored"
         elsif changes.positive? then "#{changes} order change#{'s' unless changes == 1} detected"
@@ -50,11 +55,11 @@ module Activity
       kind = changes.nil? ? "baseline" : (changes.positive? ? "changes" : "no_changes")
       items = [ Item.new(id: "upload-#{batch.id}", kind: kind, title: title, description: description, at: batch.completed_at, href: href) ]
 
-      notification = batch.notification
-      if notification&.status == "failed"
-        items << Item.new(id: "email-#{notification.id}", kind: "email_failed", title: "Change alert email failed",
-                          description: "Attempt #{notification.attempts} · retrying automatically",
-                          at: notification.last_attempt_at || batch.completed_at, href: href)
+      Serializers.upload_emails(batch).select { |email| email[:status] == "failed" }.each do |email|
+        items << Item.new(id: "email-#{email[:kind]}-#{email[:id]}", kind: "email_failed",
+                          title: "#{EMAIL_TITLES.fetch(email[:kind])} email failed",
+                          description: "Attempt #{email[:attempts]} · retrying automatically",
+                          at: email[:last_attempt_at] || batch.completed_at, href: href)
       end
       items
     end

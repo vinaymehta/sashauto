@@ -98,6 +98,34 @@ namespace :orders do
   end
 end
 
+namespace :orders do
+  desc "Fill the display-only order columns of existing uploads from their stored original files (safe to re-run)"
+  task backfill_details: :environment do
+    fields = ExcelImport::OrderRowParser::DETAIL_TYPES.keys
+    UploadBatch.completed.order(:version_number).find_each do |batch|
+      pending = batch.order_snapshot_rows.where(details_loaded: false)
+      next puts("#{batch.id}: already complete") unless pending.exists?
+
+      result = batch.file.open do |file|
+        abort "Checksum mismatch for upload #{batch.id}" unless Digest::SHA256.file(file.path).hexdigest == batch.file_sha256
+        ExcelImport::OrderRowParser.new(ExcelImport::WorkbookReader.new(file.path)).call
+      end
+      by_key = result.rows.index_by { |row| row[:business_key_hash] }
+
+      updated = 0
+      OrderSnapshotRow.transaction do
+        pending.find_each do |row|
+          source = by_key[row.business_key_hash] or next
+          OrderSnapshotRow.where(id: row.id, details_loaded: false)
+                          .update_all(source.slice(*fields).merge(details_loaded: true))
+          updated += 1
+        end
+      end
+      puts "#{batch.id}: filled #{updated} rows"
+    end
+  end
+end
+
 namespace :ageing do
   desc "Send the order ageing email now. MODE=manual (new 30/60/90-day rows, default) or MODE=preview (test, marks nothing)"
   task digest: :environment do

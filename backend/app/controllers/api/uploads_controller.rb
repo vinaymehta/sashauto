@@ -33,7 +33,7 @@ module Api
     end
 
     def show
-      batch = UploadBatch.includes(:uploaded_by, :previous_upload_batch, :notification, file_attachment: :blob).find(params[:id])
+      batch = UploadBatch.includes(:uploaded_by, :previous_upload_batch, :notifications, :ageing_digests, file_attachment: :blob).find(params[:id])
       render json: { data: Serializers.upload_batch(batch, detail: true) }
     end
 
@@ -103,6 +103,17 @@ module Api
       render json: { data: changes.map { |c| Serializers.address_change(c) }, meta: meta }
     end
 
+    # MOQ alerts for this upload (current rows with Qty below the Part Number's MOQ), paged on the server.
+    def moq_alerts
+      scope = UploadBatch.find(params[:id]).moq_alerts.order(:po_number, :part_number, :order_type, :id)
+      if params[:q].present?
+        term = "%#{MoqAlert.sanitize_sql_like(params[:q].to_s.strip.first(100))}%"
+        scope = scope.where("po_number ILIKE :t OR part_number ILIKE :t", t: term)
+      end
+      alerts, meta = paginate(scope)
+      render json: { data: alerts.map { |a| Serializers.moq_alert(a) }, meta: meta }
+    end
+
     # Row-level problems of a rejected upload, paged on the server. Optional `column` filter
     # ("_none" selects problems not tied to one column, such as duplicate rows).
     def problems
@@ -122,14 +133,17 @@ module Api
                 type: Uploads::Intake::XLSX_CONTENT_TYPE, disposition: "attachment"
     end
 
+    # Re-queues every unsent email of this upload (change alerts and the ageing digest).
     def retry_notification
-      notification = UploadBatch.find(params[:id]).notification
-      return render_error("This upload has no notification.", :not_found) if notification.nil?
-      return render_error("The notification was already sent.", :conflict) if notification.sent?
+      batch = UploadBatch.find(params[:id])
+      notifications = batch.notifications.undelivered.to_a
+      digests = batch.ageing_digests.where(status: %w[pending failed]).to_a
+      return render_error("This upload has no unsent email.", :conflict) if notifications.empty? && digests.empty?
 
-      Notifications::DeliverJob.perform_later(notification.id)
-      audit("notification.retry_requested", subject: notification)
-      render json: { data: Serializers.notification(notification) }, status: :accepted
+      notifications.each { |n| Notifications::DeliverJob.perform_later(n.id) }
+      digests.each { |d| Ageing::DeliverDigestJob.perform_later(d.id) }
+      audit("notification.retry_requested", subject: batch, notifications: notifications.map(&:id), ageing_digests: digests.map(&:id))
+      render json: { data: Serializers.upload_emails(batch.reload) }, status: :accepted
     end
   end
 end

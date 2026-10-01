@@ -31,21 +31,34 @@ module Serializers
       problem_columns: batch.validation_errors.group_by { |e| e["column"] || "_none" }.transform_values(&:size),
       stats: batch.slice(:source_row_count, :row_count, :duplicate_rows_merged, :unknown_quantity_count, :compared_count,
                          :increase_count, :decrease_count, :unchanged_count, :new_row_count, :missing_row_count,
-                         :address_change_count),
-      notification: batch.notification && notification(batch.notification)
+                         :address_change_count, :moq_alert_count),
+      emails: upload_emails(batch)
     )
   end
 
-  def notification(notification)
-    notification.slice(:id, :status, :recipients, :subject, :change_count, :address_change_count, :attempts, :last_error,
-                       :last_attempt_at, :sent_at,
-                       :provider_message_id)
+  EMAIL_ORDER = %w[quantity_changes address_changes moq_alerts ageing].freeze
+
+  # Every email sent for an upload: one per alert kind, plus the ageing digest (the silent baseline
+  # run is not an email).
+  def upload_emails(batch)
+    digests = batch.ageing_digests.reject { |d| d.status == "skipped" }
+    (batch.notifications.map { |n| email(n, n.kind, n.count) } + digests.map { |d| email(d, "ageing", d.row_count) })
+      .sort_by { |e| EMAIL_ORDER.index(e[:kind]) || EMAIL_ORDER.size }
+  end
+
+  def email(record, kind, count)
+    record.slice(:id, :status, :recipients, :subject, :attempts, :last_error, :last_attempt_at, :sent_at, :provider_message_id)
+          .merge(kind: kind, count: count)
   end
 
   def quantity_change(change)
     change.slice(:id, :po_number, :po_line_number, :part_number, :commodity_type, :order_type, :ship_date,
                  :ship_to_location, :direction)
           .merge(old_qty: qty(change.old_qty), new_qty: qty(change.new_qty), difference: qty(change.difference))
+  end
+
+  def moq_alert(alert)
+    alert.slice(:id, :po_number, :part_number, :order_type, :ship_date).merge(qty: qty(alert.qty), moq: qty(alert.moq))
   end
 
   def address_change(change)
@@ -78,6 +91,7 @@ module Serializers
 
   def product(product, open_conflicts: [])
     product.slice(:id, :part_number, :commodity_type, :source, :created_at, :updated_at)
+           .merge(moq: qty(product.moq))
            .merge(open_conflicts: open_conflicts.map { |c| product_conflict(c) })
   end
 

@@ -103,8 +103,8 @@ export default function DashboardPage() {
 
   const attention = [
     totals.open_conflicts > 0 && { text: `${totals.open_conflicts} Commodity Type conflict${totals.open_conflicts === 1 ? "" : "s"} to review`, href: "/products?conflicts=open" },
-    totals.emails_failed > 0 && { text: `${totals.emails_failed} email${totals.emails_failed === 1 ? "" : "s"} failed to send`, href: "/uploads" },
-    totals.in_progress > 0 && { text: `${totals.in_progress} upload${totals.in_progress === 1 ? " is" : "s are"} processing`, href: "/uploads" },
+    totals.emails_failed > 0 && { text: `${totals.emails_failed} email${totals.emails_failed === 1 ? "" : "s"} failed to send`, href: "/detect" },
+    totals.in_progress > 0 && { text: `${totals.in_progress} upload${totals.in_progress === 1 ? " is" : "s are"} processing`, href: "/detect" },
   ].filter(Boolean) as { text: string; href: string }[];
 
   const latestChanges = (latest.increase_count ?? 0) + (latest.decrease_count ?? 0);
@@ -197,7 +197,7 @@ export default function DashboardPage() {
             )}
           </Card>
 
-          <Card title="Recent uploads" action={<Link href="/uploads" className="text-sm text-ink-muted hover:text-ink">Upload history →</Link>}>
+          <Card title="Recent uploads">
             <ul className="-mx-6 divide-y divide-neutral-100 border-t border-line">
               {recent.map((u) => (
                 <li key={u.id}>

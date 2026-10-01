@@ -1,7 +1,7 @@
 module Api
   class DashboardController < ApplicationController
     def show
-      latest = UploadBatch.includes(:uploaded_by, :previous_upload_batch, :notification, file_attachment: :blob)
+      latest = UploadBatch.includes(:uploaded_by, :previous_upload_batch, :notifications, :ageing_digests, file_attachment: :blob)
                           .latest_completed_first.first
       in_progress = UploadBatch.where(status: %w[pending processing]).count
       render json: {

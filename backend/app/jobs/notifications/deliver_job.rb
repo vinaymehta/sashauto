@@ -25,7 +25,7 @@ module Notifications
 
         begin
           raise NoRecipients, "No admin recipient configured (set ADMIN_NOTIFICATION_EMAILS or create an Admin user)" if notification.recipients.empty?
-          message = QuantityChangeMailer.with(notification: notification).changes_detected.deliver_now
+          message = notification.message.deliver_now
         rescue StandardError => e
           error = e
         end

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { BoxIcon, CloseIcon, DashboardIcon, HistoryIcon, MenuIcon, TableIcon, UploadIcon } from "./icons";
+import { BoxIcon, CloseIcon, DashboardIcon, MenuIcon, TableIcon, UploadIcon } from "./icons";
 import { NotificationBell } from "./notification-bell";
 import { useSession } from "./session";
 import { ToastProvider } from "./toast";
@@ -14,8 +14,7 @@ import { UserMenu } from "./user-menu";
 const NAV = [
   { href: "/", label: "Dashboard", icon: DashboardIcon, match: (p: string) => p === "/" },
   { href: "/orders", label: "Orders", icon: TableIcon, match: (p: string) => p.startsWith("/orders") },
-  { href: "/detect", label: "Upload / Detection", icon: UploadIcon, match: (p: string) => p.startsWith("/detect") },
-  { href: "/uploads", label: "Upload History", icon: HistoryIcon, match: (p: string) => p.startsWith("/uploads") },
+  { href: "/detect", label: "Upload / Detection", icon: UploadIcon, match: (p: string) => p.startsWith("/detect") || p.startsWith("/uploads") },
   { href: "/products", label: "Products", icon: BoxIcon, match: (p: string) => p.startsWith("/products") },
 ];
 

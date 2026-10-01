@@ -13,6 +13,7 @@ Rails.application.routes.draw do
       member do
         get :changes
         get :address_changes
+        get :moq_alerts
         get :problems
         get :rows
         get :download
@@ -27,7 +28,6 @@ Rails.application.routes.draw do
         get :by_part
       end
     end
-    resources :ageing_digests, only: :create
     resources :products, only: %i[index create update]
     resources :product_conflicts, only: [] do
       post :resolve, on: :member

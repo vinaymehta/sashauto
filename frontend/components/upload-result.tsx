@@ -2,12 +2,13 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { api, ApiError } from "@/lib/api";
-import type { NotificationInfo, Paginated, UploadDetail, ValidationError } from "@/lib/types";
+import type { EmailInfo, EmailKind, Paginated, UploadDetail, ValidationError } from "@/lib/types";
 import { formatDateTime } from "@/lib/format";
 import { ChangesTable } from "./changes-table";
 import { AddressChangesTable } from "./address-changes-table";
+import { MoqAlertsTable } from "./moq-alerts-table";
 import { RowsTable } from "./rows-table";
-import { ArrowUpDownIcon, FileIcon, MapPinIcon } from "./icons";
+import { AlertIcon, ArrowUpDownIcon, FileIcon, MapPinIcon } from "./icons";
 import { Tabs } from "./ui/tabs";
 import { useApi } from "./use-api";
 import { useListQuery } from "./use-list-query";
@@ -35,10 +36,10 @@ export function UploadResult({ upload, onChanged }: { upload: UploadDetail; onCh
 
   if (upload.status === "failed") return <FailedUpload upload={upload} />;
 
-  const changes = (upload.stats.increase_count ?? 0) + (upload.stats.decrease_count ?? 0) + (upload.stats.address_change_count ?? 0);
   const isFirst = upload.previous_version === null;
-  const status = isFirst ? undefined : (
-    <NotificationStatus uploadId={upload.id} notification={upload.notification} changes={changes} onChanged={onChanged} />
+  // A first upload has no comparison, but can still send MOQ alert and ageing emails.
+  const status = isFirst && upload.emails.length === 0 ? undefined : (
+    <EmailStatus uploadId={upload.id} emails={upload.emails} onChanged={onChanged} />
   );
 
   return <VersionData upload={upload} status={status} />;
@@ -112,7 +113,8 @@ function FailedUpload({ upload }: { upload: UploadDetail }) {
 function VersionData({ upload, status }: { upload: UploadDetail; status?: ReactNode }) {
   const isFirst = upload.previous_version === null;
   const changes = (upload.stats.increase_count ?? 0) + (upload.stats.decrease_count ?? 0);
-  const [tab, setTab] = useState<"changes" | "addresses" | "rows">(isFirst ? "rows" : "changes");
+  const moqAlerts = upload.stats.moq_alert_count ?? 0;
+  const [tab, setTab] = useState<"changes" | "addresses" | "moq" | "rows">(isFirst ? (moqAlerts > 0 ? "moq" : "rows") : "changes");
 
   return (
     <>
@@ -130,6 +132,9 @@ function VersionData({ upload, status }: { upload: UploadDetail; status?: ReactN
                 { key: "changes" as const, label: "Quantity changes", icon: <ArrowUpDownIcon size={14} />, count: changes },
                 { key: "addresses" as const, label: "Address changes", icon: <MapPinIcon size={14} />, count: upload.stats.address_change_count ?? 0 },
               ]),
+              ...(isFirst && moqAlerts === 0 ? [] : [
+                { key: "moq" as const, label: "MOQ alerts", icon: <AlertIcon size={14} />, count: moqAlerts },
+              ]),
               { key: "rows" as const, label: "Uploaded rows", icon: <FileIcon size={14} />, count: upload.stats.row_count },
             ]}
           />
@@ -143,6 +148,8 @@ function VersionData({ upload, status }: { upload: UploadDetail; status?: ReactN
             />
           ) : tab === "addresses" ? (
             <AddressChangesTable uploadId={upload.id} />
+          ) : tab === "moq" ? (
+            <MoqAlertsTable uploadId={upload.id} />
           ) : (
             <RowsTable uploadId={upload.id} />
           )}
@@ -152,46 +159,53 @@ function VersionData({ upload, status }: { upload: UploadDetail; status?: ReactN
   );
 }
 
-const NOTIFICATION_POLL_MS = { pending: 3000, failed: 15000 } as const;
+const EMAIL_POLL_MS = { pending: 3000, failed: 15000 } as const;
+const EMAIL_LABELS: Record<EmailKind, string> = {
+  quantity_changes: "Quantity", address_changes: "Address", moq_alerts: "MOQ", ageing: "Ageing",
+};
 
-// Shows the admin email's delivery status and keeps it current: delivery happens in the background
-// a few seconds after the upload completes, so a queued/failed email is re-checked until it is sent.
-function NotificationStatus({ uploadId, notification: initial, changes, onChanged }: {
-  uploadId: number; notification: NotificationInfo | null; changes: number; onChanged?: () => void;
+// Shows the delivery status of each email sent for this upload (one per kind: quantity changes, address
+// changes, MOQ alerts, ageing) and keeps it current: delivery happens in the background a few seconds
+// after the upload completes, so queued/failed emails are re-checked until they are sent.
+function EmailStatus({ uploadId, emails: initial, onChanged }: {
+  uploadId: number; emails: EmailInfo[]; onChanged?: () => void;
 }) {
   const notify = useToast();
-  const [notification, setNotification] = useState(initial);
+  const [emails, setEmails] = useState(initial);
   const [source, setSource] = useState(initial);
   const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   if (initial !== source) {
     setSource(initial);
-    setNotification(initial);
+    setEmails(initial);
   }
 
-  const status = notification?.status;
+  const waiting = emails.some((e) => e.status === "pending") ? "pending" : emails.some((e) => e.status === "failed") ? "failed" : null;
   useEffect(() => {
-    if (status !== "pending" && status !== "failed") return;
+    if (!waiting) return;
     let active = true;
     const timer = setTimeout(async () => {
       try {
         const res = await api.get<{ data: UploadDetail }>(`/api/uploads/${uploadId}`);
-        const next = res.data.notification;
-        if (!active || !next) return;
-        if (next.status === "sent") notify(`Email sent to ${next.recipients.join(", ")}.`);
-        setNotification(next);
+        if (!active) return;
+        const next = res.data.emails;
+        const newlySent = next.filter((e) => e.status === "sent" && emails.find((o) => o.kind === e.kind)?.status !== "sent");
+        if (newlySent.length > 0) {
+          notify(`${newlySent.map((e) => EMAIL_LABELS[e.kind]).join(", ")} email${newlySent.length === 1 ? "" : "s"} sent to ${newlySent[0]!.recipients.join(", ")}.`);
+        }
+        setEmails(next);
       } catch {
-        if (active) setNotification((n) => (n ? { ...n } : n)); // try again on the next tick
+        if (active) setEmails((list) => [...list]); // try again on the next tick
       }
-    }, NOTIFICATION_POLL_MS[status]);
+    }, EMAIL_POLL_MS[waiting]);
     return () => {
       active = false;
       clearTimeout(timer);
     };
-  }, [status, notification, uploadId, notify]);
+  }, [waiting, emails, uploadId, notify]);
 
-  if (changes === 0 || !notification) {
+  if (emails.length === 0) {
     return <span className="text-sm text-ink-muted">No changes · no email sent</span>;
   }
 
@@ -199,9 +213,9 @@ function NotificationStatus({ uploadId, notification: initial, changes, onChange
     setRetrying(true);
     setError(null);
     try {
-      await api.post(`/api/uploads/${uploadId}/retry_notification`);
+      const res = await api.post<{ data: EmailInfo[] }>(`/api/uploads/${uploadId}/retry_notification`);
       notify("Email delivery queued again.");
-      setNotification((n) => (n ? { ...n, status: "pending" } : n));
+      setEmails(res.data.map((e) => (e.status === "failed" ? { ...e, status: "pending" } : e)));
       onChanged?.();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not retry.");
@@ -210,28 +224,30 @@ function NotificationStatus({ uploadId, notification: initial, changes, onChange
     }
   }
 
-  const to = notification.recipients.join(", ") || "admin";
-
   return (
-    <div className="flex animate-fade-in flex-wrap items-center justify-end gap-x-2.5 gap-y-1 text-sm">
-      {notification.status === "sent" && <Badge tone="up">Email sent</Badge>}
-      {notification.status === "pending" && (
-        <span className="inline-flex items-center gap-2"><Spinner className="h-3.5 w-3.5" /><Badge tone="warn">Sending email</Badge></span>
-      )}
-      {notification.status === "failed" && <Badge tone="down">Email failed</Badge>}
-      <span className="text-ink-muted">
-        {notification.status === "sent"
-          ? `to ${to} · ${formatDateTime(notification.sent_at)}`
-          : notification.status === "failed"
-            ? <span title={notification.last_error ?? undefined}>Attempt {notification.attempts} failed · retrying automatically</span>
-            : `to ${to}…`}
-      </span>
-      {notification.status === "failed" && (
+    <div className="flex animate-fade-in flex-wrap items-center justify-end gap-x-3 gap-y-1 text-sm">
+      {emails.map((e) => {
+        const to = e.recipients.join(", ") || "admin";
+        const title = e.status === "sent"
+          ? `${e.subject}\nSent to ${to} · ${formatDateTime(e.sent_at)}`
+          : e.status === "failed"
+            ? `${e.subject}\nAttempt ${e.attempts} failed · retrying automatically${e.last_error ? `\n${e.last_error}` : ""}`
+            : `${e.subject}\nSending to ${to}…`;
+        return (
+          <span key={`${e.kind}-${e.id}`} title={title} className="inline-flex items-center gap-1.5">
+            <span className="text-ink-muted">{EMAIL_LABELS[e.kind]}</span>
+            {e.status === "sent" && <Badge tone="up">Sent</Badge>}
+            {e.status === "pending" && <><Spinner className="h-3.5 w-3.5" /><Badge tone="warn">Sending</Badge></>}
+            {e.status === "failed" && <Badge tone="down">Failed</Badge>}
+          </span>
+        );
+      })}
+      {emails.some((e) => e.status === "failed") && (
         <Button size="sm" onClick={retry} disabled={retrying}>
           {retrying ? "Retrying…" : "Retry now"}
         </Button>
       )}
-      {error && <span className="w-full text-down">{error}</span>}
+      {error && <span className="w-full text-right text-down">{error}</span>}
     </div>
   );
 }

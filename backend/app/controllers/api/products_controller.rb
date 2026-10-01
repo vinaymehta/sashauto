@@ -2,8 +2,10 @@ module Api
   class ProductsController < ApplicationController
     SORTS = {
       "part_number" => "products.part_number", "commodity_type" => "products.commodity_type",
-      "source" => "products.source", "updated_at" => "products.updated_at"
+      "source" => "products.source", "moq" => "products.moq", "updated_at" => "products.updated_at"
     }.freeze
+
+    before_action -> { require_role(:admin) }, only: :update
 
     def index
       scope = Product.all
@@ -34,12 +36,12 @@ module Api
       render_error "A product with this Part Number already exists.", :unprocessable_content
     end
 
-    # Part Number is the product identity and cannot be edited; only Commodity Type can.
+    # Only the MOQ can be edited (admins). Blank clears it. Used for MOQ alerts on the next upload.
     def update
       product = Product.find(params[:id])
-      before = product.commodity_type
-      if product.update(commodity_type: params[:commodity_type])
-        audit("product.updated", subject: product, commodity_type_before: before, commodity_type_after: product.commodity_type)
+      before = product.moq
+      if product.update(moq: params[:moq].presence)
+        audit("product.moq_updated", subject: product, moq_before: before&.to_s, moq_after: product.moq&.to_s)
         render json: { data: Serializers.product(product, open_conflicts: product.product_conflicts.open.includes(:upload_batch)) }
       else
         render_validation_errors(product)

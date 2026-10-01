@@ -1,31 +1,25 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import type { RelatedItem } from "@/lib/types";
 import { BoxIcon, FileIcon } from "../icons";
 import { useApi } from "../use-api";
 import { Spinner } from "../ui/feedback";
 import { Sheet } from "../ui/sheet";
 
-const NAVBAR_HEIGHT = 56;
-
 // Clickable PO Number / Part Number. Opens the right-hand side panel listing the related Part Numbers
 // (for a PO) or PO Numbers (for a Part), fetched from the server for the latest upload.
 export function RelatedLink({ kind, value }: { kind: "po" | "part"; value: string }) {
-  const trigger = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
-  const [top, setTop] = useState(NAVBAR_HEIGHT);
 
   function openPanel(e: React.MouseEvent) {
-    e.stopPropagation(); // do not expand/collapse the row
-    const cardTop = trigger.current?.closest("section")?.getBoundingClientRect().top ?? NAVBAR_HEIGHT;
-    setTop(Math.round(Math.max(NAVBAR_HEIGHT, cardTop)));
+    e.stopPropagation(); // do not open the row's history
     setOpen(true);
   }
 
   return (
     <>
-      <button ref={trigger} type="button" onClick={openPanel}
+      <button type="button" onClick={openPanel}
               className="font-medium text-ink underline decoration-neutral-300 underline-offset-2 transition-colors hover:text-accent hover:decoration-accent">
         {value}
       </button>
@@ -33,7 +27,6 @@ export function RelatedLink({ kind, value }: { kind: "po" | "part"; value: strin
         <span onClick={(e) => e.stopPropagation()}>
           <Sheet
             open={open}
-            top={top}
             onClose={() => setOpen(false)}
             title={kind === "po" ? `PO ${value}` : `Part ${value}`}
             description={kind === "po" ? "Part Numbers on this PO in the current order data." : "PO Numbers that include this part in the current order data."}
