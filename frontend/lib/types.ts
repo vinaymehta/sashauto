@@ -47,6 +47,7 @@ export interface UploadStats {
   unchanged_count: number | null;
   new_row_count: number | null;
   missing_row_count: number | null;
+  address_change_count?: number | null;
 }
 
 export interface NotificationInfo {
@@ -226,6 +227,21 @@ export interface OrderRow {
   last_released_date: string | null;
   last_updated_date: string | null;
   quantity_source: QuantitySource;
+  history_count?: number;
+  source_row_number?: number;
+  source_data?: Record<string, string | number | null>;
+}
+
+export interface OrderHistory {
+  data: OrderRow[];
+  headers: string[];
+  group: { po_number: string; part_number: string; order_type: OrderType };
+}
+
+export interface RelatedItem {
+  value: string;
+  types: OrderType[];
+  rows: number;
 }
 
 export interface OrdersPage {
@@ -233,4 +249,15 @@ export interface OrdersPage {
   meta: PageMeta & { sort?: string; direction?: "asc" | "desc" };
   source: { uploaded_at: string; original_filename: string; upload_id: number } | null;
   facets: { ship_to_locations: string[]; commodity_types: string[] } | null;
+  columns?: { key: string; label: string }[];
+}
+
+export interface AddressChange {
+  id: number;
+  po_number: string;
+  part_number: string;
+  order_type: OrderType;
+  ship_date: string;
+  old_address: string | null;
+  new_address: string | null;
 }

@@ -40,10 +40,10 @@ module Activity
                           description: "#{batch.original_filename} · #{by}", at: batch.failed_at, href: href) ]
       end
 
-      changes = batch.previous_upload_batch_id ? batch.increase_count + batch.decrease_count : nil
+      changes = batch.previous_upload_batch_id ? batch.increase_count + batch.decrease_count + batch.address_change_count.to_i : nil
       title =
         if changes.nil? then "First upload stored"
-        elsif changes.positive? then "#{changes} quantity change#{'s' unless changes == 1} detected"
+        elsif changes.positive? then "#{changes} order change#{'s' unless changes == 1} detected"
         else "Upload processed: no quantity changes"
         end
       description = changes.to_i.positive? ? "#{batch.increase_count} up · #{batch.decrease_count} down · #{by}" : "#{batch.original_filename} · #{by}"

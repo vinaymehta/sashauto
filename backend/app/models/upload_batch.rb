@@ -5,7 +5,9 @@ class UploadBatch < ApplicationRecord
   belongs_to :previous_upload_batch, class_name: "UploadBatch", optional: true
   has_one_attached :file
   has_many :order_snapshot_rows
+  has_many :order_rows
   has_many :quantity_changes
+  has_many :address_changes
   has_one :notification
 
   validates :status, inclusion: { in: STATUSES }

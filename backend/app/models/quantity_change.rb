@@ -5,8 +5,11 @@ class QuantityChange < ApplicationRecord
 
   belongs_to :upload_batch
   belongs_to :previous_upload_batch, class_name: "UploadBatch"
-  belongs_to :order_snapshot_row
-  belongs_to :previous_order_snapshot_row, class_name: "OrderSnapshotRow"
+  # Changes detected since the PO + Part + Type model reference order rows; older ones snapshot rows.
+  belongs_to :order_snapshot_row, optional: true
+  belongs_to :previous_order_snapshot_row, class_name: "OrderSnapshotRow", optional: true
+  belongs_to :order_row, optional: true
+  belongs_to :previous_order_row, class_name: "OrderRow", optional: true
 
   def readonly?
     persisted?

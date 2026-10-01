@@ -1,0 +1,11 @@
+<% if @preview %>[TEST PREVIEW: rows currently in each age band. Nothing was marked as notified.]
+
+<% end %>Order ageing, as of <%= @today.strftime("%-d %b %Y") %>
+<%= @digest.row_count %> order row(s) <%= @preview ? "are 30 or more days past their ship date" : "reached 30, 60 or 90 days past their ship date" %>.
+<% @bands.each do |threshold, rows| %><% next if rows.empty? %>
+
+<%= AgeingMailer::BAND_TITLES[threshold] %> (<%= rows.size %>)
+PO Number | PO Line | Part Number | Type | Ship Date | Days | Qty
+<% rows.each do |row| %><%= row.po_number %> | <%= row.po_line_number %> | <%= row.part_number %> | <%= row.order_type %> | <%= row.ship_date.strftime("%-d %b %Y") %> | <%= Ageing::Rules.days_since(row.ship_date, @today) %> | <%= format_qty(row.effective_qty) %>
+<% end %><% end %>
+Open the Orders page: <%= @url %>

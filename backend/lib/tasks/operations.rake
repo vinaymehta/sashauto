@@ -97,3 +97,29 @@ namespace :orders do
     end
   end
 end
+
+namespace :ageing do
+  desc "Send the order ageing email now. MODE=manual (new 30/60/90-day rows, default) or MODE=preview (test, marks nothing)"
+  task digest: :environment do
+    mode = ENV["MODE"] == "preview" ? "preview" : "manual"
+    today = Time.find_zone!(AppConfig.ageing_time_zone).today
+    result = Ageing::DigestBuilder.call(mode: mode, today: today)
+    puts "#{mode} digest for #{today}: #{result.status} #{result.counts.inspect}"
+  end
+end
+
+namespace :orders do
+  desc "Store every Excel row (all source columns) for uploads imported before order rows existed"
+  task backfill_rows: :environment do
+    UploadBatch.completed.order(:version_number).find_each do |batch|
+      next puts("#{batch.id}: already has order rows") if batch.order_rows.exists?
+
+      result = batch.file.open do |file|
+        abort "Checksum mismatch for upload #{batch.id}" unless Digest::SHA256.file(file.path).hexdigest == batch.file_sha256
+        ExcelImport::OrderRowParser.new(ExcelImport::WorkbookReader.new(file.path)).call
+      end
+      Uploads::Processor.allocate.tap { |p| p.instance_variable_set(:@batch, batch) }.send(:insert_order_rows, result.all_rows)
+      puts "#{batch.id}: stored #{batch.order_rows.count} rows (#{batch.order_rows.current_rows.count} current)"
+    end
+  end
+end

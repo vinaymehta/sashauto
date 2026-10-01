@@ -1,7 +1,8 @@
 import type { FilterGroup } from "./ui/filter-menu";
 
 // Age group of an order row = days since its ship date:
-// 0-30 green, 31-60 yellow, over 60 red; a ship date in the future is uncoloured.
+// 30-59 green, 60-89 yellow, 90+ red; 0-29 days and future ship dates are uncoloured.
+// Same rule as the server (Ageing::Rules) and the 30/60/90-day ageing emails.
 // The server filters with the same rule (param `age`), using the browser's date sent as `today`.
 export type AgeGroup = "green" | "yellow" | "red" | null;
 
@@ -12,18 +13,19 @@ export const AGE_ROW: Record<Exclude<AgeGroup, null>, string> = {
 };
 
 const AGE_TITLE: Record<Exclude<AgeGroup, null>, string> = {
-  green: "Ship date 0–30 days ago",
-  yellow: "Ship date 31–60 days ago",
-  red: "Ship date over 60 days ago",
+  green: "Ship date 30–59 days ago",
+  yellow: "Ship date 60–89 days ago",
+  red: "Ship date 90 or more days ago",
 };
 
 export const AGE_FILTER: FilterGroup = {
   key: "age",
   label: "Age group",
   options: [
-    { value: "green", label: "0–30 days since ship date" },
-    { value: "yellow", label: "31–60 days" },
-    { value: "red", label: "Over 60 days" },
+    { value: "recent", label: "0–29 days since ship date" },
+    { value: "green", label: "30–59 days" },
+    { value: "yellow", label: "60–89 days" },
+    { value: "red", label: "90+ days" },
     { value: "future", label: "Ship date in the future" },
   ],
 };
@@ -39,10 +41,10 @@ export function ageGroup(shipDate: string, today: Date = new Date()): AgeGroup {
   const ship = Date.UTC(y!, m! - 1, d!);
   const now = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
   const days = Math.round((now - ship) / 86_400_000);
-  if (days < 0) return null;
-  if (days <= 30) return "green";
-  if (days <= 60) return "yellow";
-  return "red";
+  if (days >= 90) return "red";
+  if (days >= 60) return "yellow";
+  if (days >= 30) return "green";
+  return null;
 }
 
 // Row props for a table row: the age tint (or the neutral hover) plus an explanatory tooltip.
@@ -53,10 +55,10 @@ export function ageRowProps(shipDate: string, today: Date, neutral = "hover:bg-n
 
 export function AgeLegend() {
   const items: [string, string][] = [
-    ["bg-age-green border-age-green-ink/30", "0–30 days since ship date"],
-    ["bg-age-yellow border-age-yellow-ink/30", "31–60 days"],
-    ["bg-age-red border-age-red-ink/30", "Over 60 days"],
-    ["bg-white border-neutral-300", "Ship date in the future"],
+    ["bg-age-green border-age-green-ink/30", "30–59 days since ship date"],
+    ["bg-age-yellow border-age-yellow-ink/30", "60–89 days"],
+    ["bg-age-red border-age-red-ink/30", "90+ days"],
+    ["bg-white border-neutral-300", "Under 30 days or future"],
   ];
   return (
     <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 border-b border-line bg-white px-6 py-2.5 text-xs text-ink-muted">

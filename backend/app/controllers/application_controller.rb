@@ -56,24 +56,26 @@ class ApplicationController < ActionController::API
   def apply_sort(scope, sorts, default:, default_direction: :asc)
     key = sorts.key?(params[:sort]) ? params[:sort] : default
     direction = %w[asc desc].include?(params[:direction]) ? params[:direction].to_sym : (key == default ? default_direction : :asc)
-    column = Arel.sql(sorts.fetch(key))
+    column = sorts.fetch(key)
+    column = Arel.sql(column) if column.is_a?(String)
     order = direction == :desc ? column.desc.nulls_last : column.asc.nulls_last
     [ scope.reorder(order).order(scope.arel_table[:id].public_send(direction)), key, direction ]
   end
 
-  AGE_GROUPS = %w[green yellow red future].freeze
+  AGE_GROUPS = %w[recent green yellow red future].freeze
 
-  # Age group of an order row = days since its ship date: green 0-30, yellow 31-60, red over 60,
-  # future = ship date after today. "Today" is the browser's date (param `today`, within a day of the
-  # server's) so filters match the colours the user sees; otherwise the server date.
+  # Age group of an order row = days since its ship date (Ageing::Rules): recent 0-29, green 30-59,
+  # yellow 60-89, red 90+, future = ship date after today. "Today" is the browser's date (param `today`,
+  # within a day of the server's) so filters match the colours the user sees; otherwise the server date.
   def filter_by_age(scope)
     return scope unless AGE_GROUPS.include?(params[:age])
 
     today = request_today
     case params[:age]
-    when "green" then scope.where(ship_date: (today - 30)..today)
-    when "yellow" then scope.where(ship_date: (today - 60)..(today - 31))
-    when "red" then scope.where(ship_date: ...(today - 60))
+    when "recent" then scope.where(ship_date: (today - 29)..today)
+    when "green" then scope.where(ship_date: Ageing::Rules.ship_date_range(30, today))
+    when "yellow" then scope.where(ship_date: Ageing::Rules.ship_date_range(60, today))
+    when "red" then scope.where(ship_date: Ageing::Rules.ship_date_range(90, today))
     when "future" then scope.where(ship_date: (today + 1)..)
     end
   end

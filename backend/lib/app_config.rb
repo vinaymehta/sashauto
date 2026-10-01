@@ -26,6 +26,11 @@ module AppConfig
     env("APP_URL", "http://localhost:3000")
   end
 
+  # Time zone whose calendar day the ageing digest uses (and its 09:00 schedule).
+  def ageing_time_zone
+    env("AGEING_TIME_ZONE", "Asia/Kolkata")
+  end
+
   def max_upload_bytes
     Integer(env("MAX_UPLOAD_BYTES", 20.megabytes))
   end

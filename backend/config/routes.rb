@@ -12,6 +12,7 @@ Rails.application.routes.draw do
     resources :uploads, only: %i[index show create] do
       member do
         get :changes
+        get :address_changes
         get :problems
         get :rows
         get :download
@@ -19,7 +20,14 @@ Rails.application.routes.draw do
       end
     end
 
-    resources :orders, only: :index
+    resources :orders, only: :index do
+      get :history, on: :member
+      collection do
+        get :by_po
+        get :by_part
+      end
+    end
+    resources :ageing_digests, only: :create
     resources :products, only: %i[index create update]
     resources :product_conflicts, only: [] do
       post :resolve, on: :member

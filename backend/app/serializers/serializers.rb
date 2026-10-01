@@ -30,13 +30,15 @@ module Serializers
       problem_count: batch.validation_errors.size,
       problem_columns: batch.validation_errors.group_by { |e| e["column"] || "_none" }.transform_values(&:size),
       stats: batch.slice(:source_row_count, :row_count, :duplicate_rows_merged, :unknown_quantity_count, :compared_count,
-                         :increase_count, :decrease_count, :unchanged_count, :new_row_count, :missing_row_count),
+                         :increase_count, :decrease_count, :unchanged_count, :new_row_count, :missing_row_count,
+                         :address_change_count),
       notification: batch.notification && notification(batch.notification)
     )
   end
 
   def notification(notification)
-    notification.slice(:id, :status, :recipients, :subject, :change_count, :attempts, :last_error, :last_attempt_at, :sent_at,
+    notification.slice(:id, :status, :recipients, :subject, :change_count, :address_change_count, :attempts, :last_error,
+                       :last_attempt_at, :sent_at,
                        :provider_message_id)
   end
 
@@ -44,6 +46,10 @@ module Serializers
     change.slice(:id, :po_number, :po_line_number, :part_number, :commodity_type, :order_type, :ship_date,
                  :ship_to_location, :direction)
           .merge(old_qty: qty(change.old_qty), new_qty: qty(change.new_qty), difference: qty(change.difference))
+  end
+
+  def address_change(change)
+    change.slice(:id, :po_number, :part_number, :order_type, :ship_date, :old_address, :new_address)
   end
 
   def snapshot_row(row)
@@ -57,11 +63,17 @@ module Serializers
                         ship_to_location dock_number supplier_part_number last_released_date last_updated_date
                         quantity_source].freeze
 
-  def order_row(row)
-    row.slice(*ORDER_ROW_FIELDS).merge(
+  def order_row(row, source: false)
+    data = row.slice(*ORDER_ROW_FIELDS).merge(
       qty: qty(row.qty), previous_qty: qty(row.previous_qty),
       last_asn_qty: qty(row.last_asn_qty), last_receipt_qty: qty(row.last_receipt_qty)
     )
+    if row.is_a?(OrderRow)
+      data[:history_count] = row.group_row_count - 1
+      data[:source_row_number] = row.source_row_number
+      data[:source_data] = row.source_data if source
+    end
+    data
   end
 
   def product(product, open_conflicts: [])

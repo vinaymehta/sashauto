@@ -51,6 +51,7 @@ module ExcelImport
 
         if column_index.nil?
           column_index = header_index(raw)
+          @headers = raw.map { |value| OrderRows::Normalizer.text(value) } if column_index
           if column_index.nil? && row_number >= HEADER_SEARCH_ROWS
             raise_missing_header!
           end
@@ -64,7 +65,7 @@ module ExcelImport
           raise InvalidWorkbook.new("too_many_rows", "The workbook has more than #{MAX_DATA_ROWS} data rows.")
         end
 
-        yield({ row_number: row_number, values: column_index.transform_values { |i| raw[i] } })
+        yield({ row_number: row_number, values: column_index.transform_values { |i| raw[i] }, source: source_data(raw) })
       end
 
       raise_missing_header! if column_index.nil?
@@ -109,6 +110,17 @@ module ExcelImport
       end
 
       found.merge(DETAIL_COLUMNS.transform_values { |header| labels.index(canonical(header)) }.compact)
+    end
+
+    # Every source column of the row, keyed by its Excel header, with the original cell value
+    # (dates as ISO strings so the record is JSON).
+    def source_data(raw)
+      @headers.each_with_index.filter_map do |header, i|
+        next if header.nil?
+        value = raw[i]
+        value = value.iso8601 if value.is_a?(Date) || value.is_a?(Time)
+        [ header, value ]
+      end.to_h
     end
 
     def canonical(value)

@@ -9,9 +9,10 @@ import { useDismiss } from "../use-dismiss";
 // section cards stand out; `footer` stays pinned at the bottom.
 // `top` (px from the top of the window) starts the panel lower, e.g. level with a list card;
 // by default it starts right below the 56px navbar.
-export function Sheet({ open, title, description, icon, onClose, children, footer, top = 56 }: {
+// `wide` is for panels holding wide tables (75% of the window on larger screens).
+export function Sheet({ open, title, description, icon, onClose, children, footer, top = 56, wide = false }: {
   open: boolean; title: ReactNode; description?: ReactNode; icon?: ReactNode; onClose: () => void; children: ReactNode; footer?: ReactNode;
-  top?: number;
+  top?: number; wide?: boolean;
 }) {
   const panel = useRef<HTMLDivElement>(null);
   useDismiss(panel, open, onClose);
@@ -38,7 +39,7 @@ export function Sheet({ open, title, description, icon, onClose, children, foote
       {/* Dimming backdrop behind the drawer. Starts at the drawer's top so the navbar/page header stay clear. */}
       <div aria-hidden style={{ top }} className="fixed inset-x-0 bottom-0 z-40 animate-fade-in bg-neutral-950/20 backdrop-blur-sm" />
       <div ref={panel} role="dialog" aria-modal="true" aria-labelledby="sheet-title" style={{ top }}
-           className="fixed bottom-0 right-0 z-50 flex w-full animate-slide-in-right flex-col border-l border-neutral-200 bg-neutral-100 shadow-2xl md:w-[40vw] md:min-w-110">
+           className={`fixed bottom-0 right-0 z-50 flex w-full animate-slide-in-right flex-col border-l border-neutral-200 bg-neutral-100 shadow-2xl ${wide ? "md:w-[75vw]" : "md:w-[40vw]"} md:min-w-110`}>
         <header className="flex items-start justify-between gap-4 border-b border-line bg-white px-6 py-5">
           <div className="flex min-w-0 items-start gap-3.5">
             {icon && (

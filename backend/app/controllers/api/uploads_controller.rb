@@ -92,6 +92,17 @@ module Api
                      ship_to_locations: batch.order_snapshot_rows.distinct.order(:ship_to_location).pluck(:ship_to_location) }
     end
 
+    # Ship To Address changes detected for this upload (current rows only), paged on the server.
+    def address_changes
+      scope = UploadBatch.find(params[:id]).address_changes.order(:po_number, :part_number, :ship_date, :id)
+      if params[:q].present?
+        term = "%#{AddressChange.sanitize_sql_like(params[:q].to_s.strip.first(100))}%"
+        scope = scope.where("po_number ILIKE :t OR part_number ILIKE :t OR old_address ILIKE :t OR new_address ILIKE :t", t: term)
+      end
+      changes, meta = paginate(scope)
+      render json: { data: changes.map { |c| Serializers.address_change(c) }, meta: meta }
+    end
+
     # Row-level problems of a rejected upload, paged on the server. Optional `column` filter
     # ("_none" selects problems not tied to one column, such as duplicate rows).
     def problems

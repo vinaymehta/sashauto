@@ -1,0 +1,7 @@
+# sidekiq-cron schedule (loaded when Sidekiq starts).
+ageing_daily_digest:
+  cron: "0 9 * * * <%= ENV.fetch('AGEING_TIME_ZONE', 'Asia/Kolkata') %>"
+  class: "Ageing::DailyDigestJob"
+  queue: default
+  active_job: true
+  description: "Order ageing email: rows reaching 30/60/90 days past their ship date"

@@ -13,6 +13,9 @@ gem "sidekiq", "~> 8.1"
 # Email delivery through the Resend API (ActionMailer delivery method :resend)
 gem "resend", "~> 1.0"
 
+# Scheduled jobs inside Sidekiq (daily ageing digest at 09:00 IST)
+gem "sidekiq-cron", "~> 2.4"
+
 # Rate-limit counter store shared across Puma processes (reuses Sidekiq's Redis)
 gem "redis", "~> 5.4"
 

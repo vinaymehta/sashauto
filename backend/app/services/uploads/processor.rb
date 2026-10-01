@@ -68,8 +68,10 @@ module Uploads
 
         previous = UploadBatch.latest_completed
         insert_snapshot_rows(result.rows)
+        insert_order_rows(result.all_rows)
         conflicts = Products::SyncFromUpload.call(@batch, result.rows)
         stats = previous && Comparison::QuantityComparator.call(current_batch_id: @batch.id, previous_batch_id: previous.id)
+        address_changes = previous ? Comparison::AddressComparator.call(current_batch_id: @batch.id, previous_batch_id: previous.id) : nil
 
         warnings = result.warnings.dup
         if conflicts.positive?
@@ -82,13 +84,17 @@ module Uploads
           previous_upload_batch: previous, completed_at: Time.current,
           source_row_count: result.source_row_count, row_count: result.rows.size,
           duplicate_rows_merged: result.duplicate_rows_merged, unknown_quantity_count: result.unknown_quantity_count,
-          warnings: warnings, **stats.to_h
+          warnings: warnings, address_change_count: address_changes, **stats.to_h
         )
 
         change_count = stats ? stats.increase_count + stats.decrease_count : 0
-        notification = Notifications::Outbox.enqueue_quantity_changes(@batch, change_count) if change_count.positive?
+        # One email for both kinds of change.
+        if change_count.positive? || address_changes.to_i.positive?
+          notification = Notifications::Outbox.enqueue_quantity_changes(@batch, change_count, address_changes.to_i)
+        end
         AuditLog.record("upload.completed", user: @batch.uploaded_by, subject: @batch,
-                        version: @batch.version_number, rows: result.rows.size, changes: change_count)
+                        version: @batch.version_number, rows: result.rows.size, changes: change_count,
+                        address_changes: address_changes.to_i)
       end
 
       # After commit: the outbox row is durable, so a lost enqueue can be redelivered later.
@@ -100,6 +106,26 @@ module Uploads
       rows.each_slice(INSERT_SLICE) do |slice|
         OrderSnapshotRow.insert_all!(slice.map { |row| snapshot_attrs(row, now) })
       end
+    end
+
+    # Every Excel row, with all source columns. Within each PO Number + Part Number + Type group the
+    # row with the latest Ship Date is current (first Excel row on a tie); the others are history.
+    def insert_order_rows(rows)
+      now = Time.current
+      records = rows.group_by { |row| OrderRow.group_key(row[:po_number], row[:part_number], row[:order_type]) }
+                    .flat_map do |key, group|
+        current = group.max_by { |row| [ row[:ship_date], -row[:source_row_numbers].first ] }
+        group.map { |row| order_row_attrs(row, key, row.equal?(current), group.size, now) }
+      end
+      records.each_slice(INSERT_SLICE) { |slice| OrderRow.insert_all!(slice) }
+    end
+
+    def order_row_attrs(row, group_key, current, group_size, now)
+      row.slice(:po_number, :part_number, :order_type, :ship_date, :po_line_number, :ship_to_location, :commodity_type,
+                :qty, :previous_qty, :effective_qty, :quantity_source, *ExcelImport::OrderRowParser::DETAIL_TYPES.keys)
+         .merge(upload_batch_id: @batch.id, source_row_number: row[:source_row_numbers].first, group_key: group_key,
+                current: current, group_row_count: group_size, source_data: row[:source],
+                source_columns: row[:source].keys, created_at: now)
     end
 
     def snapshot_attrs(row, now)

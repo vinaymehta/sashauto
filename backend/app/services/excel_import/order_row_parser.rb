@@ -2,7 +2,8 @@ module ExcelImport
   # Turns raw workbook rows into exactly one normalized row per business key, or a list of
   # actionable errors. Nothing here touches the database.
   class OrderRowParser
-    Result = Data.define(:rows, :errors, :warnings, :source_row_count, :duplicate_rows_merged, :unknown_quantity_count) do
+    # rows: one per order key (duplicates merged). all_rows: every valid Excel row, unmerged, with its source data.
+    Result = Data.define(:rows, :all_rows, :errors, :warnings, :source_row_count, :duplicate_rows_merged, :unknown_quantity_count) do
       def valid?
         errors.empty?
       end
@@ -46,7 +47,7 @@ module ExcelImport
                       message: "#{unknown} row(s) have neither Qty nor Previous Qty. They are stored with an unknown quantity and are not compared." }
       end
 
-      Result.new(rows: rows, errors: errors, warnings: warnings, source_row_count: source_row_count,
+      Result.new(rows: rows, all_rows: candidates, errors: errors, warnings: warnings, source_row_count: source_row_count,
                  duplicate_rows_merged: merged, unknown_quantity_count: unknown)
     end
 
@@ -72,7 +73,8 @@ module ExcelImport
         previous_qty: field.(:previous_qty, "Previous Qty"),
         current_release_number: n.text(values[:current_release_number]),
         current_release_date: n.text(values[:current_release_date]),
-        source_row_numbers: [ number ]
+        source_row_numbers: [ number ],
+        source: raw[:source] || {}
       }.merge(details(values))
 
       REQUIRED_VALUES.each do |key, label|

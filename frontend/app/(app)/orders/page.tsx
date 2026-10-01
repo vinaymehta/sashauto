@@ -3,8 +3,11 @@
 import { useState, type ReactNode } from "react";
 import type { OrderRow, OrdersPage } from "@/lib/types";
 import { formatCount, formatDate, formatDateTime, formatQty } from "@/lib/format";
-import { DownloadIcon } from "@/components/icons";
+import { ChevronRightSmallIcon, DownloadIcon } from "@/components/icons";
+import { cell, HistoryPanel } from "@/components/orders/history-row";
+import { RelatedLink } from "@/components/orders/related-popover";
 import { AGE_FILTER, AgeLegend, ageRowProps, todayParam } from "@/components/age";
+import { AgeingEmailMenu } from "@/components/ageing-email-menu";
 import { useApi, useDebounced } from "@/components/use-api";
 import { useListQuery } from "@/components/use-list-query";
 import { Button } from "@/components/ui/button";
@@ -30,31 +33,32 @@ const text = (value: string | null) => value ?? dash;
 const date = (value: string | null) => (value ? formatDate(value) : dash);
 const qty = (value: string | null) => (value === null ? dash : formatQty(value));
 
-// Same columns and order as the Supplier Requirements export.
-const COLUMNS: Column[] = [
-  { key: "type", label: "Type", render: (r) => r.order_type },
-  { key: "due_date", label: "Due Date", render: (r) => date(r.due_date) },
-  { key: "ship_date", label: "Ship Date", render: (r) => formatDate(r.ship_date) },
-  { key: "unit", label: "Unit", render: (r) => <span className="block max-w-64 truncate" title={r.unit ?? undefined}>{text(r.unit)}</span> },
-  { key: "plant_code", label: "Plant Code", render: (r) => text(r.plant_code) },
-  { key: "po_number", label: "PO Number", render: (r) => <span className="font-medium">{r.po_number}</span> },
-  { key: "po_line_number", label: "PO Line Number", render: (r) => r.po_line_number },
-  { key: "part_number", label: "Part Number", render: (r) => <span className="font-medium">{r.part_number}</span> },
-  { key: "commodity_type", label: "Commodity Type", render: (r) => text(r.commodity_type) },
-  { key: "qty", label: "Qty", align: "right", render: (r) => qty(r.qty) },
-  { key: "previous_qty", label: "Previous Qty", align: "right", render: (r) => qty(r.previous_qty) },
-  { key: "last_asn_qty", label: "Last ASN Qty", align: "right", render: (r) => qty(r.last_asn_qty) },
-  { key: "last_asn_date", label: "Last ASN Date", render: (r) => date(r.last_asn_date) },
-  { key: "last_receipt_qty", label: "Last Receipt Qty", align: "right", render: (r) => qty(r.last_receipt_qty) },
-  { key: "last_receipt_date", label: "Last Receipt Date", render: (r) => date(r.last_receipt_date) },
-  { key: "last_packing_list_number", label: "Last Packing List Number", render: (r) => text(r.last_packing_list_number) },
-  { key: "crossdock_location", label: "Crossdock Location", render: (r) => text(r.crossdock_location) },
-  { key: "ship_to_location", label: "Ship to Location", render: (r) => r.ship_to_location },
-  { key: "dock_number", label: "Dock Number", render: (r) => text(r.dock_number) },
-  { key: "supplier_part_number", label: "Supplier Part Number", render: (r) => text(r.supplier_part_number) },
-  { key: "last_released_date", label: "Last Released Date", render: (r) => date(r.last_released_date) },
-  { key: "last_updated_date", label: "Last Updated Date", render: (r) => date(r.last_updated_date) },
-];
+// Typed display for the columns the app models itself; every other Excel column shows its imported value.
+const TYPED: Record<string, Omit<Column, "key" | "label">> = {
+  type: { render: (r) => r.order_type },
+  due_date: { render: (r) => date(r.due_date) },
+  ship_date: { render: (r) => formatDate(r.ship_date) },
+  unit: { render: (r) => <span className="block max-w-64 truncate" title={r.unit ?? undefined}>{text(r.unit)}</span> },
+  po_number: { render: (r) => <RelatedLink kind="po" value={r.po_number} /> },
+  part_number: { render: (r) => <RelatedLink kind="part" value={r.part_number} /> },
+  qty: { align: "right", render: (r) => qty(r.qty) },
+  previous_qty: { align: "right", render: (r) => qty(r.previous_qty) },
+  last_asn_qty: { align: "right", render: (r) => qty(r.last_asn_qty) },
+  last_receipt_qty: { align: "right", render: (r) => qty(r.last_receipt_qty) },
+};
+
+// All Excel columns of the upload, in file order (same as the history table).
+function buildColumns(columns: { key: string; label: string }[], rows: OrderRow[]): Column[] {
+  return columns.map(({ key, label }) => {
+    const typed = TYPED[key];
+    if (typed) return { key, label, ...typed };
+    const numeric = rows.some((r) => typeof r.source_data?.[label] === "number");
+    return {
+      key, label, align: numeric ? "right" : "left",
+      render: (r) => <span className="block max-w-72 truncate" title={String(r.source_data?.[label] ?? "")}>{cell(r.source_data?.[label])}</span>,
+    };
+  });
+}
 
 export default function OrdersPage() {
   const list = useListQuery({}, 50, { key: "ship_date", direction: "asc" });
@@ -78,7 +82,18 @@ export default function OrdersPage() {
   const filtered = term !== "" || Object.values(list.filters).some(Boolean);
   const clearAll = () => { list.clearFilters(); setSearch(""); };
 
+  // Keep the last known column list so the header does not vanish while a page loads.
+  const [sourceColumns, setSourceColumns] = useState<NonNullable<OrdersPage["columns"]>>([]);
+  if (data?.columns && data.columns !== sourceColumns) setSourceColumns(data.columns);
+  const COLUMNS = buildColumns(sourceColumns, data?.data ?? []);
+
   const source = data?.source;
+  // Row whose history is open in the side panel; the panel starts level with the list card.
+  const [selected, setSelected] = useState<{ row: OrderRow; top: number } | null>(null);
+  const openHistory = (row: OrderRow, e: React.MouseEvent<HTMLElement>) => {
+    const cardTop = e.currentTarget.closest("section")?.getBoundingClientRect().top ?? 56;
+    setSelected({ row, top: Math.round(Math.max(56, cardTop)) });
+  };
   const [today] = useState(() => new Date());
 
   return (
@@ -86,12 +101,15 @@ export default function OrdersPage() {
       <PageHeader
         title="Orders"
         description={source
-          ? <>Latest order data, from <span className="font-medium text-ink">{source.original_filename}</span> uploaded {formatDateTime(source.uploaded_at)}.</>
+          ? <>Current rows (latest ship date per PO, Part and Type) from <span className="font-medium text-ink">{source.original_filename}</span>, uploaded {formatDateTime(source.uploaded_at)}. Click a row to open its history.</>
           : "The latest uploaded order data."}
         actions={source && (
-          <a href={`/api/uploads/${source.upload_id}/download`} download>
-            <Button><DownloadIcon size={15} className="text-ink-muted" />Download .xlsx</Button>
-          </a>
+          <div className="flex items-center gap-2">
+            <AgeingEmailMenu />
+            <a href={`/api/uploads/${source.upload_id}/download`} download>
+              <Button><DownloadIcon size={15} className="text-ink-muted" />Download .xlsx</Button>
+            </a>
+          </div>
         )}
       />
 
@@ -119,6 +137,7 @@ export default function OrdersPage() {
             <Table dense>
               <thead>
                 <tr>
+                  <th aria-label="History" className="h-10 w-10 border-b border-neutral-200 bg-neutral-50" />
                   {COLUMNS.map((c) => (
                     <SortTh key={c.key} label={c.label} sortKey={c.key} align={c.align ?? "left"}
                             sort={list.sort} direction={list.direction} onSort={list.toggleSort} />
@@ -126,18 +145,31 @@ export default function OrdersPage() {
                 </tr>
               </thead>
               <tbody>
-                {data.data.map((row) => (
-                  <tr key={row.id} {...ageRowProps(row.ship_date, today)}>
-                    {COLUMNS.map((c) => (
-                      <Td key={c.key} align={c.align === "right" ? "right" : "left"}>{c.render(row)}</Td>
-                    ))}
-                  </tr>
-                ))}
+                {data.data.map((row) => {
+                  const open = selected?.row.id === row.id;
+                  const tint = ageRowProps(row.ship_date, today);
+                  const history = row.history_count ?? 0;
+                  return (
+                      <tr key={row.id} className={`cursor-pointer ${tint.className} ${open ? "shadow-[inset_3px_0_0_var(--color-accent)]" : ""}`} title={tint.title}
+                          onClick={(e) => openHistory(row, e)} aria-haspopup="dialog" aria-expanded={open}>
+                        <Td className="w-10 pr-0! text-ink-muted">
+                          <span className="inline-flex items-center gap-1">
+                            <ChevronRightSmallIcon size={14} className={open ? "text-accent" : ""} />
+                            {history > 0 && <span className="tabular rounded bg-neutral-100 px-1 text-2xs font-semibold text-neutral-600" title={`${history} earlier row${history === 1 ? "" : "s"}`}>{history}</span>}
+                          </span>
+                        </Td>
+                        {COLUMNS.map((c) => (
+                          <Td key={c.key} align={c.align === "right" ? "right" : "left"}>{c.render(row)}</Td>
+                        ))}
+                      </tr>
+                  );
+                })}
               </tbody>
             </Table>
             <Pagination meta={data.meta} onPage={list.setPage} onPerPage={list.setPerPage} noun="order rows" />
           </div>
         ) : null}
+        {selected && <HistoryPanel key={selected.row.id} row={selected.row} top={selected.top} today={today} onClose={() => setSelected(null)} />}
       </Panel>
     </>
   );

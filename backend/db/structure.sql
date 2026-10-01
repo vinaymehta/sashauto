@@ -165,6 +165,127 @@ ALTER SEQUENCE public.active_storage_variant_records_id_seq OWNED BY public.acti
 
 
 --
+-- Name: address_changes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.address_changes (
+    id bigint NOT NULL,
+    upload_batch_id bigint NOT NULL,
+    previous_upload_batch_id bigint NOT NULL,
+    order_row_id bigint NOT NULL,
+    previous_order_row_id bigint NOT NULL,
+    group_key character varying(64) NOT NULL,
+    po_number character varying NOT NULL,
+    part_number character varying NOT NULL,
+    order_type character varying NOT NULL,
+    ship_date date NOT NULL,
+    old_address text,
+    new_address text,
+    created_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: address_changes_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.address_changes_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: address_changes_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.address_changes_id_seq OWNED BY public.address_changes.id;
+
+
+--
+-- Name: ageing_digests; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ageing_digests (
+    id bigint NOT NULL,
+    mode character varying NOT NULL,
+    status character varying DEFAULT 'pending'::character varying NOT NULL,
+    as_of date NOT NULL,
+    upload_batch_id bigint,
+    requested_by_id bigint,
+    recipients character varying[] DEFAULT '{}'::character varying[] NOT NULL,
+    subject character varying,
+    counts jsonb DEFAULT '{}'::jsonb NOT NULL,
+    row_count integer DEFAULT 0 NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    last_error text,
+    provider_message_id character varying,
+    last_attempt_at timestamp(6) without time zone,
+    sent_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT ageing_digests_mode_valid CHECK (((mode)::text = ANY ((ARRAY['scheduled'::character varying, 'manual'::character varying, 'preview'::character varying, 'baseline'::character varying])::text[]))),
+    CONSTRAINT ageing_digests_status_valid CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'sent'::character varying, 'failed'::character varying, 'skipped'::character varying])::text[])))
+);
+
+
+--
+-- Name: ageing_digests_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.ageing_digests_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: ageing_digests_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.ageing_digests_id_seq OWNED BY public.ageing_digests.id;
+
+
+--
+-- Name: ageing_notifications; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ageing_notifications (
+    id bigint NOT NULL,
+    business_key_hash character varying(64) NOT NULL,
+    threshold integer NOT NULL,
+    ageing_digest_id bigint NOT NULL,
+    order_snapshot_row_id bigint,
+    created_at timestamp(6) without time zone NOT NULL,
+    order_row_id bigint,
+    CONSTRAINT ageing_notifications_threshold_valid CHECK ((threshold = ANY (ARRAY[30, 60, 90])))
+);
+
+
+--
+-- Name: ageing_notifications_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.ageing_notifications_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: ageing_notifications_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.ageing_notifications_id_seq OWNED BY public.ageing_notifications.id;
+
+
+--
 -- Name: ar_internal_metadata; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -230,6 +351,7 @@ CREATE TABLE public.notifications (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     provider_message_id character varying,
+    address_change_count integer DEFAULT 0 NOT NULL,
     CONSTRAINT notifications_kind_valid CHECK (((kind)::text = 'quantity_changes'::text)),
     CONSTRAINT notifications_status_valid CHECK (((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('sent'::character varying)::text, ('failed'::character varying)::text])))
 );
@@ -252,6 +374,67 @@ CREATE SEQUENCE public.notifications_id_seq
 --
 
 ALTER SEQUENCE public.notifications_id_seq OWNED BY public.notifications.id;
+
+
+--
+-- Name: order_rows; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.order_rows (
+    id bigint NOT NULL,
+    upload_batch_id bigint NOT NULL,
+    source_row_number integer NOT NULL,
+    group_key character varying(64) NOT NULL,
+    current boolean NOT NULL,
+    group_row_count integer NOT NULL,
+    po_number character varying NOT NULL,
+    part_number character varying NOT NULL,
+    order_type character varying NOT NULL,
+    ship_date date NOT NULL,
+    po_line_number character varying NOT NULL,
+    ship_to_location character varying NOT NULL,
+    commodity_type character varying,
+    qty numeric(15,3),
+    previous_qty numeric(15,3),
+    effective_qty numeric(15,3),
+    quantity_source character varying NOT NULL,
+    due_date date,
+    unit character varying,
+    plant_code character varying,
+    last_asn_qty numeric(15,3),
+    last_asn_date date,
+    last_receipt_qty numeric(15,3),
+    last_receipt_date date,
+    last_packing_list_number character varying,
+    crossdock_location character varying,
+    dock_number character varying,
+    supplier_part_number character varying,
+    last_released_date date,
+    last_updated_date date,
+    source_data jsonb DEFAULT '{}'::jsonb NOT NULL,
+    source_columns character varying[] DEFAULT '{}'::character varying[] NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT order_rows_quantity_source_valid CHECK (((quantity_source)::text = ANY ((ARRAY['qty'::character varying, 'previous_qty'::character varying, 'unknown'::character varying])::text[])))
+);
+
+
+--
+-- Name: order_rows_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.order_rows_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: order_rows_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.order_rows_id_seq OWNED BY public.order_rows.id;
 
 
 --
@@ -400,8 +583,8 @@ CREATE TABLE public.quantity_changes (
     id bigint NOT NULL,
     upload_batch_id bigint NOT NULL,
     previous_upload_batch_id bigint NOT NULL,
-    order_snapshot_row_id bigint NOT NULL,
-    previous_order_snapshot_row_id bigint NOT NULL,
+    order_snapshot_row_id bigint,
+    previous_order_snapshot_row_id bigint,
     business_key_hash character varying(64) NOT NULL,
     ship_to_location character varying NOT NULL,
     order_type character varying NOT NULL,
@@ -415,6 +598,8 @@ CREATE TABLE public.quantity_changes (
     difference numeric(15,3) NOT NULL,
     direction character varying NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
+    order_row_id bigint,
+    previous_order_row_id bigint,
     CONSTRAINT quantity_changes_difference_valid CHECK (((difference = (new_qty - old_qty)) AND (difference <> (0)::numeric))),
     CONSTRAINT quantity_changes_direction_valid CHECK (((((direction)::text = 'increase'::text) AND (difference > (0)::numeric)) OR (((direction)::text = 'decrease'::text) AND (difference < (0)::numeric))))
 );
@@ -481,6 +666,7 @@ CREATE TABLE public.upload_batches (
     failed_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
+    address_change_count integer,
     CONSTRAINT upload_batches_status_valid CHECK (((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('processing'::character varying)::text, ('completed'::character varying)::text, ('failed'::character varying)::text]))),
     CONSTRAINT upload_batches_version_iff_completed CHECK ((((status)::text = 'completed'::text) = (version_number IS NOT NULL)))
 );
@@ -565,6 +751,27 @@ ALTER TABLE ONLY public.active_storage_variant_records ALTER COLUMN id SET DEFAU
 
 
 --
+-- Name: address_changes id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.address_changes ALTER COLUMN id SET DEFAULT nextval('public.address_changes_id_seq'::regclass);
+
+
+--
+-- Name: ageing_digests id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ageing_digests ALTER COLUMN id SET DEFAULT nextval('public.ageing_digests_id_seq'::regclass);
+
+
+--
+-- Name: ageing_notifications id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ageing_notifications ALTER COLUMN id SET DEFAULT nextval('public.ageing_notifications_id_seq'::regclass);
+
+
+--
 -- Name: audit_logs id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -576,6 +783,13 @@ ALTER TABLE ONLY public.audit_logs ALTER COLUMN id SET DEFAULT nextval('public.a
 --
 
 ALTER TABLE ONLY public.notifications ALTER COLUMN id SET DEFAULT nextval('public.notifications_id_seq'::regclass);
+
+
+--
+-- Name: order_rows id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_rows ALTER COLUMN id SET DEFAULT nextval('public.order_rows_id_seq'::regclass);
 
 
 --
@@ -645,6 +859,30 @@ ALTER TABLE ONLY public.active_storage_variant_records
 
 
 --
+-- Name: address_changes address_changes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.address_changes
+    ADD CONSTRAINT address_changes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ageing_digests ageing_digests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ageing_digests
+    ADD CONSTRAINT ageing_digests_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ageing_notifications ageing_notifications_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ageing_notifications
+    ADD CONSTRAINT ageing_notifications_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: ar_internal_metadata ar_internal_metadata_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -666,6 +904,14 @@ ALTER TABLE ONLY public.audit_logs
 
 ALTER TABLE ONLY public.notifications
     ADD CONSTRAINT notifications_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: order_rows order_rows_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_rows
+    ADD CONSTRAINT order_rows_pkey PRIMARY KEY (id);
 
 
 --
@@ -753,6 +999,83 @@ CREATE UNIQUE INDEX index_active_storage_variant_records_uniqueness ON public.ac
 
 
 --
+-- Name: index_address_changes_on_batch_and_group; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_address_changes_on_batch_and_group ON public.address_changes USING btree (upload_batch_id, group_key);
+
+
+--
+-- Name: index_address_changes_on_order_row_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_address_changes_on_order_row_id ON public.address_changes USING btree (order_row_id);
+
+
+--
+-- Name: index_address_changes_on_previous_order_row_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_address_changes_on_previous_order_row_id ON public.address_changes USING btree (previous_order_row_id);
+
+
+--
+-- Name: index_address_changes_on_previous_upload_batch_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_address_changes_on_previous_upload_batch_id ON public.address_changes USING btree (previous_upload_batch_id);
+
+
+--
+-- Name: index_ageing_digests_on_mode_and_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ageing_digests_on_mode_and_created_at ON public.ageing_digests USING btree (mode, created_at);
+
+
+--
+-- Name: index_ageing_digests_on_requested_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ageing_digests_on_requested_by_id ON public.ageing_digests USING btree (requested_by_id);
+
+
+--
+-- Name: index_ageing_digests_on_upload_batch_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ageing_digests_on_upload_batch_id ON public.ageing_digests USING btree (upload_batch_id);
+
+
+--
+-- Name: index_ageing_notifications_on_ageing_digest_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ageing_notifications_on_ageing_digest_id ON public.ageing_notifications USING btree (ageing_digest_id);
+
+
+--
+-- Name: index_ageing_notifications_on_order_row_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ageing_notifications_on_order_row_id ON public.ageing_notifications USING btree (order_row_id);
+
+
+--
+-- Name: index_ageing_notifications_on_order_snapshot_row_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ageing_notifications_on_order_snapshot_row_id ON public.ageing_notifications USING btree (order_snapshot_row_id);
+
+
+--
+-- Name: index_ageing_notifications_once_per_threshold; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_ageing_notifications_once_per_threshold ON public.ageing_notifications USING btree (business_key_hash, threshold);
+
+
+--
 -- Name: index_audit_logs_on_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -785,6 +1108,41 @@ CREATE INDEX index_notifications_on_status ON public.notifications USING btree (
 --
 
 CREATE UNIQUE INDEX index_notifications_on_upload_batch_id ON public.notifications USING btree (upload_batch_id);
+
+
+--
+-- Name: index_order_rows_on_batch_and_excel_row; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_order_rows_on_batch_and_excel_row ON public.order_rows USING btree (upload_batch_id, source_row_number);
+
+
+--
+-- Name: index_order_rows_on_batch_current_ship_date; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_order_rows_on_batch_current_ship_date ON public.order_rows USING btree (upload_batch_id, current, ship_date);
+
+
+--
+-- Name: index_order_rows_on_batch_group_ship_date; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_order_rows_on_batch_group_ship_date ON public.order_rows USING btree (upload_batch_id, group_key, ship_date);
+
+
+--
+-- Name: index_order_rows_on_batch_part_po; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_order_rows_on_batch_part_po ON public.order_rows USING btree (upload_batch_id, part_number, po_number);
+
+
+--
+-- Name: index_order_rows_on_batch_po_part; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_order_rows_on_batch_po_part ON public.order_rows USING btree (upload_batch_id, po_number, part_number);
 
 
 --
@@ -858,10 +1216,24 @@ CREATE UNIQUE INDEX index_quantity_changes_on_batch_and_key ON public.quantity_c
 
 
 --
+-- Name: index_quantity_changes_on_order_row_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_quantity_changes_on_order_row_id ON public.quantity_changes USING btree (order_row_id);
+
+
+--
 -- Name: index_quantity_changes_on_order_snapshot_row_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX index_quantity_changes_on_order_snapshot_row_id ON public.quantity_changes USING btree (order_snapshot_row_id);
+
+
+--
+-- Name: index_quantity_changes_on_previous_order_row_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_quantity_changes_on_previous_order_row_id ON public.quantity_changes USING btree (previous_order_row_id);
 
 
 --
@@ -956,10 +1328,24 @@ CREATE UNIQUE INDEX index_users_on_lower_email ON public.users USING btree (lowe
 
 
 --
+-- Name: address_changes address_changes_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER address_changes_append_only BEFORE DELETE OR UPDATE ON public.address_changes FOR EACH ROW EXECUTE FUNCTION public.reject_history_mutation();
+
+
+--
 -- Name: audit_logs audit_logs_append_only; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER audit_logs_append_only BEFORE DELETE OR UPDATE ON public.audit_logs FOR EACH ROW EXECUTE FUNCTION public.reject_history_mutation();
+
+
+--
+-- Name: order_rows order_rows_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER order_rows_append_only BEFORE DELETE OR UPDATE ON public.order_rows FOR EACH ROW EXECUTE FUNCTION public.reject_history_mutation();
 
 
 --
@@ -984,6 +1370,22 @@ CREATE TRIGGER upload_batches_protect_finished BEFORE DELETE OR UPDATE ON public
 
 
 --
+-- Name: address_changes fk_rails_02702585ce; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.address_changes
+    ADD CONSTRAINT fk_rails_02702585ce FOREIGN KEY (upload_batch_id) REFERENCES public.upload_batches(id);
+
+
+--
+-- Name: ageing_notifications fk_rails_0e43f85aef; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ageing_notifications
+    ADD CONSTRAINT fk_rails_0e43f85aef FOREIGN KEY (ageing_digest_id) REFERENCES public.ageing_digests(id);
+
+
+--
 -- Name: audit_logs fk_rails_1f26bc34ae; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -997,6 +1399,22 @@ ALTER TABLE ONLY public.audit_logs
 
 ALTER TABLE ONLY public.product_conflicts
     ADD CONSTRAINT fk_rails_1f3c3cb0b7 FOREIGN KEY (resolved_by_id) REFERENCES public.users(id);
+
+
+--
+-- Name: ageing_notifications fk_rails_2dda75e39b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ageing_notifications
+    ADD CONSTRAINT fk_rails_2dda75e39b FOREIGN KEY (order_snapshot_row_id) REFERENCES public.order_snapshot_rows(id);
+
+
+--
+-- Name: ageing_digests fk_rails_351ea1f8a1; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ageing_digests
+    ADD CONSTRAINT fk_rails_351ea1f8a1 FOREIGN KEY (upload_batch_id) REFERENCES public.upload_batches(id);
 
 
 --
@@ -1024,6 +1442,14 @@ ALTER TABLE ONLY public.quantity_changes
 
 
 --
+-- Name: ageing_notifications fk_rails_53aeabf9c2; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ageing_notifications
+    ADD CONSTRAINT fk_rails_53aeabf9c2 FOREIGN KEY (order_row_id) REFERENCES public.order_rows(id);
+
+
+--
 -- Name: quantity_changes fk_rails_6db61947e6; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1032,11 +1458,27 @@ ALTER TABLE ONLY public.quantity_changes
 
 
 --
+-- Name: quantity_changes fk_rails_90ce969403; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quantity_changes
+    ADD CONSTRAINT fk_rails_90ce969403 FOREIGN KEY (order_row_id) REFERENCES public.order_rows(id);
+
+
+--
 -- Name: active_storage_variant_records fk_rails_993965df05; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.active_storage_variant_records
     ADD CONSTRAINT fk_rails_993965df05 FOREIGN KEY (blob_id) REFERENCES public.active_storage_blobs(id);
+
+
+--
+-- Name: ageing_digests fk_rails_a8bc51aaf0; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ageing_digests
+    ADD CONSTRAINT fk_rails_a8bc51aaf0 FOREIGN KEY (requested_by_id) REFERENCES public.users(id);
 
 
 --
@@ -1053,6 +1495,22 @@ ALTER TABLE ONLY public.products
 
 ALTER TABLE ONLY public.order_snapshot_rows
     ADD CONSTRAINT fk_rails_b4e1f58c36 FOREIGN KEY (upload_batch_id) REFERENCES public.upload_batches(id);
+
+
+--
+-- Name: address_changes fk_rails_b7aaec717a; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.address_changes
+    ADD CONSTRAINT fk_rails_b7aaec717a FOREIGN KEY (previous_upload_batch_id) REFERENCES public.upload_batches(id);
+
+
+--
+-- Name: quantity_changes fk_rails_bb0c15f79e; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quantity_changes
+    ADD CONSTRAINT fk_rails_bb0c15f79e FOREIGN KEY (previous_order_row_id) REFERENCES public.order_rows(id);
 
 
 --
@@ -1080,6 +1538,14 @@ ALTER TABLE ONLY public.quantity_changes
 
 
 --
+-- Name: order_rows fk_rails_dde6d74b6b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_rows
+    ADD CONSTRAINT fk_rails_dde6d74b6b FOREIGN KEY (upload_batch_id) REFERENCES public.upload_batches(id);
+
+
+--
 -- Name: product_conflicts fk_rails_f74a21bb34; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1104,11 +1570,27 @@ ALTER TABLE ONLY public.products
 
 
 --
+-- Name: address_changes fk_rails_fcc4488252; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.address_changes
+    ADD CONSTRAINT fk_rails_fcc4488252 FOREIGN KEY (previous_order_row_id) REFERENCES public.order_rows(id);
+
+
+--
 -- Name: upload_batches fk_rails_fced93fee8; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.upload_batches
     ADD CONSTRAINT fk_rails_fced93fee8 FOREIGN KEY (previous_upload_batch_id) REFERENCES public.upload_batches(id);
+
+
+--
+-- Name: address_changes fk_rails_fdaf55e9ac; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.address_changes
+    ADD CONSTRAINT fk_rails_fdaf55e9ac FOREIGN KEY (order_row_id) REFERENCES public.order_rows(id);
 
 
 --
@@ -1118,6 +1600,9 @@ ALTER TABLE ONLY public.upload_batches
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260930170001'),
+('20260930150001'),
+('20260930120001'),
 ('20260930090001'),
 ('20260929120001'),
 ('20260929100001'),

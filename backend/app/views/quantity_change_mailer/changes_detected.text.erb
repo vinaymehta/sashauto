@@ -1,13 +1,20 @@
-Quantity changes detected
+<%= @heading %>
 <%= @batch.original_filename %> · uploaded by <%= @batch.uploaded_by.name %> on <%= @batch.completed_at.utc.strftime("%-d %b %Y, %H:%M UTC") %>
 
-<%= @total %> existing order row(s) changed quantity compared with the previous upload (<%= @batch.increase_count %> ↑, <%= @batch.decrease_count %> ↓).
+<% if @total.positive? %><%= @total %> existing order row(s) changed quantity compared with the previous upload (<%= @batch.increase_count %> ↑, <%= @batch.decrease_count %> ↓).
 
-PO Number | Part Number | Ship Date | Old Qty | New Qty | Difference | Change
+PO Number | Part Number | Ship Date | Old Qty | New Qty | Change
 <% @changes.each do |change| %>
-<%= change.po_number %> | <%= change.part_number %> | <%= change.ship_date.strftime("%-d %b %Y") %> | <%= format_qty(change.old_qty) %> | <%= format_qty(change.new_qty) %> | <%= format_difference(change.difference) %> | <%= change.direction == "increase" ? "↑" : "↓" %>
+<%= change.po_number %> | <%= change.part_number %> | <%= change.ship_date.strftime("%-d %b %Y") %> | <%= format_qty(change.old_qty) %> | <%= format_qty(change.new_qty) %> | <%= change.direction == "increase" ? "↑" : "↓" %> <%= format_difference(change.difference) %>
 <% end %>
 <% if @total > @changes.size %>
 Showing the first <%= @changes.size %> of <%= @total %> changes.
 <% end %>
-View all changes: <%= @url %>
+<% end %><% if @address_total.positive? %>
+Address changes: <%= @address_total %> existing order row(s) changed Ship To Address compared with the previous upload.
+
+PO Number | Part Number | Ship Date | Old Address | New Address
+<% @address_changes.each do |change| %><%= change.po_number %> | <%= change.part_number %> | <%= change.ship_date.strftime("%-d %b %Y") %> | <%= change.old_address.presence || "—" %> | <%= change.new_address.presence || "—" %>
+<% end %><% if @address_total > @address_changes.size %>Showing the first <%= @address_changes.size %> of <%= @address_total %> address changes.
+<% end %>
+<% end %>View all changes: <%= @url %>

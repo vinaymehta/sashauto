@@ -36,7 +36,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   const current = NAV.find((item) => item.match(pathname));
   const nav = (
     <nav className="space-y-1">
-      <p className="px-3 pb-1.5 text-2xs font-semibold uppercase tracking-wider text-nav-label">Workspace</p>
       {NAV.map(({ href, label, icon: Icon, match }) => {
         const active = match(pathname);
         return (

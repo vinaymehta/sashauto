@@ -5,8 +5,9 @@ import { api, ApiError } from "@/lib/api";
 import type { NotificationInfo, Paginated, UploadDetail, ValidationError } from "@/lib/types";
 import { formatDateTime } from "@/lib/format";
 import { ChangesTable } from "./changes-table";
+import { AddressChangesTable } from "./address-changes-table";
 import { RowsTable } from "./rows-table";
-import { ArrowUpDownIcon, FileIcon } from "./icons";
+import { ArrowUpDownIcon, FileIcon, MapPinIcon } from "./icons";
 import { Tabs } from "./ui/tabs";
 import { useApi } from "./use-api";
 import { useListQuery } from "./use-list-query";
@@ -34,7 +35,7 @@ export function UploadResult({ upload, onChanged }: { upload: UploadDetail; onCh
 
   if (upload.status === "failed") return <FailedUpload upload={upload} />;
 
-  const changes = (upload.stats.increase_count ?? 0) + (upload.stats.decrease_count ?? 0);
+  const changes = (upload.stats.increase_count ?? 0) + (upload.stats.decrease_count ?? 0) + (upload.stats.address_change_count ?? 0);
   const isFirst = upload.previous_version === null;
   const status = isFirst ? undefined : (
     <NotificationStatus uploadId={upload.id} notification={upload.notification} changes={changes} onChanged={onChanged} />
@@ -111,7 +112,7 @@ function FailedUpload({ upload }: { upload: UploadDetail }) {
 function VersionData({ upload, status }: { upload: UploadDetail; status?: ReactNode }) {
   const isFirst = upload.previous_version === null;
   const changes = (upload.stats.increase_count ?? 0) + (upload.stats.decrease_count ?? 0);
-  const [tab, setTab] = useState<"changes" | "rows">(isFirst ? "rows" : "changes");
+  const [tab, setTab] = useState<"changes" | "addresses" | "rows">(isFirst ? "rows" : "changes");
 
   return (
     <>
@@ -125,7 +126,10 @@ function VersionData({ upload, status }: { upload: UploadDetail; status?: ReactN
             active={tab}
             onChange={setTab}
             tabs={[
-              ...(isFirst ? [] : [{ key: "changes" as const, label: "Quantity changes", icon: <ArrowUpDownIcon size={14} />, count: changes }]),
+              ...(isFirst ? [] : [
+                { key: "changes" as const, label: "Quantity changes", icon: <ArrowUpDownIcon size={14} />, count: changes },
+                { key: "addresses" as const, label: "Address changes", icon: <MapPinIcon size={14} />, count: upload.stats.address_change_count ?? 0 },
+              ]),
               { key: "rows" as const, label: "Uploaded rows", icon: <FileIcon size={14} />, count: upload.stats.row_count },
             ]}
           />
@@ -137,6 +141,8 @@ function VersionData({ upload, status }: { upload: UploadDetail; status?: ReactN
               uploadId={upload.id}
               emptyDescription="Every order row present in both the previous and the latest upload has the same quantity."
             />
+          ) : tab === "addresses" ? (
+            <AddressChangesTable uploadId={upload.id} />
           ) : (
             <RowsTable uploadId={upload.id} />
           )}
