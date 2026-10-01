@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { BoxIcon, CloseIcon, DashboardIcon, MenuIcon, TableIcon, UploadIcon } from "./icons";
+import { BoxIcon, CloseIcon, DashboardIcon, MenuIcon, TableIcon, TruckIcon, UploadIcon } from "./icons";
 import { NotificationBell } from "./notification-bell";
 import { useSession } from "./session";
 import { ToastProvider } from "./toast";
@@ -16,6 +16,7 @@ const NAV = [
   { href: "/orders", label: "Orders", icon: TableIcon, match: (p: string) => p.startsWith("/orders") },
   { href: "/detect", label: "Upload / Detection", icon: UploadIcon, match: (p: string) => p.startsWith("/detect") || p.startsWith("/uploads") },
   { href: "/products", label: "Products", icon: BoxIcon, match: (p: string) => p.startsWith("/products") },
+  { href: "/vendors", label: "Vendors", icon: TruckIcon, match: (p: string) => p.startsWith("/vendors") },
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {

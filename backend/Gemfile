@@ -24,9 +24,10 @@ gem "roo", "~> 3.0"
 gem "tzinfo-data", platforms: %i[ windows jruby ]
 gem "bootsnap", require: false
 
+# Loads backend/.env into ENV (all environments). Real environment variables always win over .env.
+gem "dotenv", "~> 3.1"
+
 group :development do
-  # Loads backend/.env into ENV in development only (production uses real environment variables).
-  gem "dotenv", "~> 3.1"
   gem "debug", platforms: %i[ mri windows ], require: "debug/prelude"
   gem "bundler-audit", require: false
   gem "brakeman", require: false

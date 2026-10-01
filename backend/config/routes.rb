@@ -28,6 +28,10 @@ Rails.application.routes.draw do
         get :by_part
       end
     end
+    resources :vendors, only: %i[index show create update destroy] do
+      post :import, on: :collection
+      resources :products, only: %i[index create update destroy], controller: :vendor_products
+    end
     resources :products, only: %i[index create update]
     resources :product_conflicts, only: [] do
       post :resolve, on: :member

@@ -2,7 +2,10 @@ import type { NextConfig } from "next";
 
 // The browser only ever talks to this Next.js origin. /api/* is forwarded to the Rails backend,
 // so the session cookie is first-party and no CORS configuration is needed.
-const backendUrl = process.env.BACKEND_URL ?? "http://localhost:4000";
+// BACKEND_URL comes from .env. Rewrites are fixed at build time, so it must be set before `npm run build`;
+// the localhost default applies to development only.
+const backendUrl = process.env.BACKEND_URL || (process.env.NODE_ENV === "production" ? undefined : "http://localhost:4000");
+if (!backendUrl) throw new Error("BACKEND_URL must be set (see frontend/.env.example) before building for production.");
 
 const nextConfig: NextConfig = {
   reactCompiler: true,

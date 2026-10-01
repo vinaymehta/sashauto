@@ -258,6 +258,40 @@ export interface OrdersPage {
   columns?: { key: string; label: string }[];
 }
 
+export interface Vendor {
+  id: number;
+  name: string;
+  product_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export type Currency = "INR" | "USD" | "EUR" | "CNY";
+
+export interface VendorProduct {
+  id: number;
+  vendor_id: number;
+  product_id: number;
+  part_number: string;
+  commodity_type: string | null;
+  sash_part: string | null;
+  vendor_part: string | null;
+  description: string | null;
+  moq: string | null;
+  weight_kg: string | null;
+  price_amount: string | null;
+  price_currency: Currency;
+  price_note: string | null;
+  updated_at: string;
+}
+
+export interface VendorImportResult {
+  vendors_created: number;
+  added: number;
+  updated: number;
+  skipped: { row: number; message: string }[];
+}
+
 export interface MoqAlert {
   id: number;
   po_number: string;

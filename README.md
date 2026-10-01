@@ -28,7 +28,7 @@ npm install
 npm run dev                   # http://localhost:3000 (proxies /api to BACKEND_URL, default http://localhost:4000)
 ```
 
-In development without `SMTP_ADDRESS`, emails are written to `backend/tmp/mails/`.
+Emails are sent through Resend (`RESEND_API_KEY`, `RESEND_FROM`). In development without `RESEND_API_KEY`, emails are written to `backend/tmp/mails/`.
 There is no self-registration; users are created with `bin/rails users:create` (ROLE=`admin` or `warehouse_manager`).
 
 ## Business rules (as implemented)

@@ -22,13 +22,14 @@ Rails.application.configure do
   config.active_storage.service = AppConfig.env("ACTIVE_STORAGE_SERVICE", "local").to_sym
 
   # Assume all access to the app is happening through a SSL-terminating reverse proxy.
-  config.assume_ssl = true
+  config.assume_ssl = AppConfig.https?
 
   # Force all access to the app over SSL, use Strict-Transport-Security, and use secure cookies.
-  config.force_ssl = true
+  config.force_ssl = AppConfig.https?
+  # The health check must answer on plain HTTP too (load balancers and container checks call it directly).
+  config.ssl_options = { redirect: { exclude: ->(request) { request.path == "/up" } } }
 
   # Skip http-to-https redirect for the default health check endpoint.
-  # config.ssl_options = { redirect: { exclude: ->(request) { request.path == "/up" } } }
 
   # Log to STDOUT with the current request id as a default log tag.
   config.log_tags = [ :request_id ]
@@ -54,20 +55,12 @@ Rails.application.configure do
   # config.action_mailer.raise_delivery_errors = false
 
   # Set host to be used by links generated in mailer templates.
-  config.action_mailer.default_url_options = { host: URI(AppConfig.app_url).host }
+  app_url = URI(AppConfig.app_url)
+  config.action_mailer.default_url_options = { host: app_url.host, protocol: app_url.scheme,
+                                               port: (app_url.port unless app_url.port == app_url.default_port) }.compact
   config.action_mailer.raise_delivery_errors = true
-  # Resend API when RESEND_API_KEY is set, otherwise SMTP.
-  config.action_mailer.delivery_method = AppConfig.mail_delivery_method || :smtp
-  config.action_mailer.smtp_settings = AppConfig.smtp_settings
-
-  # Specify outgoing SMTP server. Remember to add smtp/* credentials via bin/rails credentials:edit.
-  # config.action_mailer.smtp_settings = {
-  #   user_name: Rails.application.credentials.dig(:smtp, :user_name),
-  #   password: Rails.application.credentials.dig(:smtp, :password),
-  #   address: "smtp.example.com",
-  #   port: 587,
-  #   authentication: :plain
-  # }
+  # Emails are sent only through the Resend API (RESEND_API_KEY is required in production).
+  config.action_mailer.delivery_method = :resend
 
   # Enable locale fallbacks for I18n (makes lookups for any locale fall back to
   # the I18n.default_locale when a translation cannot be found).

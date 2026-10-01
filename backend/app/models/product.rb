@@ -4,6 +4,7 @@ class Product < ApplicationRecord
   belongs_to :created_by, class_name: "User", optional: true
   belongs_to :first_seen_upload_batch, class_name: "UploadBatch", optional: true
   has_many :product_conflicts
+  has_many :vendor_products, dependent: :restrict_with_error
 
   normalizes :part_number, with: ->(value) { OrderRows::Normalizer.part_number(value) }
   normalizes :commodity_type, with: ->(value) { OrderRows::Normalizer.text(value) }

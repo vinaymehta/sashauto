@@ -31,13 +31,9 @@ Rails.application.configure do
 
   # Don't care if the mailer can't send.
   config.action_mailer.raise_delivery_errors = true
-  # Without SMTP settings, emails are written to tmp/mails for inspection.
-  case AppConfig.mail_delivery_method
-  when :resend
+  # Emails go through Resend when RESEND_API_KEY is set; otherwise they are written to tmp/mails.
+  if AppConfig.mail_delivery_method == :resend
     config.action_mailer.delivery_method = :resend
-  when :smtp
-    config.action_mailer.delivery_method = :smtp
-    config.action_mailer.smtp_settings = AppConfig.smtp_settings
   else
     config.action_mailer.delivery_method = :file
     config.action_mailer.file_settings = { location: Rails.root.join("tmp/mails") }
@@ -46,8 +42,9 @@ Rails.application.configure do
   # Make template changes take effect immediately.
   config.action_mailer.perform_caching = false
 
-  # Set localhost to be used by links generated in mailer templates.
-  config.action_mailer.default_url_options = { host: "localhost", port: 4000 }
+  # Host used by links generated in mailer templates (APP_URL in .env).
+  app_url = URI(AppConfig.app_url)
+  config.action_mailer.default_url_options = { host: app_url.host, port: app_url.port }
 
   # Print deprecation notices to the Rails logger.
   config.active_support.deprecation = :log

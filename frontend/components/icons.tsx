@@ -68,6 +68,15 @@ export const ChevronRightIcon = (p: IconProps) => (
 export const DownloadIcon = (p: IconProps) => (
   <Icon {...p}><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M20 15v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4" /></Icon>
 );
+export const TruckIcon = (p: IconProps) => (
+  <Icon {...p}><path d="M3 6h11v10H3z" /><path d="M14 9h4l3 3v4h-7" /><circle cx="7" cy="17.5" r="1.75" /><circle cx="17" cy="17.5" r="1.75" /></Icon>
+);
+export const TrashIcon = (p: IconProps) => (
+  <Icon {...p}><path d="M4 7h16" /><path d="M10 11v6M14 11v6" /><path d="M6 7l1 13h10l1-13" /><path d="M9 7V4h6v3" /></Icon>
+);
+export const PlusIcon = (p: IconProps) => (
+  <Icon {...p}><path d="M12 5v14M5 12h14" /></Icon>
+);
 export const PencilIcon = (p: IconProps) => (
   <Icon {...p}><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></Icon>
 );

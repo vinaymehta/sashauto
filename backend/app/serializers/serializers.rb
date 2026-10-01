@@ -57,6 +57,17 @@ module Serializers
           .merge(old_qty: qty(change.old_qty), new_qty: qty(change.new_qty), difference: qty(change.difference))
   end
 
+  def vendor(vendor, product_count: nil)
+    vendor.slice(:id, :name, :created_at, :updated_at)
+          .merge(product_count: product_count || (vendor.has_attribute?(:product_count) ? vendor[:product_count] : vendor.vendor_products.count))
+  end
+
+  def vendor_product(item)
+    item.slice(:id, :vendor_id, :product_id, :sash_part, :vendor_part, :description, :price_currency, :price_note, :updated_at)
+        .merge(part_number: item.product.part_number, commodity_type: item.product.commodity_type,
+               moq: qty(item.moq), weight_kg: qty(item.weight_kg), price_amount: qty(item.price_amount))
+  end
+
   def moq_alert(alert)
     alert.slice(:id, :po_number, :part_number, :order_type, :ship_date).merge(qty: qty(alert.qty), moq: qty(alert.moq))
   end

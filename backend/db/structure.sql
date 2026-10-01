@@ -774,6 +774,81 @@ ALTER SEQUENCE public.users_id_seq OWNED BY public.users.id;
 
 
 --
+-- Name: vendor_products; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.vendor_products (
+    id bigint NOT NULL,
+    vendor_id bigint NOT NULL,
+    product_id bigint NOT NULL,
+    sash_part character varying,
+    vendor_part character varying,
+    description text,
+    moq numeric(15,3),
+    weight_kg numeric(12,4),
+    price_amount numeric(15,4),
+    price_currency character varying(3) DEFAULT 'INR'::character varying NOT NULL,
+    price_note character varying,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT vendor_products_currency_valid CHECK (((price_currency)::text = ANY ((ARRAY['INR'::character varying, 'USD'::character varying, 'EUR'::character varying, 'CNY'::character varying])::text[]))),
+    CONSTRAINT vendor_products_moq_positive CHECK (((moq IS NULL) OR (moq > (0)::numeric))),
+    CONSTRAINT vendor_products_price_valid CHECK (((price_amount IS NULL) OR (price_amount >= (0)::numeric))),
+    CONSTRAINT vendor_products_weight_valid CHECK (((weight_kg IS NULL) OR (weight_kg >= (0)::numeric)))
+);
+
+
+--
+-- Name: vendor_products_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.vendor_products_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: vendor_products_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.vendor_products_id_seq OWNED BY public.vendor_products.id;
+
+
+--
+-- Name: vendors; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.vendors (
+    id bigint NOT NULL,
+    name character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: vendors_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.vendors_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: vendors_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.vendors_id_seq OWNED BY public.vendors.id;
+
+
+--
 -- Name: active_storage_attachments id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -883,6 +958,20 @@ ALTER TABLE ONLY public.upload_batches ALTER COLUMN id SET DEFAULT nextval('publ
 --
 
 ALTER TABLE ONLY public.users ALTER COLUMN id SET DEFAULT nextval('public.users_id_seq'::regclass);
+
+
+--
+-- Name: vendor_products id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vendor_products ALTER COLUMN id SET DEFAULT nextval('public.vendor_products_id_seq'::regclass);
+
+
+--
+-- Name: vendors id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vendors ALTER COLUMN id SET DEFAULT nextval('public.vendors_id_seq'::regclass);
 
 
 --
@@ -1027,6 +1116,22 @@ ALTER TABLE ONLY public.upload_batches
 
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: vendor_products vendor_products_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vendor_products
+    ADD CONSTRAINT vendor_products_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: vendors vendors_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vendors
+    ADD CONSTRAINT vendors_pkey PRIMARY KEY (id);
 
 
 --
@@ -1415,6 +1520,34 @@ CREATE UNIQUE INDEX index_users_on_lower_email ON public.users USING btree (lowe
 
 
 --
+-- Name: index_vendor_products_on_product_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_vendor_products_on_product_id ON public.vendor_products USING btree (product_id);
+
+
+--
+-- Name: index_vendor_products_on_vendor_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_vendor_products_on_vendor_id ON public.vendor_products USING btree (vendor_id);
+
+
+--
+-- Name: index_vendor_products_on_vendor_id_and_product_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_vendor_products_on_vendor_id_and_product_id ON public.vendor_products USING btree (vendor_id, product_id);
+
+
+--
+-- Name: index_vendors_on_lower_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_vendors_on_lower_name ON public.vendors USING btree (lower((name)::text));
+
+
+--
 -- Name: address_changes address_changes_append_only; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -1509,6 +1642,14 @@ ALTER TABLE ONLY public.ageing_notifications
 
 ALTER TABLE ONLY public.ageing_digests
     ADD CONSTRAINT fk_rails_351ea1f8a1 FOREIGN KEY (upload_batch_id) REFERENCES public.upload_batches(id);
+
+
+--
+-- Name: vendor_products fk_rails_443e06182c; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vendor_products
+    ADD CONSTRAINT fk_rails_443e06182c FOREIGN KEY (product_id) REFERENCES public.products(id);
 
 
 --
@@ -1656,6 +1797,14 @@ ALTER TABLE ONLY public.quantity_changes
 
 
 --
+-- Name: vendor_products fk_rails_dc716d7803; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vendor_products
+    ADD CONSTRAINT fk_rails_dc716d7803 FOREIGN KEY (vendor_id) REFERENCES public.vendors(id) ON DELETE CASCADE;
+
+
+--
 -- Name: order_rows fk_rails_dde6d74b6b; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1718,6 +1867,7 @@ ALTER TABLE ONLY public.address_changes
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261001160001'),
 ('20261001140001'),
 ('20261001120001'),
 ('20261001090001'),

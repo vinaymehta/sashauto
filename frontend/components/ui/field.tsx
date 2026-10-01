@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react";
+import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 
 const control =
   "h-9 rounded-md border bg-white px-3 text-base text-ink placeholder:text-ink-faint " +
@@ -13,6 +13,16 @@ export function Input({ className = "", invalid = false, ...props }: InputHTMLAt
     <input
       aria-invalid={invalid || undefined}
       className={`${control} ${invalid ? borders.invalid : borders.normal} ${className}`}
+      {...props}
+    />
+  );
+}
+
+export function Textarea({ className = "", invalid = false, ...props }: TextareaHTMLAttributes<HTMLTextAreaElement> & { invalid?: boolean }) {
+  return (
+    <textarea
+      aria-invalid={invalid || undefined}
+      className={`${control} h-auto min-h-20 py-2 ${invalid ? borders.invalid : borders.normal} ${className}`}
       {...props}
     />
   );

@@ -53,7 +53,7 @@ module Backend
       key: "_order_tracker_session",
       same_site: :lax,
       httponly: true,
-      secure: Rails.env.production?,
+      secure: Rails.env.production? && AppConfig.https?,
       expire_after: 12.hours
     config.middleware.use ActionDispatch::Cookies
     config.middleware.use config.session_store, config.session_options

@@ -89,7 +89,7 @@ class ApplicationController < ActionController::API
 
   # Server-side offset pagination. Returns [records, meta]; a page past the end is clamped to the last page.
   def paginate(scope)
-    total = scope.count
+    total = scope.count(:all) # COUNT(*) even when the scope has a custom SELECT
     page, per_page, meta = pagination_meta(total)
     [ scope.offset((page - 1) * per_page).limit(per_page), meta ]
   end

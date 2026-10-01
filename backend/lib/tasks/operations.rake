@@ -50,21 +50,15 @@ namespace :notifications do
 end
 
 namespace :mail do
-  desc "Send a test email with the current mail settings. TO=you@company.com"
+  desc "Send a test email through Resend. TO=you@company.com"
   task test: :environment do
     to = ENV["TO"].presence || abort("Usage: bin/rails mail:test TO=you@company.com")
     method = ActionMailer::Base.delivery_method
     ActionMailer::Base.mail(from: AppConfig.mail_from, to: to, subject: "Order Change Tracker test email",
-                            body: "SMTP is configured correctly (delivery method: #{method}).").deliver_now
-    puts case method
-    when :resend then "Sent to #{to} via Resend."
-    when :smtp then "Sent to #{to} via #{AppConfig.env('SMTP_ADDRESS')}."
-    else "No RESEND_API_KEY or SMTP_ADDRESS is set, so the email was written to tmp/mails/ instead."
-    end
-  rescue Net::SMTPAuthenticationError => e
-    abort "SMTP login failed: #{e.message.strip}\nFor Gmail, SMTP_PASSWORD must be a 16-character App Password, not your normal password."
+                            body: "Email is configured correctly (delivery method: #{method}).").deliver_now
+    puts method == :resend ? "Sent to #{to} via Resend." : "No RESEND_API_KEY is set, so the email was written to tmp/mails/ instead."
   rescue Resend::Error => e
-    abort "Resend rejected the email: #{e.message}\nCheck RESEND_API_KEY and that MAIL_FROM uses your verified Resend domain."
+    abort "Resend rejected the email: #{e.message}\nCheck RESEND_API_KEY and that RESEND_FROM uses your verified Resend domain."
   rescue StandardError => e
     abort "Sending failed: #{e.class}: #{e.message}"
   end
