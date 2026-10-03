@@ -2,7 +2,9 @@ module Api
   class ProductsController < ApplicationController
     SORTS = {
       "part_number" => "products.part_number", "commodity_type" => "products.commodity_type",
-      "source" => "products.source", "moq" => "products.moq", "updated_at" => "products.updated_at"
+      "source" => "products.source", "moq" => "products.moq", "updated_at" => "products.updated_at",
+      "sash_part" => "products.sash_part", "vendor_part" => "products.vendor_part",
+      "description" => "products.description", "weight_kg" => "products.weight_kg"
     }.freeze
 
     before_action -> { require_role(:admin) }, only: :update
@@ -11,7 +13,8 @@ module Api
       scope = Product.all
       if params[:q].present?
         term = "%#{Product.sanitize_sql_like(params[:q].to_s.strip.first(100))}%"
-        scope = scope.where("part_number ILIKE :t OR commodity_type ILIKE :t", t: term)
+        scope = scope.where("part_number ILIKE :t OR commodity_type ILIKE :t OR sash_part ILIKE :t OR " \
+                            "vendor_part ILIKE :t OR description ILIKE :t", t: term)
       end
       scope = scope.where(id: ProductConflict.open.select(:product_id)) if params[:conflicts] == "open"
       scope = scope.where(source: params[:source]) if Product::SOURCES.include?(params[:source])
@@ -21,6 +24,13 @@ module Api
       meta = meta.merge(sort: sort, direction: direction)
       conflicts = ProductConflict.open.includes(:upload_batch).where(product_id: products.map(&:id)).order(:created_at).group_by(&:product_id)
       render json: { data: products.map { |p| Serializers.product(p, open_conflicts: conflicts.fetch(p.id, [])) }, meta: meta }
+    end
+
+    # Vendors supplying this product, with each vendor's price (from the Vendors list).
+    def vendors
+      product = Product.find(params[:id])
+      items = product.vendor_products.includes(:vendor).joins(:vendor).order("vendors.name")
+      render json: { data: items.map { |vp| Serializers.product_vendor(vp) } }
     end
 
     def create

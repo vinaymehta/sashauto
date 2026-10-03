@@ -114,7 +114,11 @@ export interface Product {
   id: number;
   part_number: string;
   commodity_type: string | null;
+  sash_part: string | null;
+  vendor_part: string | null;
+  description: string | null;
   moq: string | null;
+  weight_kg: string | null;
   source: "upload" | "manual";
   created_at: string;
   updated_at: string;
@@ -241,7 +245,7 @@ export interface OrderRow {
 export interface OrderHistory {
   data: OrderRow[];
   headers: string[];
-  group: { po_number: string; part_number: string; order_type: OrderType };
+  group: { po_number: string; part_number: string; order_type: OrderType; description: string | null };
 }
 
 export interface RelatedItem {
@@ -283,6 +287,15 @@ export interface VendorProduct {
   price_currency: Currency;
   price_note: string | null;
   updated_at: string;
+}
+
+export interface ProductVendor {
+  id: number;
+  vendor_id: number;
+  vendor_name: string;
+  price_amount: string | null;
+  price_currency: Currency;
+  price_note: string | null;
 }
 
 export interface VendorImportResult {

@@ -32,7 +32,9 @@ Rails.application.routes.draw do
       post :import, on: :collection
       resources :products, only: %i[index create update destroy], controller: :vendor_products
     end
-    resources :products, only: %i[index create update]
+    resources :products, only: %i[index create update] do
+      get :vendors, on: :member
+    end
     resources :product_conflicts, only: [] do
       post :resolve, on: :member
     end

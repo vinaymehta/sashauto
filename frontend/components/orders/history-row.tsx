@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import type { OrderHistory, OrderRow } from "@/lib/types";
 import { formatDate, formatQty } from "@/lib/format";
 import { ageRowProps } from "../age";
@@ -7,10 +8,11 @@ import { useApi } from "../use-api";
 import { Alert } from "../ui/feedback";
 import { Skeleton } from "../ui/skeleton";
 import { Sheet } from "../ui/sheet";
-import { HistoryIcon } from "../icons";
+import { FileIcon } from "../icons";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-const qty = (value: string | null) => (value === null ? <span className="text-neutral-300">—</span> : formatQty(value));
+const dash = <span className="text-neutral-300">—</span>;
+const qty = (value: string | null) => (value === null ? dash : formatQty(value));
 
 // Original imported cell value, lightly formatted for reading (blank cells shown as a dash).
 export function cell(value: string | number | null | undefined) {
@@ -22,72 +24,66 @@ export function cell(value: string | number | null | undefined) {
   return typeof value === "string" ? value.trim() : value.toLocaleString("en-US");
 }
 
-// History of one current order row in the right-hand side panel: the current row first, then the other
-// rows with the same PO Number + Part Number + Type (never another Type), newest Ship Date first.
-// Loaded when the panel opens.
-export function HistoryPanel({ row, today, onClose }: { row: OrderRow; today: Date; onClose: () => void }) {
+// Order detail in the right-hand side panel: one detail card per row with the same PO Number + Part Number
+// + Type. The clicked row's card comes first and is marked Current; the others follow by PO Line Number and
+// Ship Date. The panel has no backdrop, so the Orders table stays visible and clickable.
+export function OrderDetailPanel({ row, today, onClose }: { row: OrderRow; today: Date; onClose: () => void }) {
   const { data, error, loading } = useApi<OrderHistory>(`/api/orders/${row.id}/history`);
-  const count = data?.data.length;
-  const th = "h-9 whitespace-nowrap border-b border-neutral-200 bg-neutral-50 px-4 text-2xs font-bold uppercase tracking-wider text-neutral-600";
-  const td = "tabular h-10 whitespace-nowrap border-b border-neutral-100 px-4";
+  const description = data?.group.description ?? null;
+  const rows = data ? [row, ...data.data.filter((r) => r.id !== row.id)] : [row];
 
   return (
     <Sheet
       open
+      overlay={false}
       onClose={onClose}
-      title="History"
+      title="Order details"
       description={<>
-        <span className="font-medium text-ink">{row.order_type}</span> only
-        {count !== undefined && <> · {count === 0 ? "no other rows" : `${count} earlier row${count === 1 ? "" : "s"}, newest ship date first`}</>}
+        PO <span className="font-medium text-ink">{row.po_number}</span> · {row.order_type}
+        {data && <> · {rows.length} row{rows.length === 1 ? "" : "s"}</>}
       </>}
-      icon={<HistoryIcon size={18} />}
+      icon={<FileIcon size={18} />}
     >
       <div className="space-y-4">
-        <dl className="grid grid-cols-2 overflow-hidden rounded-lg border border-line bg-white shadow-card">
-          <div className="border-r border-neutral-100 px-5 py-3">
-            <dt className="text-xs font-medium text-ink-muted">PO Number</dt>
-            <dd className="mt-0.5 font-semibold text-ink">{row.po_number}</dd>
-          </div>
-          <div className="px-5 py-3">
-            <dt className="text-xs font-medium text-ink-muted">Part Number</dt>
-            <dd className="mt-0.5 font-semibold text-ink">{row.part_number}</dd>
-          </div>
-        </dl>
-
+        {rows.map((r, index) => <DetailCard key={r.id} row={r} description={description} current={index === 0} today={today} />)}
         {error ? (
-          <Alert title="Could not load the history">{error.message}</Alert>
+          <Alert title="Could not load the other rows">{error.message}</Alert>
         ) : loading && !data ? (
-          <Skeleton className="h-32 w-full" />
-        ) : data ? (
-          <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-card">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr>
-                  <th className={`${th} text-left`}>Ship Date</th>
-                  <th className={`${th} text-right`}>Qty</th>
-                  <th className={`${th} text-right`}>Previous Qty</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[row, ...data.data].map((r) => {
-                  const current = r.id === row.id;
-                  const tint = ageRowProps(r.ship_date, today, "hover:bg-neutral-50");
-                  return (
-                    <tr key={r.id} className={`${tint.className} ${current ? "font-semibold shadow-[inset_3px_0_0_var(--color-accent)]" : ""}`} title={tint.title}>
-                      <td className={`${td} text-ink`}>
-                        {formatDate(r.ship_date)}
-                        {current && <span className="ml-2 rounded bg-accent/10 px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wider text-accent">Current</span>}
-                      </td>
-                      <td className={`${td} text-right text-ink`}>{qty(r.qty)}</td>
-                      <td className={`${td} text-right text-ink-muted`}>{qty(r.previous_qty)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <Skeleton className="h-48 w-full" />
         ) : null}
       </div>
     </Sheet>
+  );
+}
+
+function DetailCard({ row, description, current, today }: { row: OrderRow; description: string | null; current: boolean; today: Date }) {
+  const age = ageRowProps(row.ship_date, today);
+  const details: [string, ReactNode][] = [
+    ["Description", description ?? dash],
+    ["Item Number", row.part_number],
+    ["Due Date", row.due_date ? formatDate(row.due_date) : dash],
+    ["Ship Date", formatDate(row.ship_date)],
+    ["Quantity Due", qty(row.qty)],
+    ["UOM", row.unit?.trim() || dash],
+  ];
+
+  return (
+    <section className={`overflow-hidden rounded-lg border bg-white shadow-card ${current ? "border-accent/40 ring-1 ring-accent/20" : "border-line"}`}>
+      <header className={`flex items-center justify-between gap-3 border-b border-neutral-100 px-5 py-3 ${age.className}`} title={age.title}>
+        <h3 className="text-sm font-semibold text-ink">
+          PO Line {row.po_line_number}
+          {current && <span className="ml-2 rounded bg-accent/10 px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wider text-accent">Current</span>}
+        </h3>
+        <span className="tabular text-xs text-ink-muted">Excel row {row.source_row_number}</span>
+      </header>
+      <dl className="divide-y divide-neutral-100">
+        {details.map(([label, value]) => (
+          <div key={label} className="grid grid-cols-[9rem_1fr] gap-4 px-5 py-2.5 text-sm">
+            <dt className="font-medium text-ink-muted">{label}</dt>
+            <dd className="min-w-0 break-words text-ink">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
   );
 }

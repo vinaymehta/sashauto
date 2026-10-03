@@ -3,9 +3,10 @@
 import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import type { Paginated, Product, ProductConflict } from "@/lib/types";
-import { formatCount, formatDateOnly, formatDateTime, formatQty } from "@/lib/format";
-import { PencilIcon } from "@/components/icons";
+import type { Paginated, Product, ProductConflict, ProductVendor } from "@/lib/types";
+import { formatCount, formatDateTime, formatQty } from "@/lib/format";
+import { PencilIcon, TruckIcon } from "@/components/icons";
+import { formatPrice } from "@/components/vendors/vendor-products-panel";
 import { useSession } from "@/components/session";
 import { useToast } from "@/components/toast";
 import { Field, Input } from "@/components/ui/field";
@@ -16,7 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ListToolbar } from "@/components/ui/list-toolbar";
 import { SearchInput } from "@/components/ui/search-input";
-import { Alert, EmptyState } from "@/components/ui/feedback";
+import { Alert, EmptyState, Spinner } from "@/components/ui/feedback";
 import { FilterChips, FilterMenu, type FilterGroup } from "@/components/ui/filter-menu";
 import { PageHeader, Panel } from "@/components/ui/panel";
 import { PanelSkeleton, TableSkeleton } from "@/components/ui/skeleton";
@@ -29,7 +30,7 @@ const FILTERS: FilterGroup[] = [
 
 export default function ProductsPage() {
   return (
-    <Suspense fallback={<PanelSkeleton rows={10} columns={4} />}>
+    <Suspense fallback={<PanelSkeleton rows={10} columns={6} />}>
       <ProductsView />
     </Suspense>
   );
@@ -49,14 +50,15 @@ function ProductsView() {
   const filtered = q !== "" || Object.values(list.filters).some(Boolean);
   const clearAll = () => { list.clearFilters(); setSearch(""); };
   const sortProps = { sort: list.sort, direction: list.direction, onSort: list.toggleSort };
+  const [viewing, setViewing] = useState<Product | null>(null);
 
   return (
     <>
-      <PageHeader title="Products" description="Every Part Number found in the uploaded files, with its Commodity Type." />
+      <PageHeader title="Products" description="Every Part Number found in the uploaded files, with its details from the DTP sheet. Click a product to see its vendors." />
 
       <Panel flush>
         <ListToolbar summary={data ? `${formatCount(data.meta.total)} product${data.meta.total === 1 ? "" : "s"}` : ""}>
-          <SearchInput label="Search products" placeholder="Search part number or commodity type" value={search}
+          <SearchInput label="Search products" placeholder="Search part, SASH, vendor part or description" value={search}
                        onSearch={(v) => { setSearch(v); list.resetPage(); }} className="w-full sm:w-72" />
           <FilterMenu groups={FILTERS} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
         </ListToolbar>
@@ -64,7 +66,7 @@ function ProductsView() {
         {error ? (
           <div className="p-4"><Alert title="Could not load products">{error.message}</Alert></div>
         ) : loading && !data ? (
-          <TableSkeleton rows={10} columns={4} />
+          <TableSkeleton rows={10} columns={6} />
         ) : data && data.data.length === 0 ? (
           <EmptyState
             title={filtered ? "No products match" : "No products yet"}
@@ -75,29 +77,37 @@ function ProductsView() {
           <div className={`transition-opacity duration-200 ${loading ? "opacity-50" : ""}`}>
             <Table fixed>
               <colgroup>
-                <col className={isAdmin ? "w-[26%]" : "w-[28%]"} />
-                <col className={isAdmin ? "w-[30%]" : "w-[36%]"} />
-                <col className={isAdmin ? "w-[14%]" : "w-[16%]"} />
-                <col className={isAdmin ? "w-[18%]" : "w-[20%]"} />
-                {isAdmin && <col className="w-[12%]" />}
+                <col className="w-[15%]" />
+                <col className="w-[11%]" />
+                <col className="w-[13%]" />
+                <col />
+                <col className="w-[9%]" />
+                <col className="w-[13%]" />
+                {isAdmin && <col className="w-[8%]" />}
               </colgroup>
               <thead>
                 <tr>
-                  <SortTh label="Part Number" sortKey="part_number" {...sortProps} />
-                  <SortTh label="Commodity Type" sortKey="commodity_type" {...sortProps} />
+                  <SortTh label="Customer Part" sortKey="part_number" {...sortProps} />
+                  <SortTh label="SASH Part" sortKey="sash_part" {...sortProps} />
+                  <SortTh label="Vendor Part" sortKey="vendor_part" {...sortProps} />
+                  <SortTh label="Description" sortKey="description" {...sortProps} />
                   <SortTh label="MOQ" sortKey="moq" align="right" {...sortProps} />
-                  <SortTh label="Last Updated" sortKey="updated_at" align="right" {...sortProps} />
+                  <SortTh label="Per Pc Weight in Kg" sortKey="weight_kg" align="right" {...sortProps} />
                   {isAdmin && <Th align="center">Action</Th>}
                 </tr>
               </thead>
               <tbody>
-                {data.data.map((p) => <ProductRow key={p.id} product={p} canEdit={isAdmin} onSaved={reload} />)}
+                {data.data.map((p) => (
+                  <ProductRow key={p.id} product={p} canEdit={isAdmin} onSaved={reload}
+                              active={viewing?.id === p.id} onOpen={() => setViewing(p)} />
+                ))}
               </tbody>
             </Table>
             <Pagination meta={data.meta} onPage={list.setPage} onPerPage={list.setPerPage} noun="products" />
           </div>
         ) : null}
       </Panel>
+      {viewing && <ProductVendorsPanel key={viewing.id} product={viewing} onClose={() => setViewing(null)} />}
     </>
   );
 }
@@ -109,16 +119,20 @@ function conflictNote(c: ProductConflict) {
 
 const MOQ_FORMAT = /^\d+(\.\d{1,3})?$/;
 
-function ProductRow({ product, canEdit, onSaved }: { product: Product; canEdit: boolean; onSaved: () => void }) {
+const dash = <span className="text-neutral-300" aria-label="Not set">—</span>;
+
+function ProductRow({ product, canEdit, onSaved, active, onOpen }: {
+  product: Product; canEdit: boolean; onSaved: () => void; active: boolean; onOpen: () => void;
+}) {
   const conflicts = product.open_conflicts;
   const [editing, setEditing] = useState(false);
 
   return (
-    <tr className="transition-colors duration-150 hover:bg-neutral-50/50">
-      <Td className="truncate font-medium" title={product.part_number}>{product.part_number}</Td>
-      <Td className="truncate">
+    <tr onClick={onOpen} aria-haspopup="dialog" aria-expanded={active}
+        className={`cursor-pointer transition-colors duration-150 hover:bg-neutral-50 ${active ? "shadow-[inset_3px_0_0_var(--color-accent)]" : ""}`}>
+      <Td className="truncate font-medium" title={product.part_number}>
         <span className="inline-flex max-w-full items-center gap-2">
-          {product.commodity_type ?? <span className="text-neutral-300" aria-label="Not set">—</span>}
+          {product.part_number}
           {conflicts.length > 0 && (
             <span title={conflicts.map(conflictNote).join("\n")}>
               <Badge tone="warn">{conflicts.length} conflict{conflicts.length === 1 ? "" : "s"}</Badge>
@@ -126,17 +140,13 @@ function ProductRow({ product, canEdit, onSaved }: { product: Product; canEdit: 
           )}
         </span>
       </Td>
-      <Td align="right" className="tabular">
-        {product.moq !== null ? formatQty(product.moq) : <span className="text-neutral-300" aria-label="Not set">—</span>}
-      </Td>
-      <Td align="right">
-        <time dateTime={product.updated_at} title={formatDateTime(product.updated_at)}
-              className="font-mono text-xs tracking-tight text-neutral-500">
-          {formatDateOnly(product.updated_at)}
-        </time>
-      </Td>
+      <Td className="truncate" title={product.sash_part ?? undefined}>{product.sash_part ?? dash}</Td>
+      <Td className="truncate" title={product.vendor_part ?? undefined}>{product.vendor_part ?? dash}</Td>
+      <Td className="truncate text-ink-muted" title={product.description ?? undefined}>{product.description ?? dash}</Td>
+      <Td align="right" className="tabular">{product.moq !== null ? formatQty(product.moq) : dash}</Td>
+      <Td align="right" className="tabular">{product.weight_kg !== null ? formatQty(product.weight_kg) : dash}</Td>
       {canEdit && (
-        <Td align="center">
+        <Td align="center" onClick={(e) => e.stopPropagation()}>
           <Button size="sm" onClick={() => setEditing(true)} aria-haspopup="dialog" aria-expanded={editing}
                   aria-label={`Edit MOQ for ${product.part_number}`} title="Edit MOQ" className="w-8 px-0!">
             <PencilIcon size={14} className="text-ink-muted" />
@@ -145,6 +155,48 @@ function ProductRow({ product, canEdit, onSaved }: { product: Product; canEdit: 
         </Td>
       )}
     </tr>
+  );
+}
+
+// Side panel with the vendors of a product and each vendor's price (from the Vendors list).
+function ProductVendorsPanel({ product, onClose }: { product: Product; onClose: () => void }) {
+  const { data, error, loading } = useApi<{ data: ProductVendor[] }>(`/api/products/${product.id}/vendors`);
+  const items = data?.data ?? [];
+
+  return (
+    <Sheet open onClose={onClose} title={product.part_number}
+           description={product.description ?? "Vendors supplying this part."} icon={<TruckIcon size={18} />}>
+      <section className="overflow-hidden rounded-lg border border-line bg-white shadow-card">
+        <header className="flex items-center justify-between border-b border-neutral-100 px-5 py-3">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-muted">Vendors</h3>
+          {data && <span className="text-xs text-ink-muted">{items.length} vendor{items.length === 1 ? "" : "s"}</span>}
+        </header>
+        {error ? (
+          <div className="p-4"><Alert title="Could not load the vendors">{error.message}</Alert></div>
+        ) : loading && !data ? (
+          <div className="flex justify-center py-10"><Spinner /></div>
+        ) : items.length === 0 ? (
+          <p className="px-5 py-8 text-center text-sm text-ink-muted">No vendor is listed for this part.</p>
+        ) : (
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr className="text-2xs font-bold uppercase tracking-wider text-neutral-600">
+                <th className="h-9 border-b border-neutral-200 bg-neutral-50 px-5 text-left">Vendor Name</th>
+                <th className="h-9 border-b border-neutral-200 bg-neutral-50 px-5 text-right">Vendor Price</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((v) => (
+                <tr key={v.id}>
+                  <td className="h-11 border-b border-neutral-100 px-5 font-medium text-ink">{v.vendor_name}</td>
+                  <td className="tabular whitespace-nowrap border-b border-neutral-100 px-5 text-right text-ink">{formatPrice(v) ?? dash}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+    </Sheet>
   );
 }
 

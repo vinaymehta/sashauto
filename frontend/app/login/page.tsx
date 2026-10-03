@@ -1,5 +1,6 @@
 "use client";
 
+import { BrandLogo } from "@/components/brand-logo";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent, type KeyboardEvent } from "react";
 import { ApiError } from "@/lib/api";
@@ -51,7 +52,7 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-accent text-base font-semibold text-white">OC</span>
+          <BrandLogo tone="dark" size="lg" />
           <h1 className="mt-4 text-2xl font-semibold tracking-tight text-ink">Sign in</h1>
           <p className="mt-1 text-base text-ink-muted">Order Change Tracker</p>
         </div>

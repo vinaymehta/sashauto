@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { BoxIcon, CloseIcon, DashboardIcon, MenuIcon, TableIcon, TruckIcon, UploadIcon } from "./icons";
+import { BrandLogo } from "./brand-logo";
 import { NotificationBell } from "./notification-bell";
 import { useSession } from "./session";
 import { ToastProvider } from "./toast";
@@ -14,9 +15,9 @@ import { UserMenu } from "./user-menu";
 const NAV = [
   { href: "/", label: "Dashboard", icon: DashboardIcon, match: (p: string) => p === "/" },
   { href: "/orders", label: "Orders", icon: TableIcon, match: (p: string) => p.startsWith("/orders") },
-  { href: "/detect", label: "Upload / Detection", icon: UploadIcon, match: (p: string) => p.startsWith("/detect") || p.startsWith("/uploads") },
   { href: "/products", label: "Products", icon: BoxIcon, match: (p: string) => p.startsWith("/products") },
   { href: "/vendors", label: "Vendors", icon: TruckIcon, match: (p: string) => p.startsWith("/vendors") },
+  { href: "/detect", label: "Upload / Detection", icon: UploadIcon, match: (p: string) => p.startsWith("/detect") || p.startsWith("/uploads") },
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -121,9 +122,8 @@ export function AppShell({ children }: { children: ReactNode }) {
 
 function Brand({ compact = false }: { compact?: boolean }) {
   return (
-    <Link href="/" className="flex items-center gap-2.5">
-      <span className="flex h-7 w-7 items-center justify-center rounded-md bg-white text-xs font-semibold text-neutral-900">OC</span>
-      {!compact && <span className="text-base font-semibold text-white">Order Change Tracker</span>}
+    <Link href="/" aria-label="SASH Order Change Tracker home" className="flex items-center">
+      <BrandLogo tone="light" size={compact ? "sm" : "md"} />
     </Link>
   );
 }

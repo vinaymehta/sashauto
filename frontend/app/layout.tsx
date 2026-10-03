@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Archivo_Black, Inter } from "next/font/google";
 import { SessionProvider } from "@/components/session";
 import "./globals.css";
 
 const inter = Inter({ variable: "--font-inter", subsets: ["latin"] });
+// Heavy, wide face for the SASH wordmark in the logo.
+const brand = Archivo_Black({ variable: "--font-brand", weight: "400", subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: { default: "Order Change Tracker", template: "%s · Order Change Tracker" },
@@ -13,7 +15,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${inter.variable} h-full`}>
+    <html lang="en" className={`${inter.variable} ${brand.variable} h-full`}>
       <body className="min-h-full">
         <SessionProvider>{children}</SessionProvider>
       </body>

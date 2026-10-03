@@ -594,8 +594,13 @@ CREATE TABLE public.products (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     moq numeric(15,3),
+    sash_part character varying,
+    vendor_part character varying,
+    description text,
+    weight_kg numeric(12,4),
     CONSTRAINT products_moq_positive CHECK (((moq IS NULL) OR (moq > (0)::numeric))),
-    CONSTRAINT products_source_valid CHECK (((source)::text = ANY (ARRAY[('upload'::character varying)::text, ('manual'::character varying)::text])))
+    CONSTRAINT products_source_valid CHECK (((source)::text = ANY (ARRAY[('upload'::character varying)::text, ('manual'::character varying)::text]))),
+    CONSTRAINT products_weight_valid CHECK (((weight_kg IS NULL) OR (weight_kg >= (0)::numeric)))
 );
 
 
@@ -1867,6 +1872,7 @@ ALTER TABLE ONLY public.address_changes
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261003090001'),
 ('20261001160001'),
 ('20261001140001'),
 ('20261001120001'),

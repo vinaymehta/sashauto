@@ -1,6 +1,8 @@
 module Vendors
   # Imports a vendor workbook (like "DTP Details.xlsx"): one row per part and vendor with the columns
   # Customer Part, SASH Part, Vendor Part, Description, MOQ, Per Pc Weight in Kg, Vendor Name, Vendor Price.
+  # The file is also the source of the product fields: each row sets its Product's SASH Part, Vendor Part,
+  # Description, MOQ and Per Pc Weight (blank cells leave the product's value unchanged).
   # Headers are matched by name (case and spaces ignored). Vendors are matched by name and parts by
   # Part Number: existing vendor/part pairs are updated, new ones added. Rows whose Part Number is not in
   # Products, or without a vendor, are skipped and reported. Everything is saved in one transaction.
@@ -60,6 +62,9 @@ module Vendors
           product = Product.find_by(part_number: part) if part.present?
           next skipped << { row: number, message: "Part Number #{part.presence || '(blank)'} is not in Products." } unless product
 
+          product.update!({ sash_part: row[:sash_part].to_s.strip.presence, vendor_part: row[:vendor_part].to_s.strip.presence,
+                            description: row[:description].to_s.strip.presence, moq: number_or_nil(row[:moq]),
+                            weight_kg: number_or_nil(row[:weight_kg]) }.compact)
           vendor = vendors[name.downcase] ||= Vendor.create!(name: name).tap { created += 1 }
           amount, currency, note = self.class.parse_price(row[:price])
           item = VendorProduct.find_or_initialize_by(vendor: vendor, product: product)

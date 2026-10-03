@@ -62,6 +62,11 @@ module Serializers
           .merge(product_count: product_count || (vendor.has_attribute?(:product_count) ? vendor[:product_count] : vendor.vendor_products.count))
   end
 
+  def product_vendor(item)
+    { id: item.id, vendor_id: item.vendor_id, vendor_name: item.vendor.name, price_amount: qty(item.price_amount),
+      price_currency: item.price_currency, price_note: item.price_note }
+  end
+
   def vendor_product(item)
     item.slice(:id, :vendor_id, :product_id, :sash_part, :vendor_part, :description, :price_currency, :price_note, :updated_at)
         .merge(part_number: item.product.part_number, commodity_type: item.product.commodity_type,
@@ -101,8 +106,8 @@ module Serializers
   end
 
   def product(product, open_conflicts: [])
-    product.slice(:id, :part_number, :commodity_type, :source, :created_at, :updated_at)
-           .merge(moq: qty(product.moq))
+    product.slice(:id, :part_number, :commodity_type, :source, :sash_part, :vendor_part, :description, :created_at, :updated_at)
+           .merge(moq: qty(product.moq), weight_kg: qty(product.weight_kg))
            .merge(open_conflicts: open_conflicts.map { |c| product_conflict(c) })
   end
 

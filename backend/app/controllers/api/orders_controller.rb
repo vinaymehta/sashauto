@@ -31,7 +31,8 @@ module Api
       latest = UploadBatch.latest_completed
       return render(json: { data: [], meta: pagination_meta(0).last, source: nil }) if latest.nil?
 
-      dataset = latest.order_rows.current_rows
+      # Every imported row of the latest upload (not only the current row of each PO + Part + Type).
+      dataset = latest.order_rows
       columns = source_columns(dataset)
       scope = filter(search(dataset, (params[:search].presence || params[:q]).to_s.strip.first(100)))
       scope, sort, direction = apply_sort(scope, sorts_for(columns), default: DEFAULT_SORT)
@@ -51,16 +52,17 @@ module Api
       }
     end
 
-    # History of one current row: the other rows of the same upload with the same
-    # PO Number + Part Number + Type (never another Type), newest ship date first, with all source fields.
+    # Order detail of one row: every row of the same upload with the same PO Number + Part Number + Type
+    # (the clicked row included), ordered by PO Line Number then Ship Date, plus the product Description.
     def history
       row = OrderRow.find(params[:id])
-      rows = OrderRow.where(upload_batch_id: row.upload_batch_id, group_key: row.group_key).where.not(id: row.id)
-                     .order(ship_date: :desc, source_row_number: :asc).limit(1_000)
+      rows = OrderRow.where(upload_batch_id: row.upload_batch_id, group_key: row.group_key)
+                     .order(:po_line_number, :ship_date, :source_row_number).limit(1_000)
       render json: {
         data: rows.map { |r| Serializers.order_row(r, source: true) },
         headers: row.source_columns.presence || row.source_data.keys,
-        group: { po_number: row.po_number, part_number: row.part_number, order_type: row.order_type }
+        group: { po_number: row.po_number, part_number: row.part_number, order_type: row.order_type,
+                 description: Product.find_by(part_number: row.part_number)&.description }
       }
     end
 

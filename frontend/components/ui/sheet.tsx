@@ -8,17 +8,26 @@ import { useDismiss } from "../use-dismiss";
 // 40% of the window on larger screens, full width on phones. Closes on backdrop click, the close button or
 // Escape. The body is light gray so white section cards stand out; `footer` stays pinned at the bottom.
 // `wide` is for panels holding wide tables (75% of the window on larger screens).
-export function Sheet({ open, title, description, icon, onClose, children, footer, wide = false }: {
+// `overlay={false}` keeps the page behind usable: no dim/blur backdrop, the page still scrolls and can be
+// clicked, and only the close button or Escape closes the panel.
+export function Sheet({ open, title, description, icon, onClose, children, footer, wide = false, overlay = true }: {
   open: boolean; title: ReactNode; description?: ReactNode; icon?: ReactNode; onClose: () => void; children: ReactNode; footer?: ReactNode;
-  wide?: boolean;
+  wide?: boolean; overlay?: boolean;
 }) {
   const panel = useRef<HTMLDivElement>(null);
-  useDismiss(panel, open, onClose);
+  useDismiss(panel, open && overlay, onClose);
+
+  useEffect(() => {
+    if (!open || overlay) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, overlay, onClose]);
 
   // The page behind the panel must not scroll. The scrollbar's width is replaced with padding so
   // the layout does not shift sideways and the panel reaches the window edge.
   useEffect(() => {
-    if (!open) return;
+    if (!open || !overlay) return;
     const { body, documentElement } = document;
     const previous = { overflow: body.style.overflow, paddingRight: body.style.paddingRight };
     const scrollbar = window.innerWidth - documentElement.clientWidth;
@@ -28,15 +37,15 @@ export function Sheet({ open, title, description, icon, onClose, children, foote
       body.style.overflow = previous.overflow;
       body.style.paddingRight = previous.paddingRight;
     };
-  }, [open]);
+  }, [open, overlay]);
 
   if (!open) return null;
 
   return (
     <>
       {/* Dimming backdrop behind the drawer, below the navbar and right of the sidebar (both stay sharp). */}
-      <div aria-hidden className="fixed inset-x-0 top-14 bottom-0 z-40 lg:left-60 animate-fade-in bg-neutral-950/20 backdrop-blur-sm" />
-      <div ref={panel} role="dialog" aria-modal="true" aria-labelledby="sheet-title"
+      {overlay && <div aria-hidden className="fixed inset-x-0 top-14 bottom-0 z-40 lg:left-60 animate-fade-in bg-neutral-950/20 backdrop-blur-sm" />}
+      <div ref={panel} role="dialog" aria-modal={overlay} aria-labelledby="sheet-title"
            className={`fixed top-14 bottom-0 right-0 z-50 flex w-full animate-slide-in-right flex-col border-l border-neutral-200 bg-neutral-100 shadow-2xl ${wide ? "md:w-[75vw]" : "md:w-[40vw]"} md:min-w-110`}>
         <header className="flex items-start justify-between gap-4 border-b border-line bg-white px-6 py-5">
           <div className="flex min-w-0 items-start gap-3.5">
