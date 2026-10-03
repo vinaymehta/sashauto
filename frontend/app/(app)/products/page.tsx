@@ -3,10 +3,11 @@
 import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import type { Paginated, Product, ProductConflict, ProductVendor } from "@/lib/types";
+import type { Paginated, Product, ProductConflict, ProductVendor, VendorImportResult } from "@/lib/types";
 import { formatCount, formatDateTime, formatQty } from "@/lib/format";
 import { PencilIcon, TruckIcon } from "@/components/icons";
 import { formatPrice } from "@/components/vendors/vendor-products-panel";
+import { DtpImportButton, DtpImportSkipped } from "@/components/vendors/dtp-import";
 import { useSession } from "@/components/session";
 import { useToast } from "@/components/toast";
 import { Field, Input } from "@/components/ui/field";
@@ -51,10 +52,15 @@ function ProductsView() {
   const clearAll = () => { list.clearFilters(); setSearch(""); };
   const sortProps = { sort: list.sort, direction: list.direction, onSort: list.toggleSort };
   const [viewing, setViewing] = useState<Product | null>(null);
+  const [importResult, setImportResult] = useState<VendorImportResult | null>(null);
 
   return (
     <>
-      <PageHeader title="Products" description="Every Part Number found in the uploaded files, with its details from the DTP sheet. Click a product to see its vendors." />
+      <PageHeader
+        title="Products"
+        actions={isAdmin && <DtpImportButton label="Upload file" onImported={(r) => { setImportResult(r); reload(); }} />}
+      />
+      <DtpImportSkipped result={importResult} />
 
       <Panel flush>
         <ListToolbar summary={data ? `${formatCount(data.meta.total)} product${data.meta.total === 1 ? "" : "s"}` : ""}>

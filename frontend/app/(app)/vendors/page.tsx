@@ -1,14 +1,15 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { Paginated, Vendor, VendorImportResult } from "@/lib/types";
 import { formatCount } from "@/lib/format";
-import { PencilIcon, PlusIcon, TrashIcon, UploadIcon } from "@/components/icons";
+import { PencilIcon, PlusIcon, TrashIcon } from "@/components/icons";
 import { useSession } from "@/components/session";
 import { useToast } from "@/components/toast";
 import { useApi, useDebounced } from "@/components/use-api";
 import { useListQuery } from "@/components/use-list-query";
+import { DtpImportButton, DtpImportSkipped } from "@/components/vendors/dtp-import";
 import { VendorFormPanel } from "@/components/vendors/vendor-form-panel";
 import { VendorProductsPanel } from "@/components/vendors/vendor-products-panel";
 import { Button } from "@/components/ui/button";
@@ -41,9 +42,7 @@ export default function VendorsPage() {
   const [deleting, setDeleting] = useState<Vendor | null>(null);
   const [busy, setBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<VendorImportResult | null>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
 
   async function remove() {
     if (!deleting) return;
@@ -61,51 +60,19 @@ export default function VendorsPage() {
     }
   }
 
-  async function importFile(file: File | undefined) {
-    if (!file) return;
-    setImporting(true);
-    setImportResult(null);
-    const form = new FormData();
-    form.append("file", file);
-    try {
-      const res = await api.post<{ data: VendorImportResult }>("/api/vendors/import", form);
-      const r = res.data;
-      setImportResult(r);
-      notify(`Import complete: ${r.added} part${r.added === 1 ? "" : "s"} added, ${r.updated} updated, ${r.vendors_created} new vendor${r.vendors_created === 1 ? "" : "s"}${r.skipped.length ? `, ${r.skipped.length} skipped` : ""}.`,
-             r.skipped.length ? "error" : "success");
-      reload();
-    } catch (err) {
-      notify(err instanceof ApiError ? err.message : "The import failed.", "error");
-    } finally {
-      setImporting(false);
-      if (fileInput.current) fileInput.current.value = "";
-    }
-  }
-
   return (
     <>
       <PageHeader
         title="Vendors"
         actions={isAdmin && (
           <div className="flex items-center gap-2">
-            <input ref={fileInput} type="file" accept=".xlsx" hidden onChange={(e) => importFile(e.target.files?.[0])} />
-            <Button onClick={() => fileInput.current?.click()} disabled={importing}>
-              <UploadIcon size={15} className="text-ink-muted" />{importing ? "Importing…" : "Import Excel"}
-            </Button>
+            <DtpImportButton onImported={(r) => { setImportResult(r); reload(); }} />
             <Button variant="primary" onClick={() => setEditing("new")}><PlusIcon size={15} />Add vendor</Button>
           </div>
         )}
       />
 
-      {importResult && importResult.skipped.length > 0 && (
-        <div className="mb-4">
-          <Alert title={`${importResult.skipped.length} row${importResult.skipped.length === 1 ? " was" : "s were"} skipped`}>
-            <ul className="mt-1 list-disc pl-5">
-              {importResult.skipped.slice(0, 10).map((s) => <li key={s.row}>Excel row {s.row}: {s.message}</li>)}
-            </ul>
-          </Alert>
-        </div>
-      )}
+      <DtpImportSkipped result={importResult} />
 
       <Panel flush>
         <ListToolbar summary={data ? `${formatCount(data.meta.total)} vendor${data.meta.total === 1 ? "" : "s"}` : ""}>
