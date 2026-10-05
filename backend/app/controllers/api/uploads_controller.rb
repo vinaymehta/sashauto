@@ -48,8 +48,10 @@ module Api
     def changes
       batch = UploadBatch.find(params[:id])
       scope = batch.quantity_changes
-      scope = scope.where(direction: params[:direction]) if QuantityChange::DIRECTIONS.include?(params[:direction])
-      scope = scope.where(order_type: params[:type]) if OrderRows::Normalizer::ORDER_TYPES.include?(params[:type])
+      directions = multi_param(:direction, QuantityChange::DIRECTIONS)
+      types = multi_param(:type, OrderRows::Normalizer::ORDER_TYPES)
+      scope = scope.where(direction: directions) if directions.any?
+      scope = scope.where(order_type: types) if types.any?
       scope = filter_by_age(scope)
       if params[:q].present?
         term = "%#{QuantityChange.sanitize_sql_like(params[:q].to_s.strip.first(100))}%"
@@ -76,9 +78,12 @@ module Api
     def rows
       batch = UploadBatch.find(params[:id])
       scope = batch.order_snapshot_rows
-      scope = scope.where(order_type: params[:type]) if OrderRows::Normalizer::ORDER_TYPES.include?(params[:type])
-      scope = scope.where(quantity_source: params[:quantity]) if QUANTITY_SOURCES.include?(params[:quantity])
-      scope = scope.where(ship_to_location: params[:ship_to].to_s.upcase) if params[:ship_to].present?
+      types = multi_param(:type, OrderRows::Normalizer::ORDER_TYPES)
+      sources = multi_param(:quantity, QUANTITY_SOURCES)
+      ship_tos = multi_param(:ship_to).map(&:upcase)
+      scope = scope.where(order_type: types) if types.any?
+      scope = scope.where(quantity_source: sources) if sources.any?
+      scope = scope.where(ship_to_location: ship_tos) if ship_tos.any?
       scope = filter_by_age(scope)
       if params[:q].present?
         term = "%#{OrderSnapshotRow.sanitize_sql_like(params[:q].to_s.strip.first(100))}%"
@@ -118,9 +123,10 @@ module Api
     # ("_none" selects problems not tied to one column, such as duplicate rows).
     def problems
       errors = UploadBatch.find(params[:id]).validation_errors
-      if params[:column].present?
-        wanted = params[:column] == "_none" ? nil : params[:column]
-        errors = errors.select { |e| e["column"] == wanted }
+      columns = multi_param(:column)
+      if columns.any?
+        wanted = columns.map { |c| c == "_none" ? nil : c }
+        errors = errors.select { |e| wanted.include?(e["column"]) }
       end
       page, meta = paginate_array(errors)
       render json: { data: page, meta: meta }

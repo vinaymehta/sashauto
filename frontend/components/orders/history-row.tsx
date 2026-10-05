@@ -1,13 +1,14 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { OrderHistory, OrderRow } from "@/lib/types";
 import { formatDate, formatQty } from "@/lib/format";
-import { ageRowProps } from "../age";
 import { useApi } from "../use-api";
 import { Alert } from "../ui/feedback";
 import { Skeleton } from "../ui/skeleton";
 import { Sheet } from "../ui/sheet";
+import { Tabs } from "../ui/tabs";
+import { VendorOrderSection } from "./vendor-order-section";
 import { FileIcon } from "../icons";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -24,40 +25,57 @@ export function cell(value: string | number | null | undefined) {
   return typeof value === "string" ? value.trim() : value.toLocaleString("en-US");
 }
 
-// Order detail in the right-hand side panel: one detail card per row with the same PO Number + Part Number
-// + Type. The clicked row's card comes first and is marked Current; the others follow by PO Line Number and
-// Ship Date. The panel has no backdrop, so the Orders table stays visible and clickable.
-export function OrderDetailPanel({ row, today, onClose }: { row: OrderRow; today: Date; onClose: () => void }) {
+// Order detail in the right-hand side panel, in two tabs: Details shows the clicked row; History shows the
+// other rows with the same PO Number + Part Number + Type (by PO Line Number, then Ship Date).
+// Like the other side panels it blurs the page behind it and closes on an outside click, ✕ or Escape.
+export function OrderDetailPanel({ row, onClose }: { row: OrderRow; onClose: () => void }) {
   const { data, error, loading } = useApi<OrderHistory>(`/api/orders/${row.id}/history`);
+  const [tab, setTab] = useState<"details" | "history">("details");
   const description = data?.group.description ?? null;
-  const rows = data ? [row, ...data.data.filter((r) => r.id !== row.id)] : [row];
+  const history = data ? data.data.filter((r) => r.id !== row.id) : [];
 
   return (
     <Sheet
       open
-      overlay={false}
       onClose={onClose}
       title="Order details"
-      description={<>
-        PO <span className="font-medium text-ink">{row.po_number}</span> · {row.order_type}
-        {data && <> · {rows.length} row{rows.length === 1 ? "" : "s"}</>}
-      </>}
+      description={<>PO <span className="font-medium text-ink">{row.po_number}</span> · {row.order_type}</>}
       icon={<FileIcon size={18} />}
     >
-      <div className="space-y-4">
-        {rows.map((r, index) => <DetailCard key={r.id} row={r} description={description} current={index === 0} today={today} />)}
-        {error ? (
-          <Alert title="Could not load the other rows">{error.message}</Alert>
-        ) : loading && !data ? (
-          <Skeleton className="h-48 w-full" />
-        ) : null}
+      <div className="-mt-2 mb-4 border-b border-line">
+        <Tabs
+          active={tab}
+          onChange={setTab}
+          tabs={[
+            { key: "details" as const, label: "Details" },
+            { key: "history" as const, label: "History", count: data ? history.length : null },
+          ]}
+        />
       </div>
+
+      {tab === "details" ? (
+        <>
+          <DetailCard row={row} description={description} />
+          <VendorOrderSection orderId={row.id} />
+        </>
+      ) : error ? (
+        <Alert title="Could not load the history">{error.message}</Alert>
+      ) : loading && !data ? (
+        <Skeleton className="h-48 w-full" />
+      ) : history.length === 0 ? (
+        <p className="rounded-lg border border-line bg-white px-5 py-8 text-center text-sm text-ink-muted shadow-card">
+          No other rows for this PO, Part and Type.
+        </p>
+      ) : (
+        <div className="space-y-4">
+          {history.map((r) => <DetailCard key={r.id} row={r} description={description} />)}
+        </div>
+      )}
     </Sheet>
   );
 }
 
-function DetailCard({ row, description, current, today }: { row: OrderRow; description: string | null; current: boolean; today: Date }) {
-  const age = ageRowProps(row.ship_date, today);
+function DetailCard({ row, description }: { row: OrderRow; description: string | null }) {
   const details: [string, ReactNode][] = [
     ["Description", description ?? dash],
     ["Item Number", row.part_number],
@@ -68,14 +86,7 @@ function DetailCard({ row, description, current, today }: { row: OrderRow; descr
   ];
 
   return (
-    <section className={`overflow-hidden rounded-lg border bg-white shadow-card ${current ? "border-accent/40 ring-1 ring-accent/20" : "border-line"}`}>
-      <header className={`flex items-center justify-between gap-3 border-b border-neutral-100 px-5 py-3 ${age.className}`} title={age.title}>
-        <h3 className="text-sm font-semibold text-ink">
-          PO Line {row.po_line_number}
-          {current && <span className="ml-2 rounded bg-accent/10 px-1.5 py-0.5 text-2xs font-semibold uppercase tracking-wider text-accent">Current</span>}
-        </h3>
-        <span className="tabular text-xs text-ink-muted">Excel row {row.source_row_number}</span>
-      </header>
+    <section className="overflow-hidden rounded-lg border border-line bg-white shadow-card">
       <dl className="divide-y divide-neutral-100">
         {details.map(([label, value]) => (
           <div key={label} className="grid grid-cols-[9rem_1fr] gap-4 px-5 py-2.5 text-sm">

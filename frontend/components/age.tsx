@@ -21,12 +21,11 @@ const AGE_TITLE: Record<Exclude<AgeGroup, null>, string> = {
 export const AGE_FILTER: FilterGroup = {
   key: "age",
   label: "Age group",
+  // Only the coloured groups (rows under 30 days or with a future ship date have no group).
   options: [
-    { value: "recent", label: "0–29 days since ship date" },
-    { value: "green", label: "30–59 days" },
+    { value: "green", label: "30–59 days since ship date" },
     { value: "yellow", label: "60–89 days" },
     { value: "red", label: "90+ days" },
-    { value: "future", label: "Ship date in the future" },
   ],
 };
 

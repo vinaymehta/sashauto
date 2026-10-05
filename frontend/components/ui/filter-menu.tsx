@@ -18,6 +18,11 @@ export interface FilterGroup {
 
 export type FilterValues = Record<string, string>;
 
+// Choice groups allow several options at once; their value is the selected options joined by commas.
+// Sort-style groups (with a defaultValue) stay single-choice.
+const isMulti = (g: FilterGroup) => g.type !== "date-range" && g.defaultValue === undefined;
+const selectedValues = (value: string | undefined) => (value ? value.split(",").filter(Boolean) : []);
+
 // A group counts as active only when it differs from its default.
 const isActive = (g: FilterGroup, values: FilterValues) =>
   g.type === "date-range"
@@ -45,8 +50,8 @@ function DateRange({ group, values, onChange }: { group: FilterGroup; values: Fi
 }
 
 // "Filter" button that opens the filters in the right-hand side panel.
-// Choices apply immediately; "" means no filter for that group. Active filters are listed as
-// removable chips by <FilterChips>.
+// Choices apply immediately; "" means no filter for that group. Choice groups are multi-select (checkboxes,
+// "All" clears the group). Active filters are listed as removable chips by <FilterChips>.
 export function FilterMenu({ groups, values, onChange, onClear }: {
   groups: FilterGroup[];
   values: FilterValues;
@@ -93,29 +98,40 @@ export function FilterMenu({ groups, values, onChange, onClear }: {
         <div className="space-y-3">
           {groups.map((group) => {
             const options = group.defaultValue !== undefined ? group.options : [{ value: "", label: "All" }, ...group.options];
+            const multi = isMulti(group);
+            const chosen = selectedValues(values[group.key]);
             return (
               <section key={group.key} className="overflow-hidden rounded-lg border border-line bg-white shadow-card">
                 <h3 className="border-b border-neutral-100 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-ink-muted">{group.label}</h3>
                 {group.type === "date-range" ? <DateRange group={group} values={values} onChange={onChange} /> : (
-                <div role="radiogroup" aria-label={group.label} className="divide-y divide-neutral-100">
+                <div role={multi ? "group" : "radiogroup"} aria-label={group.label} className="divide-y divide-neutral-100">
                   {options.map((option) => {
-                    const selected = (values[group.key] || group.defaultValue || "") === option.value;
+                    const selected = multi
+                      ? (option.value === "" ? chosen.length === 0 : chosen.includes(option.value))
+                      : (values[group.key] || group.defaultValue || "") === option.value;
+                    const choose = () => {
+                      if (!multi) return onChange(group.key, option.value === group.defaultValue ? "" : option.value);
+                      if (option.value === "") return onChange(group.key, "");
+                      const next = selected ? chosen.filter((v) => v !== option.value) : [...chosen, option.value];
+                      // Keep the options' own order so the value (and URL/cache key) is stable.
+                      onChange(group.key, group.options.map((o) => o.value).filter((v) => next.includes(v)).join(","));
+                    };
                     return (
                       <button
                         key={option.value || "all"}
                         type="button"
-                        role="radio"
+                        role={multi ? "checkbox" : "radio"}
                         aria-checked={selected}
-                        onClick={() => onChange(group.key, option.value === group.defaultValue ? "" : option.value)}
+                        onClick={choose}
                         className={`flex w-full items-center justify-between gap-3 px-4 py-2 text-left text-sm transition-colors hover:bg-neutral-50 ${
                           selected ? "font-medium text-ink" : "text-ink-muted"
                         }`}
                       >
                         <span className="flex items-center gap-3">
-                          <span aria-hidden className={`flex h-4 w-4 items-center justify-center rounded-full border transition-colors ${
-                            selected ? "border-accent bg-accent text-white" : "border-neutral-300"
+                          <span aria-hidden className={`flex h-4 w-4 items-center justify-center border transition-colors ${
+                            multi ? "rounded" : "rounded-full"} ${selected ? "border-accent bg-accent text-white" : "border-neutral-300"
                           }`}>
-                            {selected && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+                            {selected && (multi ? <CheckIcon size={11} strokeWidth={3} /> : <span className="h-1.5 w-1.5 rounded-full bg-white" />)}
                           </span>
                           {option.label}
                         </span>
@@ -148,8 +164,8 @@ export function FilterChips({ groups, values, onChange, onClear }: {
       const text = from && to ? `${formatDate(from)} – ${formatDate(to)}` : from ? `from ${formatDate(from)}` : `until ${formatDate(to)}`;
       return [{ key: g.key, label: `${g.label}: ${text}`, keys: [`${g.key}_from`, `${g.key}_to`] }];
     }
-    const option = g.options.find((o) => o.value === values[g.key]);
-    return option ? [{ key: g.key, label: `${g.label}: ${option.label}`, keys: [g.key] }] : [];
+    const labels = selectedValues(values[g.key]).map((v) => g.options.find((o) => o.value === v)?.label ?? v);
+    return labels.length ? [{ key: g.key, label: `${g.label}: ${labels.join(", ")}`, keys: [g.key] }] : [];
   });
   if (chips.length === 0) return null;
 

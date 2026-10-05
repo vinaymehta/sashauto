@@ -87,7 +87,7 @@ export default function OrdersPage() {
   const COLUMNS = buildColumns(sourceColumns, data?.data ?? []);
 
   const source = data?.source;
-  // Row whose order details are open in the side panel (clicking another row switches to it).
+  // Row whose order details are open in the side panel.
   const [selected, setSelected] = useState<OrderRow | null>(null);
   const [today] = useState(() => new Date());
 
@@ -156,7 +156,7 @@ export default function OrdersPage() {
             <Pagination meta={data.meta} onPage={list.setPage} onPerPage={list.setPerPage} noun="order rows" />
           </div>
         ) : null}
-        {selected && <OrderDetailPanel key={selected.id} row={selected} today={today} onClose={() => setSelected(null)} />}
+        {selected && <OrderDetailPanel key={selected.id} row={selected} onClose={() => setSelected(null)} />}
       </Panel>
     </>
   );

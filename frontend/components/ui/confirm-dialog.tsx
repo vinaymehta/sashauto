@@ -6,9 +6,9 @@ import { Button } from "./button";
 
 // Small centered confirmation for destructive actions. Closes on Escape, outside click or Cancel.
 // Escape is caught before other listeners so it does not also close a side panel underneath.
-export function ConfirmDialog({ title, children, confirmLabel = "Delete", busy = false, error, onConfirm, onCancel }: {
-  title: string; children?: ReactNode; confirmLabel?: string; busy?: boolean; error?: string | null;
-  onConfirm: () => void; onCancel: () => void;
+export function ConfirmDialog({ title, children, confirmLabel = "Delete", busyLabel = "Deleting…", tone = "danger", busy = false, error, onConfirm, onCancel }: {
+  title: string; children?: ReactNode; confirmLabel?: string; busyLabel?: string; tone?: "danger" | "primary"; busy?: boolean;
+  error?: string | null; onConfirm: () => void; onCancel: () => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -33,7 +33,8 @@ export function ConfirmDialog({ title, children, confirmLabel = "Delete", busy =
       <div ref={box} role="alertdialog" aria-modal="true" aria-labelledby="confirm-title"
            className="w-full max-w-md rounded-lg border border-line bg-white p-6 shadow-2xl">
         <div className="flex items-start gap-3.5">
-          <span aria-hidden className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-dec-bg text-dec">
+          <span aria-hidden className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
+            tone === "danger" ? "bg-dec-bg text-dec" : "bg-tint-violet text-tint-violet-ink"}`}>
             <AlertIcon size={18} />
           </span>
           <div className="min-w-0">
@@ -44,8 +45,8 @@ export function ConfirmDialog({ title, children, confirmLabel = "Delete", busy =
         </div>
         <div className="mt-6 flex justify-end gap-2">
           <Button variant="ghost" onClick={onCancel} disabled={busy}>Cancel</Button>
-          <Button variant="primary" onClick={onConfirm} disabled={busy} className="bg-dec! hover:bg-dec-mark!">
-            {busy ? "Deleting…" : confirmLabel}
+          <Button variant="primary" onClick={onConfirm} disabled={busy} className={tone === "danger" ? "bg-dec! hover:bg-dec-mark!" : ""}>
+            {busy ? busyLabel : confirmLabel}
           </Button>
         </div>
       </div>

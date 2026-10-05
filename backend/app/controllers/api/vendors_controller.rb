@@ -31,7 +31,7 @@ module Api
     end
 
     def create
-      vendor = Vendor.new(name: params.require(:name))
+      vendor = Vendor.new(name: params.require(:name), email: params[:email])
       if vendor.save
         audit("vendor.created", subject: vendor, name: vendor.name)
         render json: { data: Serializers.vendor(vendor, product_count: 0) }, status: :created
@@ -45,8 +45,10 @@ module Api
     def update
       vendor = Vendor.find(params[:id])
       before = vendor.name
-      if vendor.update(name: params.require(:name))
-        audit("vendor.updated", subject: vendor, name_before: before, name_after: vendor.name)
+      attrs = { name: params.require(:name) }
+      attrs[:email] = params[:email] if params.key?(:email)
+      if vendor.update(attrs)
+        audit("vendor.updated", subject: vendor, name_before: before, name_after: vendor.name, email: vendor.email)
         render json: { data: Serializers.vendor(vendor) }
       else
         render_validation_errors(vendor)

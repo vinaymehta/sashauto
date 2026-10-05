@@ -106,11 +106,15 @@ module Api
             .map { |v, types, count| { value: v, types: types, rows: count } }
     end
 
-    # Exact-match filters plus an inclusive ship date range (ISO dates; invalid dates are ignored).
+    # Exact-match filters (several values each) plus an inclusive ship date range (ISO dates; invalid dates are ignored).
     def filter(scope)
-      scope = scope.where(order_type: params[:type]) if OrderRows::Normalizer::ORDER_TYPES.include?(params[:type])
-      scope = scope.where(ship_to_location: params[:ship_to].to_s) if params[:ship_to].present?
-      scope = scope.where(commodity_type: params[:commodity_type].to_s) if params[:commodity_type].present?
+      # Each filter accepts several values (comma-separated).
+      types = multi_param(:type, OrderRows::Normalizer::ORDER_TYPES)
+      ship_tos = multi_param(:ship_to)
+      commodities = multi_param(:commodity_type)
+      scope = scope.where(order_type: types) if types.any?
+      scope = scope.where(ship_to_location: ship_tos) if ship_tos.any?
+      scope = scope.where(commodity_type: commodities) if commodities.any?
       scope = filter_by_age(scope)
       from = iso_date(params[:ship_date_from])
       to = iso_date(params[:ship_date_to])

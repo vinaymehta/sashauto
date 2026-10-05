@@ -62,22 +62,28 @@ class ApplicationController < ActionController::API
     [ scope.reorder(order).order(scope.arel_table[:id].public_send(direction)), key, direction ]
   end
 
-  AGE_GROUPS = %w[recent green yellow red future].freeze
+  AGE_GROUPS = %w[green yellow red].freeze
 
-  # Age group of an order row = days since its ship date (Ageing::Rules): recent 0-29, green 30-59,
-  # yellow 60-89, red 90+, future = ship date after today. "Today" is the browser's date (param `today`,
+  # Age group of an order row = days since its ship date (Ageing::Rules): green 30-59, yellow 60-89,
+  # red 90+ (rows under 30 days or with a future ship date have no group). "Today" is the browser's date (param `today`,
   # within a day of the server's) so filters match the colours the user sees; otherwise the server date.
+  # Several groups can be selected (age=green,red): rows in any of them.
   def filter_by_age(scope)
-    return scope unless AGE_GROUPS.include?(params[:age])
+    groups = multi_param(:age, AGE_GROUPS)
+    return scope if groups.empty?
 
     today = request_today
-    case params[:age]
-    when "recent" then scope.where(ship_date: (today - 29)..today)
-    when "green" then scope.where(ship_date: Ageing::Rules.ship_date_range(30, today))
-    when "yellow" then scope.where(ship_date: Ageing::Rules.ship_date_range(60, today))
-    when "red" then scope.where(ship_date: Ageing::Rules.ship_date_range(90, today))
-    when "future" then scope.where(ship_date: (today + 1)..)
+    ranges = groups.map do |group|
+      Ageing::Rules.ship_date_range({ "green" => 30, "yellow" => 60, "red" => 90 }.fetch(group), today)
     end
+    ranges.map { |range| scope.where(ship_date: range) }.reduce(:or)
+  end
+
+  # A filter with several selected values, sent comma-separated (type=Order,Firm). Values are trimmed and
+  # de-duplicated; with `allowed`, anything else is dropped. Empty means "no filter".
+  def multi_param(name, allowed = nil)
+    values = params[name].to_s.split(",").map(&:strip).reject(&:empty?).uniq.first(100)
+    allowed ? values & allowed : values
   end
 
   def request_today

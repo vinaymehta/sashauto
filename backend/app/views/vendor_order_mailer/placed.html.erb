@@ -1,0 +1,31 @@
+<div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e5e5e5;border-radius:8px;padding:24px;">
+  <% if @fallback %>
+    <p style="margin:0 0 16px;padding:10px 12px;background:#fdf5d8;border-radius:6px;color:#8a5a00;font-size:13px;">
+      <%= @order.vendor.name %> has no email address in the Vendors list, so this order was sent to you. Please forward it to the vendor.
+    </p>
+  <% end %>
+  <h1 style="font-size:20px;font-weight:600;margin:0 0 4px;color:#171717;">Purchase order <%= @order.number %></h1>
+  <p style="margin:0 0 20px;color:#737373;">Dear <%= @order.vendor.name %>, please supply the following.</p>
+  <table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;font-size:14px;">
+    <% rows = [
+         [ "Vendor Order Number", @order.number ],
+         [ "Original PO Number", @placement.po_number ],
+         [ "PO Line Number", @placement.po_line_number ],
+         [ "Order Type", @placement.order_type ],
+         [ "Part Number", @placement.part_number ],
+         [ "SASH Part", @product&.sash_part ],
+         [ "Vendor Part", @order.vendor.vendor_products.find_by(product_id: @placement.product_id)&.vendor_part || @product&.vendor_part ],
+         [ "Description", @product&.description ],
+         [ "Quantity", format_qty(@order.qty) ],
+         [ "Ship Date", @placement.ship_date.strftime("%-d %b %Y") ],
+         [ "Due Date", @placement.due_date&.strftime("%-d %b %Y") ]
+       ] %>
+    <% rows.each do |label, value| %>
+      <tr style="border-bottom:1px solid #f0f0f0;">
+        <td style="padding:9px 10px;color:#737373;width:190px;"><%= label %></td>
+        <td style="padding:9px 10px;color:#171717;font-weight:<%= label == "Quantity" || label == "Vendor Order Number" ? 600 : 400 %>;"><%= value.presence || "—" %></td>
+      </tr>
+    <% end %>
+  </table>
+  <p style="margin:20px 0 0;color:#737373;">Please quote <%= @order.number %> on all documents for this order.</p>
+</div>

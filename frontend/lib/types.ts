@@ -265,6 +265,7 @@ export interface OrdersPage {
 export interface Vendor {
   id: number;
   name: string;
+  email: string | null;
   product_count: number;
   created_at: string;
   updated_at: string;
@@ -296,6 +297,50 @@ export interface ProductVendor {
   price_amount: string | null;
   price_currency: Currency;
   price_note: string | null;
+}
+
+export type VendorEmailStatus = "pending" | "sent" | "failed" | "no_email";
+
+export interface VendorOrderInfo {
+  id: number;
+  number: string;
+  vendor_id: number;
+  vendor_name: string;
+  qty: string;
+  price_amount: string | null;
+  price_currency: Currency | null;
+  price_note: string | null;
+  email_status: VendorEmailStatus;
+  email_recipient: string | null;
+  email_sent_at: string | null;
+  email_last_error: string | null;
+  created_at: string;
+}
+
+export interface VendorOrderPlacementInfo {
+  id: number;
+  po_number: string;
+  po_line_number: string;
+  part_number: string;
+  order_type: OrderType;
+  ship_date: string;
+  due_date: string | null;
+  order_qty: string;
+  moq: string | null;
+  placed_by: string | null;
+  placed_at: string;
+  vendor_orders: VendorOrderInfo[];
+}
+
+export interface VendorOrderWarning { vendor_order_id?: number; vendor_id: number; vendor_name: string; message: string }
+
+export interface VendorOrderState {
+  order: { id: number; po_number: string; po_line_number: string; part_number: string; order_type: OrderType; ship_date: string; qty: string | null };
+  moq: string | null;
+  vendors: (ProductVendor & { has_email: boolean })[];
+  placement: VendorOrderPlacementInfo | null;
+  warnings: VendorOrderWarning[];
+  can_place: boolean;
 }
 
 export interface VendorImportResult {

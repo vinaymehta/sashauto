@@ -23,10 +23,14 @@ Rails.application.routes.draw do
 
     resources :orders, only: :index do
       get :history, on: :member
+      resource :vendor_order, only: %i[show create], controller: :vendor_orders
       collection do
         get :by_po
         get :by_part
       end
+    end
+    resources :vendor_orders, only: [] do
+      post :retry_email, on: :member
     end
     resources :vendors, only: %i[index show create update destroy] do
       post :import, on: :collection

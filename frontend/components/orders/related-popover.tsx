@@ -65,7 +65,6 @@ function RelatedList({ kind, value }: { kind: "po" | "part"; value: string }) {
               <span className="font-medium text-ink">{item.value}</span>
               <span className="flex items-center gap-1.5 text-xs text-ink-muted">
                 {item.types.map((t) => <span key={t} className="rounded bg-neutral-100 px-1.5 py-0.5 text-neutral-700">{t}</span>)}
-                <span className="tabular ml-1">{item.rows} row{item.rows === 1 ? "" : "s"}</span>
               </span>
             </li>
           ))}

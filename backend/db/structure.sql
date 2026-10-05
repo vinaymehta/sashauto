@@ -61,6 +61,27 @@ END;
 $$;
 
 
+--
+-- Name: reject_vendor_order_change(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.reject_vendor_order_change() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'DELETE' OR NEW.id IS DISTINCT FROM OLD.id
+     OR NEW.vendor_order_placement_id IS DISTINCT FROM OLD.vendor_order_placement_id
+     OR NEW.vendor_id IS DISTINCT FROM OLD.vendor_id OR NEW.number IS DISTINCT FROM OLD.number
+     OR NEW.qty IS DISTINCT FROM OLD.qty OR NEW.unit_price IS DISTINCT FROM OLD.unit_price
+     OR NEW.price_currency IS DISTINCT FROM OLD.price_currency OR NEW.price_note IS DISTINCT FROM OLD.price_note
+     OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+    RAISE EXCEPTION 'placed vendor orders are locked: % of the allocation is not allowed', TG_OP;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -779,6 +800,110 @@ ALTER SEQUENCE public.users_id_seq OWNED BY public.users.id;
 
 
 --
+-- Name: vendor_order_number_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.vendor_order_number_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: vendor_order_placements; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.vendor_order_placements (
+    id bigint NOT NULL,
+    order_key character varying(64) NOT NULL,
+    order_row_id bigint NOT NULL,
+    upload_batch_id bigint NOT NULL,
+    product_id bigint,
+    po_number character varying NOT NULL,
+    po_line_number character varying NOT NULL,
+    part_number character varying NOT NULL,
+    order_type character varying NOT NULL,
+    ship_date date NOT NULL,
+    due_date date,
+    unit character varying,
+    order_qty numeric(15,3) NOT NULL,
+    moq numeric(15,3),
+    placed_by_id bigint NOT NULL,
+    placed_at timestamp(6) without time zone NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT vendor_order_placements_qty_positive CHECK ((order_qty > (0)::numeric))
+);
+
+
+--
+-- Name: vendor_order_placements_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.vendor_order_placements_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: vendor_order_placements_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.vendor_order_placements_id_seq OWNED BY public.vendor_order_placements.id;
+
+
+--
+-- Name: vendor_orders; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.vendor_orders (
+    id bigint NOT NULL,
+    vendor_order_placement_id bigint NOT NULL,
+    vendor_id bigint NOT NULL,
+    number character varying NOT NULL,
+    qty numeric(15,3) NOT NULL,
+    unit_price numeric(15,4),
+    price_currency character varying(3),
+    price_note character varying,
+    email_status character varying DEFAULT 'pending'::character varying NOT NULL,
+    email_recipient character varying,
+    email_attempts integer DEFAULT 0 NOT NULL,
+    email_last_error text,
+    email_last_attempt_at timestamp(6) without time zone,
+    email_sent_at timestamp(6) without time zone,
+    email_provider_message_id character varying,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT vendor_orders_email_status_valid CHECK (((email_status)::text = ANY ((ARRAY['pending'::character varying, 'sent'::character varying, 'failed'::character varying, 'no_email'::character varying])::text[]))),
+    CONSTRAINT vendor_orders_qty_positive CHECK ((qty > (0)::numeric))
+);
+
+
+--
+-- Name: vendor_orders_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.vendor_orders_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: vendor_orders_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.vendor_orders_id_seq OWNED BY public.vendor_orders.id;
+
+
+--
 -- Name: vendor_products; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -830,7 +955,8 @@ CREATE TABLE public.vendors (
     id bigint NOT NULL,
     name character varying NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    updated_at timestamp(6) without time zone NOT NULL,
+    email character varying
 );
 
 
@@ -963,6 +1089,20 @@ ALTER TABLE ONLY public.upload_batches ALTER COLUMN id SET DEFAULT nextval('publ
 --
 
 ALTER TABLE ONLY public.users ALTER COLUMN id SET DEFAULT nextval('public.users_id_seq'::regclass);
+
+
+--
+-- Name: vendor_order_placements id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vendor_order_placements ALTER COLUMN id SET DEFAULT nextval('public.vendor_order_placements_id_seq'::regclass);
+
+
+--
+-- Name: vendor_orders id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vendor_orders ALTER COLUMN id SET DEFAULT nextval('public.vendor_orders_id_seq'::regclass);
 
 
 --
@@ -1121,6 +1261,22 @@ ALTER TABLE ONLY public.upload_batches
 
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: vendor_order_placements vendor_order_placements_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vendor_order_placements
+    ADD CONSTRAINT vendor_order_placements_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: vendor_orders vendor_orders_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vendor_orders
+    ADD CONSTRAINT vendor_orders_pkey PRIMARY KEY (id);
 
 
 --
@@ -1525,6 +1681,69 @@ CREATE UNIQUE INDEX index_users_on_lower_email ON public.users USING btree (lowe
 
 
 --
+-- Name: index_vendor_order_placements_on_order_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_vendor_order_placements_on_order_key ON public.vendor_order_placements USING btree (order_key);
+
+
+--
+-- Name: index_vendor_order_placements_on_order_row_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_vendor_order_placements_on_order_row_id ON public.vendor_order_placements USING btree (order_row_id);
+
+
+--
+-- Name: index_vendor_order_placements_on_placed_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_vendor_order_placements_on_placed_by_id ON public.vendor_order_placements USING btree (placed_by_id);
+
+
+--
+-- Name: index_vendor_order_placements_on_product_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_vendor_order_placements_on_product_id ON public.vendor_order_placements USING btree (product_id);
+
+
+--
+-- Name: index_vendor_order_placements_on_upload_batch_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_vendor_order_placements_on_upload_batch_id ON public.vendor_order_placements USING btree (upload_batch_id);
+
+
+--
+-- Name: index_vendor_orders_on_number; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_vendor_orders_on_number ON public.vendor_orders USING btree (number);
+
+
+--
+-- Name: index_vendor_orders_on_vendor_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_vendor_orders_on_vendor_id ON public.vendor_orders USING btree (vendor_id);
+
+
+--
+-- Name: index_vendor_orders_on_vendor_order_placement_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_vendor_orders_on_vendor_order_placement_id ON public.vendor_orders USING btree (vendor_order_placement_id);
+
+
+--
+-- Name: index_vendor_orders_on_vendor_order_placement_id_and_vendor_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_vendor_orders_on_vendor_order_placement_id_and_vendor_id ON public.vendor_orders USING btree (vendor_order_placement_id, vendor_id);
+
+
+--
 -- Name: index_vendor_products_on_product_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1602,11 +1821,33 @@ CREATE TRIGGER upload_batches_protect_finished BEFORE DELETE OR UPDATE ON public
 
 
 --
+-- Name: vendor_order_placements vendor_order_placements_locked; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER vendor_order_placements_locked BEFORE DELETE OR UPDATE ON public.vendor_order_placements FOR EACH ROW EXECUTE FUNCTION public.reject_history_mutation();
+
+
+--
+-- Name: vendor_orders vendor_orders_locked; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER vendor_orders_locked BEFORE DELETE OR UPDATE ON public.vendor_orders FOR EACH ROW EXECUTE FUNCTION public.reject_vendor_order_change();
+
+
+--
 -- Name: address_changes fk_rails_02702585ce; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.address_changes
     ADD CONSTRAINT fk_rails_02702585ce FOREIGN KEY (upload_batch_id) REFERENCES public.upload_batches(id);
+
+
+--
+-- Name: vendor_orders fk_rails_07cb380306; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vendor_orders
+    ADD CONSTRAINT fk_rails_07cb380306 FOREIGN KEY (vendor_order_placement_id) REFERENCES public.vendor_order_placements(id);
 
 
 --
@@ -1642,11 +1883,27 @@ ALTER TABLE ONLY public.ageing_notifications
 
 
 --
+-- Name: vendor_order_placements fk_rails_2e04a01d7a; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vendor_order_placements
+    ADD CONSTRAINT fk_rails_2e04a01d7a FOREIGN KEY (placed_by_id) REFERENCES public.users(id);
+
+
+--
 -- Name: ageing_digests fk_rails_351ea1f8a1; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.ageing_digests
     ADD CONSTRAINT fk_rails_351ea1f8a1 FOREIGN KEY (upload_batch_id) REFERENCES public.upload_batches(id);
+
+
+--
+-- Name: vendor_orders fk_rails_39c0467bd1; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vendor_orders
+    ADD CONSTRAINT fk_rails_39c0467bd1 FOREIGN KEY (vendor_id) REFERENCES public.vendors(id);
 
 
 --
@@ -1671,6 +1928,14 @@ ALTER TABLE ONLY public.product_conflicts
 
 ALTER TABLE ONLY public.notifications
     ADD CONSTRAINT fk_rails_4777f8bf05 FOREIGN KEY (upload_batch_id) REFERENCES public.upload_batches(id);
+
+
+--
+-- Name: vendor_order_placements fk_rails_48fbd30311; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vendor_order_placements
+    ADD CONSTRAINT fk_rails_48fbd30311 FOREIGN KEY (order_row_id) REFERENCES public.order_rows(id);
 
 
 --
@@ -1703,6 +1968,14 @@ ALTER TABLE ONLY public.moq_alerts
 
 ALTER TABLE ONLY public.quantity_changes
     ADD CONSTRAINT fk_rails_6db61947e6 FOREIGN KEY (upload_batch_id) REFERENCES public.upload_batches(id);
+
+
+--
+-- Name: vendor_order_placements fk_rails_8fa39ea913; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vendor_order_placements
+    ADD CONSTRAINT fk_rails_8fa39ea913 FOREIGN KEY (upload_batch_id) REFERENCES public.upload_batches(id);
 
 
 --
@@ -1783,6 +2056,14 @@ ALTER TABLE ONLY public.upload_batches
 
 ALTER TABLE ONLY public.active_storage_attachments
     ADD CONSTRAINT fk_rails_c3b3935057 FOREIGN KEY (blob_id) REFERENCES public.active_storage_blobs(id);
+
+
+--
+-- Name: vendor_order_placements fk_rails_c8e917d54e; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vendor_order_placements
+    ADD CONSTRAINT fk_rails_c8e917d54e FOREIGN KEY (product_id) REFERENCES public.products(id);
 
 
 --
@@ -1872,6 +2153,7 @@ ALTER TABLE ONLY public.address_changes
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261005090001'),
 ('20261003090001'),
 ('20261001160001'),
 ('20261001140001'),
