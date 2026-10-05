@@ -1,5 +1,6 @@
 module Api
-  # The latest successful order dataset. Search, sorting and pagination all run in PostgreSQL.
+  # The latest successful order dataset plus the manual orders, or (`upload_id`) any earlier upload's
+  # rows exactly as imported. Search, sorting and pagination all run in PostgreSQL.
   class OrdersController < ApplicationController
     SEARCH_COLUMNS = %w[po_number po_line_number part_number commodity_type order_type ship_to_location
                         supplier_part_number plant_code].freeze
@@ -27,34 +28,44 @@ module Api
     }.freeze
     DEFAULT_SORT = "ship_date".freeze
 
-    def index
-      latest = UploadBatch.latest_completed
-      return render(json: { data: [], meta: pagination_meta(0).last, source: nil }) if latest.nil?
+    # Columns of order_rows that manual_orders has too (same names and types).
+    SHARED_COLUMNS = %w[id group_key po_number part_number order_type ship_date po_line_number ship_to_location
+                        commodity_type qty previous_qty effective_qty quantity_source due_date unit plant_code
+                        last_asn_qty last_asn_date last_receipt_qty last_receipt_date last_packing_list_number
+                        crossdock_location dock_number supplier_part_number last_released_date last_updated_date
+                        source_data source_columns created_at].freeze
 
-      # Every imported row of the latest upload (not only the current row of each PO + Part + Type).
-      dataset = latest.order_rows
-      columns = source_columns(dataset)
+    def index
+      batch = selected_batch
+      return render(json: { data: [], meta: pagination_meta(0).last, source: nil }) if batch.nil? && !ManualOrder.active.exists?
+
+      # Every imported row of the upload (not only the current row of each PO + Part + Type).
+      dataset = dataset(batch)
+      columns = source_columns(OrderRow.where(upload_batch_id: batch&.id))
       scope = filter(search(dataset, (params[:search].presence || params[:q]).to_s.strip.first(100)))
       scope, sort, direction = apply_sort(scope, sorts_for(columns), default: DEFAULT_SORT)
+      # Manual orders are always listed first; each part keeps the chosen sort.
+      scope = scope.reorder(Arel.sql("order_rows.manual DESC"), *scope.order_values)
 
       rows, meta = paginate(scope)
+      ship_to_locations, commodity_types = facets(dataset)
       render json: {
         data: rows.map { |row| Serializers.order_row(row, source: true) },
         meta: meta.merge(sort: sort, direction: direction),
         # Every Excel column of the upload, in file order; `key` is the sort key.
         columns: columns,
-        source: { uploaded_at: latest.completed_at, original_filename: latest.original_filename, upload_id: latest.id },
+        source: batch && { uploaded_at: batch.completed_at, original_filename: batch.original_filename, upload_id: batch.id,
+                           latest: current_view? },
         # Values present in the current data, for the filter panel.
-        facets: {
-          ship_to_locations: dataset.distinct.order(:ship_to_location).pluck(:ship_to_location),
-          commodity_types: dataset.where.not(commodity_type: nil).distinct.order(:commodity_type).pluck(:commodity_type)
-        }
+        facets: { ship_to_locations: ship_to_locations, commodity_types: commodity_types }
       }
     end
 
     # Order detail of one row: every row of the same upload with the same PO Number + Part Number + Type
     # (the clicked row included), ordered by PO Line Number then Ship Date, plus the product Description.
     def history
+      return manual_history(ManualOrder.active.find(params[:id])) if params[:manual] == "1"
+
       row = OrderRow.find(params[:id])
       rows = OrderRow.where(upload_batch_id: row.upload_batch_id, group_key: row.group_key)
                      .order(:po_line_number, :ship_date, :source_row_number).limit(1_000)
@@ -66,20 +77,64 @@ module Api
       }
     end
 
-    # Part Numbers ordered under one PO Number (latest upload).
+    # Part Numbers ordered under one PO Number (the shown order data; see #dataset).
     def by_po
       render json: { data: related(:po_number, params.require(:po).to_s, :part_number) }
     end
 
-    # PO Numbers containing one Part Number (latest upload).
+    # PO Numbers containing one Part Number (the shown order data; see #dataset).
     def by_part
       render json: { data: related(:part_number, OrderRows::Normalizer.part_number(params.require(:part).to_s), :po_number) }
     end
 
     private
 
-    def source_columns(dataset)
-      headers = dataset.where.not(source_columns: nil).pick(:source_columns) || []
+    # [Ship To Locations, Commodity Types] present in the dataset, sorted, from one scan.
+    def facets(dataset)
+      dataset.pick(
+        Arel.sql("COALESCE(array_agg(DISTINCT order_rows.ship_to_location ORDER BY order_rows.ship_to_location), '{}')"),
+        Arel.sql("COALESCE(array_agg(DISTINCT order_rows.commodity_type ORDER BY order_rows.commodity_type) " \
+                 "FILTER (WHERE order_rows.commodity_type IS NOT NULL), '{}')")
+      )
+    end
+
+    # A manual order has no other rows: its history is itself.
+    def manual_history(order)
+      render json: {
+        data: [ Serializers.order_row(order, source: true) ],
+        headers: order.source_columns,
+        group: { po_number: order.po_number, part_number: order.part_number, order_type: order.order_type,
+                 description: Product.find_by(part_number: order.part_number)&.description }
+      }
+    end
+
+    # The upload whose rows are shown: `upload_id` (any completed upload), else the latest.
+    def selected_batch
+      return @selected_batch if defined?(@selected_batch)
+      @latest = UploadBatch.latest_completed
+      @selected_batch = params[:upload_id].present? ? UploadBatch.completed.find(params[:upload_id]) : @latest
+    end
+
+    # The current order data (latest upload) includes the manual orders; an earlier upload shows only its rows.
+    def current_view?
+      selected_batch == @latest
+    end
+
+    # The upload's rows, plus (current view) the manual orders, as one `order_rows` relation so the
+    # search, filters, sorting and pagination below apply to both. Each row has `manual` (true/false).
+    def dataset(batch)
+      imported = OrderRow.where(upload_batch_id: batch&.id)
+                         .select(*SHARED_COLUMNS, :upload_batch_id, :source_row_number, :current, :group_row_count, "false AS manual")
+      return OrderRow.from("(#{imported.to_sql}) AS order_rows") unless current_view?
+
+      manual = ManualOrder.active.select(*SHARED_COLUMNS, "NULL::bigint AS upload_batch_id", "NULL::integer AS source_row_number",
+                                         "true AS current", "1 AS group_row_count", "true AS manual")
+      OrderRow.from("(#{imported.to_sql} UNION ALL #{manual.to_sql}) AS order_rows")
+    end
+
+    # Headers of the upload in file order; the 47 manual order columns when there is no upload yet.
+    def source_columns(rows)
+      headers = rows.where.not(source_columns: nil).pick(:source_columns) || ManualOrder::HEADERS
       headers.map { |h| { key: h.parameterize(separator: "_"), label: h } }
     end
 
@@ -98,10 +153,7 @@ module Api
 
     # [{ value:, types:, rows: }] for the other side of a PO <-> Part relation, from one grouped query.
     def related(column, value, other)
-      latest = UploadBatch.latest_completed
-      return [] unless latest
-
-      latest.order_rows.where(column => value).group(other).order(other)
+      dataset(selected_batch).where(column => value).group(other).order(other)
             .pluck(other, Arel.sql("array_agg(DISTINCT order_type ORDER BY order_type)"), Arel.sql("COUNT(*)"))
             .map { |v, types, count| { value: v, types: types, rows: count } }
     end

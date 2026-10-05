@@ -10,6 +10,7 @@ Rails.application.routes.draw do
     end
 
     resources :uploads, only: %i[index show create] do
+      get :history, on: :collection
       member do
         get :changes
         get :address_changes
@@ -28,6 +29,9 @@ Rails.application.routes.draw do
         get :by_po
         get :by_part
       end
+    end
+    resources :manual_orders, only: %i[show create update destroy] do
+      get :fields, on: :collection
     end
     resources :vendor_orders, only: [] do
       post :retry_email, on: :member

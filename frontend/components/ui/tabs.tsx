@@ -22,7 +22,7 @@ export function Tabs<K extends string>({ tabs, active, onChange }: { tabs: TabIt
             type="button"
             aria-selected={selected}
             onClick={() => onChange(tab.key)}
-            className={`relative flex h-11 items-center gap-2 px-4 text-sm transition-colors duration-150 ${
+            className={`relative flex h-11 shrink-0 items-center gap-2 whitespace-nowrap px-4 text-sm transition-colors duration-150 ${
               selected
                 ? "border-b-2 border-neutral-900 font-semibold text-ink"
                 : "border-b-2 border-transparent font-medium text-ink-muted hover:text-ink"

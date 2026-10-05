@@ -51,6 +51,12 @@ module ExcelImport
                  duplicate_rows_merged: merged, unknown_quantity_count: unknown)
     end
 
+    # Validates and normalizes one row with the same rules as an uploaded Excel row (used for manual orders).
+    # Returns [row, errors].
+    def parse_row(raw)
+      normalize(raw)
+    end
+
     private
 
     def normalize(raw)

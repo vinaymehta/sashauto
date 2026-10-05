@@ -191,10 +191,10 @@ ALTER SEQUENCE public.active_storage_variant_records_id_seq OWNED BY public.acti
 
 CREATE TABLE public.address_changes (
     id bigint NOT NULL,
-    upload_batch_id bigint NOT NULL,
-    previous_upload_batch_id bigint NOT NULL,
-    order_row_id bigint NOT NULL,
-    previous_order_row_id bigint NOT NULL,
+    upload_batch_id bigint,
+    previous_upload_batch_id bigint,
+    order_row_id bigint,
+    previous_order_row_id bigint,
     group_key character varying(64) NOT NULL,
     po_number character varying NOT NULL,
     part_number character varying NOT NULL,
@@ -202,7 +202,9 @@ CREATE TABLE public.address_changes (
     ship_date date NOT NULL,
     old_address text,
     new_address text,
-    created_at timestamp(6) without time zone NOT NULL
+    created_at timestamp(6) without time zone NOT NULL,
+    manual_order_id bigint,
+    CONSTRAINT address_changes_source_present CHECK (((manual_order_id IS NOT NULL) OR ((upload_batch_id IS NOT NULL) AND (previous_upload_batch_id IS NOT NULL) AND (order_row_id IS NOT NULL) AND (previous_order_row_id IS NOT NULL))))
 );
 
 
@@ -354,13 +356,75 @@ ALTER SEQUENCE public.audit_logs_id_seq OWNED BY public.audit_logs.id;
 
 
 --
+-- Name: manual_orders; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.manual_orders (
+    id bigint NOT NULL,
+    group_key character varying(64) NOT NULL,
+    po_number character varying NOT NULL,
+    part_number character varying NOT NULL,
+    order_type character varying NOT NULL,
+    ship_date date NOT NULL,
+    po_line_number character varying NOT NULL,
+    ship_to_location character varying NOT NULL,
+    commodity_type character varying,
+    qty numeric(15,3),
+    previous_qty numeric(15,3),
+    effective_qty numeric(15,3),
+    quantity_source character varying NOT NULL,
+    due_date date,
+    unit character varying,
+    plant_code character varying,
+    last_asn_qty numeric(15,3),
+    last_asn_date date,
+    last_receipt_qty numeric(15,3),
+    last_receipt_date date,
+    last_packing_list_number character varying,
+    crossdock_location character varying,
+    dock_number character varying,
+    supplier_part_number character varying,
+    last_released_date date,
+    last_updated_date date,
+    source_data jsonb DEFAULT '{}'::jsonb NOT NULL,
+    source_columns character varying[] DEFAULT '{}'::character varying[] NOT NULL,
+    created_by_id bigint NOT NULL,
+    updated_by_id bigint NOT NULL,
+    deleted_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT manual_orders_quantities_non_negative CHECK (((qty >= (0)::numeric) AND (previous_qty >= (0)::numeric) AND (last_asn_qty >= (0)::numeric) AND (last_receipt_qty >= (0)::numeric))),
+    CONSTRAINT manual_orders_quantity_source_valid CHECK (((quantity_source)::text = ANY ((ARRAY['qty'::character varying, 'previous_qty'::character varying, 'unknown'::character varying])::text[])))
+);
+
+
+--
+-- Name: manual_orders_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.manual_orders_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: manual_orders_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.manual_orders_id_seq OWNED BY public.manual_orders.id;
+
+
+--
 -- Name: moq_alerts; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.moq_alerts (
     id bigint NOT NULL,
-    upload_batch_id bigint NOT NULL,
-    order_row_id bigint NOT NULL,
+    upload_batch_id bigint,
+    order_row_id bigint,
     product_id bigint NOT NULL,
     group_key character varying(64) NOT NULL,
     po_number character varying NOT NULL,
@@ -370,7 +434,10 @@ CREATE TABLE public.moq_alerts (
     qty numeric(15,3) NOT NULL,
     moq numeric(15,3) NOT NULL,
     new_alert boolean NOT NULL,
-    created_at timestamp(6) without time zone NOT NULL
+    created_at timestamp(6) without time zone NOT NULL,
+    manual_order_id bigint,
+    CONSTRAINT moq_alerts_one_order CHECK (((order_row_id IS NULL) <> (manual_order_id IS NULL))),
+    CONSTRAINT moq_alerts_source_present CHECK (((upload_batch_id IS NOT NULL) OR (manual_order_id IS NOT NULL)))
 );
 
 
@@ -650,8 +717,8 @@ ALTER SEQUENCE public.products_id_seq OWNED BY public.products.id;
 
 CREATE TABLE public.quantity_changes (
     id bigint NOT NULL,
-    upload_batch_id bigint NOT NULL,
-    previous_upload_batch_id bigint NOT NULL,
+    upload_batch_id bigint,
+    previous_upload_batch_id bigint,
     order_snapshot_row_id bigint,
     previous_order_snapshot_row_id bigint,
     business_key_hash character varying(64) NOT NULL,
@@ -669,8 +736,10 @@ CREATE TABLE public.quantity_changes (
     created_at timestamp(6) without time zone NOT NULL,
     order_row_id bigint,
     previous_order_row_id bigint,
+    manual_order_id bigint,
     CONSTRAINT quantity_changes_difference_valid CHECK (((difference = (new_qty - old_qty)) AND (difference <> (0)::numeric))),
-    CONSTRAINT quantity_changes_direction_valid CHECK (((((direction)::text = 'increase'::text) AND (difference > (0)::numeric)) OR (((direction)::text = 'decrease'::text) AND (difference < (0)::numeric))))
+    CONSTRAINT quantity_changes_direction_valid CHECK (((((direction)::text = 'increase'::text) AND (difference > (0)::numeric)) OR (((direction)::text = 'decrease'::text) AND (difference < (0)::numeric)))),
+    CONSTRAINT quantity_changes_source_present CHECK (((manual_order_id IS NOT NULL) OR ((upload_batch_id IS NOT NULL) AND (previous_upload_batch_id IS NOT NULL))))
 );
 
 
@@ -818,8 +887,8 @@ CREATE SEQUENCE public.vendor_order_number_seq
 CREATE TABLE public.vendor_order_placements (
     id bigint NOT NULL,
     order_key character varying(64) NOT NULL,
-    order_row_id bigint NOT NULL,
-    upload_batch_id bigint NOT NULL,
+    order_row_id bigint,
+    upload_batch_id bigint,
     product_id bigint,
     po_number character varying NOT NULL,
     po_line_number character varying NOT NULL,
@@ -834,6 +903,8 @@ CREATE TABLE public.vendor_order_placements (
     placed_at timestamp(6) without time zone NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
+    manual_order_id bigint,
+    CONSTRAINT vendor_order_placements_one_order CHECK ((((manual_order_id IS NOT NULL) AND (order_row_id IS NULL) AND (upload_batch_id IS NULL)) OR ((manual_order_id IS NULL) AND (order_row_id IS NOT NULL) AND (upload_batch_id IS NOT NULL)))),
     CONSTRAINT vendor_order_placements_qty_positive CHECK ((order_qty > (0)::numeric))
 );
 
@@ -1029,6 +1100,13 @@ ALTER TABLE ONLY public.audit_logs ALTER COLUMN id SET DEFAULT nextval('public.a
 
 
 --
+-- Name: manual_orders id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manual_orders ALTER COLUMN id SET DEFAULT nextval('public.manual_orders_id_seq'::regclass);
+
+
+--
 -- Name: moq_alerts id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -1184,6 +1262,14 @@ ALTER TABLE ONLY public.audit_logs
 
 
 --
+-- Name: manual_orders manual_orders_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manual_orders
+    ADD CONSTRAINT manual_orders_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: moq_alerts moq_alerts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1331,6 +1417,13 @@ CREATE UNIQUE INDEX index_address_changes_on_batch_and_row ON public.address_cha
 
 
 --
+-- Name: index_address_changes_on_manual_order_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_address_changes_on_manual_order_id ON public.address_changes USING btree (manual_order_id);
+
+
+--
 -- Name: index_address_changes_on_order_row_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1422,10 +1515,38 @@ CREATE INDEX index_audit_logs_on_user_id ON public.audit_logs USING btree (user_
 
 
 --
+-- Name: index_manual_orders_on_created_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_manual_orders_on_created_by_id ON public.manual_orders USING btree (created_by_id);
+
+
+--
+-- Name: index_manual_orders_on_group_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_manual_orders_on_group_key ON public.manual_orders USING btree (group_key);
+
+
+--
+-- Name: index_manual_orders_on_updated_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_manual_orders_on_updated_by_id ON public.manual_orders USING btree (updated_by_id);
+
+
+--
 -- Name: index_moq_alerts_on_batch_and_group; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX index_moq_alerts_on_batch_and_group ON public.moq_alerts USING btree (upload_batch_id, group_key);
+CREATE UNIQUE INDEX index_moq_alerts_on_batch_and_group ON public.moq_alerts USING btree (upload_batch_id, group_key) WHERE (order_row_id IS NOT NULL);
+
+
+--
+-- Name: index_moq_alerts_on_batch_and_manual_order; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_moq_alerts_on_batch_and_manual_order ON public.moq_alerts USING btree (upload_batch_id, manual_order_id) WHERE ((upload_batch_id IS NOT NULL) AND (manual_order_id IS NOT NULL));
 
 
 --
@@ -1433,6 +1554,13 @@ CREATE UNIQUE INDEX index_moq_alerts_on_batch_and_group ON public.moq_alerts USI
 --
 
 CREATE INDEX index_moq_alerts_on_batch_and_new ON public.moq_alerts USING btree (upload_batch_id, new_alert);
+
+
+--
+-- Name: index_moq_alerts_on_manual_order_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_moq_alerts_on_manual_order_id ON public.moq_alerts USING btree (manual_order_id);
 
 
 --
@@ -1569,6 +1697,13 @@ CREATE UNIQUE INDEX index_quantity_changes_on_batch_and_key ON public.quantity_c
 
 
 --
+-- Name: index_quantity_changes_on_manual_order_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_quantity_changes_on_manual_order_id ON public.quantity_changes USING btree (manual_order_id);
+
+
+--
 -- Name: index_quantity_changes_on_order_row_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1678,6 +1813,13 @@ CREATE UNIQUE INDEX index_upload_batches_on_version_number ON public.upload_batc
 --
 
 CREATE UNIQUE INDEX index_users_on_lower_email ON public.users USING btree (lower((email)::text));
+
+
+--
+-- Name: index_vendor_order_placements_on_manual_order_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_vendor_order_placements_on_manual_order_id ON public.vendor_order_placements USING btree (manual_order_id);
 
 
 --
@@ -1859,6 +2001,14 @@ ALTER TABLE ONLY public.ageing_notifications
 
 
 --
+-- Name: moq_alerts fk_rails_1b49354c35; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.moq_alerts
+    ADD CONSTRAINT fk_rails_1b49354c35 FOREIGN KEY (manual_order_id) REFERENCES public.manual_orders(id);
+
+
+--
 -- Name: audit_logs fk_rails_1f26bc34ae; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1872,6 +2022,14 @@ ALTER TABLE ONLY public.audit_logs
 
 ALTER TABLE ONLY public.product_conflicts
     ADD CONSTRAINT fk_rails_1f3c3cb0b7 FOREIGN KEY (resolved_by_id) REFERENCES public.users(id);
+
+
+--
+-- Name: vendor_order_placements fk_rails_23e3d928f2; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vendor_order_placements
+    ADD CONSTRAINT fk_rails_23e3d928f2 FOREIGN KEY (manual_order_id) REFERENCES public.manual_orders(id);
 
 
 --
@@ -1971,6 +2129,14 @@ ALTER TABLE ONLY public.quantity_changes
 
 
 --
+-- Name: manual_orders fk_rails_7f5d78ffa7; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manual_orders
+    ADD CONSTRAINT fk_rails_7f5d78ffa7 FOREIGN KEY (updated_by_id) REFERENCES public.users(id);
+
+
+--
 -- Name: vendor_order_placements fk_rails_8fa39ea913; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2027,6 +2193,14 @@ ALTER TABLE ONLY public.order_snapshot_rows
 
 
 --
+-- Name: address_changes fk_rails_b54e3c444a; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.address_changes
+    ADD CONSTRAINT fk_rails_b54e3c444a FOREIGN KEY (manual_order_id) REFERENCES public.manual_orders(id);
+
+
+--
 -- Name: address_changes fk_rails_b7aaec717a; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2064,6 +2238,22 @@ ALTER TABLE ONLY public.active_storage_attachments
 
 ALTER TABLE ONLY public.vendor_order_placements
     ADD CONSTRAINT fk_rails_c8e917d54e FOREIGN KEY (product_id) REFERENCES public.products(id);
+
+
+--
+-- Name: quantity_changes fk_rails_cccd32cc67; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quantity_changes
+    ADD CONSTRAINT fk_rails_cccd32cc67 FOREIGN KEY (manual_order_id) REFERENCES public.manual_orders(id);
+
+
+--
+-- Name: manual_orders fk_rails_d15731e330; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.manual_orders
+    ADD CONSTRAINT fk_rails_d15731e330 FOREIGN KEY (created_by_id) REFERENCES public.users(id);
 
 
 --
@@ -2153,6 +2343,8 @@ ALTER TABLE ONLY public.address_changes
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261005140001'),
+('20261005120001'),
 ('20261005090001'),
 ('20261003090001'),
 ('20261001160001'),

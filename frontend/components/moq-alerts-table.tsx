@@ -13,12 +13,13 @@ import { TableSkeleton } from "./ui/skeleton";
 import { Pagination, Table, Td, Th } from "./ui/table";
 
 // MOQ alerts of an upload: current rows (PO + Part + Type) whose Qty is below the Part Number's MOQ.
-export function MoqAlertsTable({ uploadId }: { uploadId: number }) {
+// `manual`: also list alerts of manual orders created/edited since this (latest) upload.
+export function MoqAlertsTable({ uploadId, manual = false }: { uploadId: number; manual?: boolean }) {
   const list = useListQuery();
   const [search, setSearch] = useState("");
   const q = useDebounced(search.trim());
   const { data, error, loading } = useApi<Paginated<MoqAlert>>(`/api/uploads/${uploadId}/moq_alerts`, {
-    q, page: list.page, per_page: list.perPage,
+    q, page: list.page, per_page: list.perPage, manual: manual ? 1 : undefined,
   });
 
   return (

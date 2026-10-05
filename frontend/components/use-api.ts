@@ -26,6 +26,19 @@ function remember(key: string, data: unknown) {
   if (cache.size > MAX_ENTRIES) cache.delete(cache.keys().next().value!);
 }
 
+// Requests in flight, so the same request is sent once even when several components (or React's
+// development double-run of effects) ask for it at the same time.
+const inflight = new Map<string, Promise<unknown>>();
+
+function load<T>(key: string, path: string, query: Query): Promise<T> {
+  let promise = inflight.get(key);
+  if (!promise) {
+    promise = api.get<T>(path, query).finally(() => inflight.delete(key));
+    inflight.set(key, promise);
+  }
+  return promise as Promise<T>;
+}
+
 // Loads a GET endpoint and reloads when the path or query changes. Pass null to skip loading.
 // Cached or previous data stays visible while a new request is in flight.
 export function useApi<T>(path: string | null, query: Query = {}) {
@@ -41,7 +54,7 @@ export function useApi<T>(path: string | null, query: Query = {}) {
   useEffect(() => {
     if (key === null || path === null || requestKey === null) return;
     let active = true;
-    api.get<T>(path, query)
+    load<T>(key, path, query)
       .then((data) => {
         remember(requestKey, data);
         if (active) setState({ key, data, error: null });

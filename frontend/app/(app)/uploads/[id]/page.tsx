@@ -42,7 +42,7 @@ export default function UploadDetailPage() {
   return (
     <>
       <div className="mb-5 flex items-center justify-between gap-3">
-        <Button size="sm" onClick={() => (window.history.length > 1 ? router.back() : router.push("/detect"))} className="pl-2">
+        <Button size="sm" onClick={() => (window.history.length > 1 ? router.back() : router.push("/orders"))} className="pl-2">
           <ChevronLeftIcon size={16} className="text-ink-muted" />
           Back
         </Button>

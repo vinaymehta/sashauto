@@ -113,6 +113,11 @@ module Serializers
       data[:history_count] = row.group_row_count - 1
       data[:source_row_number] = row.source_row_number
       data[:source_data] = row.source_data if source
+      # Rows of the Orders list can be manual orders (see OrdersController#dataset).
+      data[:manual] = row.has_attribute?(:manual) && row[:manual] ? true : false
+    elsif row.is_a?(ManualOrder)
+      data.merge!(history_count: 0, source_row_number: nil, manual: true)
+      data[:source_data] = row.source_data if source
     end
     data
   end

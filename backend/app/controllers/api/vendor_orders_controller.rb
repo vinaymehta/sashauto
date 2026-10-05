@@ -8,7 +8,7 @@ module Api
 
     # The placement of this row (if placed, also from an earlier upload), or the vendors it can be placed with.
     def show
-      row = OrderRow.find(params[:order_id])
+      row = order
       placement = placement_for(row)
       product = Product.find_by(part_number: row.part_number)
       vendors = product ? product.vendor_products.includes(:vendor).joins(:vendor).order("vendors.name") : []
@@ -26,7 +26,7 @@ module Api
     end
 
     def create
-      row = OrderRow.find(params[:order_id])
+      row = order
       allocations = params.permit(allocations: %i[vendor_id qty]).fetch(:allocations, [])
       result = VendorOrders::Placer.call(row: row, allocations: allocations, user: current_user)
       placement = result.placement
@@ -50,6 +50,11 @@ module Api
     end
 
     private
+
+    # The order row, or (`manual=1`) the manual order, with this id.
+    def order
+      params[:manual] == "1" ? ManualOrder.active.find(params[:order_id]) : OrderRow.find(params[:order_id])
+    end
 
     def placement_for(row)
       VendorOrderPlacement.includes(:placed_by, vendor_orders: :vendor).find_by(order_key: VendorOrderPlacement.order_key(row))

@@ -75,7 +75,7 @@ export default function DashboardPage() {
     <PageHeader
       title="Dashboard"
       description="Uploads, quantity changes and data quality at a glance."
-      actions={<Link href="/detect"><Button variant="primary"><UploadIcon size={15} />Upload new file</Button></Link>}
+      actions={<Link href="/orders"><Button variant="primary"><UploadIcon size={15} />Upload new file</Button></Link>}
     />
   );
 
@@ -95,7 +95,7 @@ export default function DashboardPage() {
         {header}
         <section className="rounded-lg border border-line bg-surface shadow-card">
           <EmptyState title="No uploads yet" description="Upload the first Supplier Requirements export. Quantity changes are detected from the second upload onward."
-                      action={<Link href="/detect"><Button variant="primary">Go to Upload / Detection</Button></Link>} />
+                      action={<Link href="/orders"><Button variant="primary">Go to Orders</Button></Link>} />
         </section>
       </>
     );
@@ -103,8 +103,8 @@ export default function DashboardPage() {
 
   const attention = [
     totals.open_conflicts > 0 && { text: `${totals.open_conflicts} Commodity Type conflict${totals.open_conflicts === 1 ? "" : "s"} to review`, href: "/products?conflicts=open" },
-    totals.emails_failed > 0 && { text: `${totals.emails_failed} email${totals.emails_failed === 1 ? "" : "s"} failed to send`, href: "/detect" },
-    totals.in_progress > 0 && { text: `${totals.in_progress} upload${totals.in_progress === 1 ? " is" : "s are"} processing`, href: "/detect" },
+    totals.emails_failed > 0 && { text: `${totals.emails_failed} email${totals.emails_failed === 1 ? "" : "s"} failed to send`, href: "/orders" },
+    totals.in_progress > 0 && { text: `${totals.in_progress} upload${totals.in_progress === 1 ? " is" : "s are"} processing`, href: "/orders" },
   ].filter(Boolean) as { text: string; href: string }[];
 
   const latestChanges = (latest.increase_count ?? 0) + (latest.decrease_count ?? 0);
@@ -136,7 +136,7 @@ export default function DashboardPage() {
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
           <Tile label="Latest upload" value={formatUploadParts(latest.completed_at!)[0]} href="/orders" icon={<FileIcon size={16} />} tint="neutral"
                 detail={`${formatUploadParts(latest.completed_at!)[1]} · ${formatRelative(latest.completed_at)}`} />
-          <Tile label="Latest changes" value={formatCount(latestChanges)} href="/detect" icon={<ArrowUpDownIcon size={16} />} tint="direction"
+          <Tile label="Latest changes" value={formatCount(latestChanges)} href="/orders" icon={<ArrowUpDownIcon size={16} />} tint="direction"
                 detail={latest.previous_version ? `↑ ${formatCount(latest.increase_count)} · ↓ ${formatCount(latest.decrease_count)}` : "First upload, not compared"} />
           <Tile label="Changes · 30 days" value={formatCount(month.increases + month.decreases)} icon={<HistoryIcon size={16} />} tint="violet"
                 detail={`↑ ${formatCount(month.increases)} · ↓ ${formatCount(month.decreases)}`} />
@@ -178,7 +178,7 @@ export default function DashboardPage() {
                     ? "In the latest upload, by size of the change"
                     : `From the upload of ${formatDateTime(topChanges.completed_at)}; the latest upload had none`
                   : "By size of the change"}
-                action={topChanges.upload_id ? <Link href={topChanges.upload_id === latest.id ? "/detect" : `/uploads/${topChanges.upload_id}`} className="shrink-0 text-sm text-ink-muted hover:text-ink">View all →</Link> : undefined}>
+                action={topChanges.upload_id ? <Link href={topChanges.upload_id === latest.id ? "/orders" : `/uploads/${topChanges.upload_id}`} className="shrink-0 text-sm text-ink-muted hover:text-ink">View all →</Link> : undefined}>
             {top.length === 0 ? (
               <p className="py-10 text-center text-sm text-ink-muted">No quantity changes have been detected yet.</p>
             ) : (

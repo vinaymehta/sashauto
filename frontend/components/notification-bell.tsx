@@ -120,7 +120,7 @@ export function NotificationBell() {
             )}
           </div>
           <div className="border-t border-line px-4 py-2.5">
-            <button onClick={() => { close(); router.push("/detect"); }} className="text-sm text-ink-muted hover:text-ink">
+            <button onClick={() => { close(); router.push("/orders"); }} className="text-sm text-ink-muted hover:text-ink">
               View uploads →
             </button>
           </div>

@@ -15,12 +15,13 @@ import { Pagination, Table, Td, Th } from "./ui/table";
 const dash = <span className="text-neutral-300">—</span>;
 
 // Ship To Address changes on current order rows (PO + Part + Type) compared with the previous upload.
-export function AddressChangesTable({ uploadId }: { uploadId: number }) {
+// `manual`: also list address changes from manual order edits since this (latest) upload.
+export function AddressChangesTable({ uploadId, manual = false }: { uploadId: number; manual?: boolean }) {
   const list = useListQuery();
   const [search, setSearch] = useState("");
   const q = useDebounced(search.trim());
   const { data, error, loading } = useApi<Paginated<AddressChange>>(`/api/uploads/${uploadId}/address_changes`, {
-    q, page: list.page, per_page: list.perPage,
+    q, page: list.page, per_page: list.perPage, manual: manual ? 1 : undefined,
   });
 
   return (

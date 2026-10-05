@@ -143,6 +143,8 @@ export interface Dashboard {
   latest_upload: UploadDetail | null;
   uploads_in_progress: number;
   open_product_conflicts: number;
+  // Detections from manual order creates/edits since the latest upload.
+  manual_detections: { quantity_changes: number; address_changes: number; moq_alerts: number };
 }
 
 export type ActivityKind = "changes" | "no_changes" | "baseline" | "upload_failed" | "email_failed" | "conflicts";
@@ -238,8 +240,31 @@ export interface OrderRow {
   last_updated_date: string | null;
   quantity_source: QuantitySource;
   history_count?: number;
-  source_row_number?: number;
+  source_row_number?: number | null;
   source_data?: Record<string, string | number | null>;
+  manual?: boolean; // created by hand (Create order), not imported
+}
+
+// One field of the manual order form: an Excel column of the Supplier Requirements export.
+export interface ManualOrderField {
+  label: string;
+  required: boolean;
+  kind: "type" | "date" | "quantity" | "number" | "text";
+  options?: string[];
+}
+
+export interface ManualOrderWarning {
+  code: "duplicate_order" | "below_moq";
+  message: string;
+}
+
+// A completed upload, to choose which upload's order data the Orders page shows.
+export interface UploadChoice {
+  id: number;
+  original_filename: string;
+  uploaded_at: string;
+  completed_at: string;
+  uploaded_by: string | null;
 }
 
 export interface OrderHistory {
@@ -257,7 +282,8 @@ export interface RelatedItem {
 export interface OrdersPage {
   data: OrderRow[];
   meta: PageMeta & { sort?: string; direction?: "asc" | "desc" };
-  source: { uploaded_at: string; original_filename: string; upload_id: number } | null;
+  // The shown upload; `latest` = the current order data (it also lists the manual orders).
+  source: { uploaded_at: string; original_filename: string; upload_id: number; latest: boolean } | null;
   facets: { ship_to_locations: string[]; commodity_types: string[] } | null;
   columns?: { key: string; label: string }[];
 }

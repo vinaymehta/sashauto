@@ -26,13 +26,14 @@ const FILTERS: FilterGroup[] = [
   AGE_FILTER,
 ];
 
-export function ChangesTable({ uploadId, emptyDescription }: { uploadId: number; emptyDescription?: string }) {
+// `manual`: also list quantity changes from manual order edits since this (latest) upload.
+export function ChangesTable({ uploadId, emptyDescription, manual = false }: { uploadId: number; emptyDescription?: string; manual?: boolean }) {
   const list = useListQuery();
   const [search, setSearch] = useState("");
   const q = useDebounced(search.trim());
 
   const { data, error, loading } = useApi<Paginated<QuantityChange>>(`/api/uploads/${uploadId}/changes`, {
-    q, ...list.filters, today: todayParam(), page: list.page, per_page: list.perPage,
+    q, ...list.filters, today: todayParam(), page: list.page, per_page: list.perPage, manual: manual ? 1 : undefined,
   });
   const filtered = q !== "" || Object.values(list.filters).some(Boolean);
   const clearAll = () => { list.clearFilters(); setSearch(""); };

@@ -17,9 +17,9 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [{ source: "/api/:path*", destination: `${backendUrl}/api/:path*` }];
   },
-  // Old address of the upload page.
+  // Old addresses of the upload page; Upload / Detection is now part of Orders (links in sent emails, bookmarks).
   async redirects() {
-    return [{ source: "/upload", destination: "/detect", permanent: false }];
+    return ["/upload", "/detect", "/uploads"].map((source) => ({ source, destination: "/orders", permanent: false }));
   },
   async headers() {
     return [

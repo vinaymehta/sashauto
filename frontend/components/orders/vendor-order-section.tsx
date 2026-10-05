@@ -22,8 +22,10 @@ const fromMilli = (value: number) => formatQty(String(value / 1000));
 // Vendor orders of one order row: before placement the buyer (admin) selects vendors linked to the part and
 // splits the order Qty among them (the total must equal the Qty; below-MOQ allocations are only warned about).
 // After placement the Vendor Orders (VPO-…) are shown, locked, with each vendor's email status.
-export function VendorOrderSection({ orderId }: { orderId: number }) {
-  const { data, error, loading, reload } = useApi<{ data: VendorOrderState }>(`/api/orders/${orderId}/vendor_order`);
+// `manual`: the order is a manual order (same flow; its id is a manual order id).
+export function VendorOrderSection({ orderId, manual = false }: { orderId: number; manual?: boolean }) {
+  const path = `/api/orders/${orderId}/vendor_order${manual ? "?manual=1" : ""}`;
+  const { data, error, loading, reload } = useApi<{ data: VendorOrderState }>(path);
   const state = data?.data;
 
   // Refresh while vendor emails are still being sent.
@@ -52,7 +54,7 @@ export function VendorOrderSection({ orderId }: { orderId: number }) {
       ) : !state ? null : state.placement ? (
         <PlacedOrders state={state} onChanged={reload} />
       ) : state.can_place ? (
-        <AllocationForm state={state} onPlaced={reload} />
+        <AllocationForm state={state} path={path} onPlaced={reload} />
       ) : (
         <p className="px-5 py-6 text-sm text-ink-muted">
           {state.order.qty === null || Number(state.order.qty) <= 0
@@ -64,7 +66,7 @@ export function VendorOrderSection({ orderId }: { orderId: number }) {
   );
 }
 
-function AllocationForm({ state, onPlaced }: { state: VendorOrderState; onPlaced: () => void }) {
+function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; path: string; onPlaced: () => void }) {
   const notify = useToast();
   const [qty, setQty] = useState<Record<number, string>>({});
   const [confirming, setConfirming] = useState(false);
@@ -98,7 +100,7 @@ function AllocationForm({ state, onPlaced }: { state: VendorOrderState; onPlaced
     setBusy(true);
     setError(null);
     try {
-      const res = await api.post<{ warnings: { message: string }[] }>(`/api/orders/${state.order.id}/vendor_order`, {
+      const res = await api.post<{ warnings: { message: string }[] }>(path, {
         allocations: selected.map((v) => ({ vendor_id: v.vendor_id, qty: qty[v.vendor_id]!.trim() })),
       });
       notify(`${selected.length} vendor order${selected.length === 1 ? "" : "s"} placed. Emails are being sent to the vendors.`);

@@ -26,6 +26,13 @@ module Api
       render json: { data: batches.map { |b| Serializers.upload_batch(b) }, meta: meta }
     end
 
+    # Every completed upload, newest first, to choose which upload's order data the Orders page shows.
+    def history
+      batches = UploadBatch.completed.includes(:uploaded_by).order(completed_at: :desc, id: :desc)
+      render json: { data: batches.map { |b| { id: b.id, original_filename: b.original_filename, uploaded_at: b.created_at,
+                                               completed_at: b.completed_at, uploaded_by: b.uploaded_by&.name } } }
+    end
+
     # Matches the file name or uploader name.
     def search_uploads(scope, query)
       term = "%#{UploadBatch.sanitize_sql_like(query)}%"
@@ -46,8 +53,7 @@ module Api
     end
 
     def changes
-      batch = UploadBatch.find(params[:id])
-      scope = batch.quantity_changes
+      scope = detections(UploadBatch.find(params[:id]), QuantityChange)
       directions = multi_param(:direction, QuantityChange::DIRECTIONS)
       types = multi_param(:type, OrderRows::Normalizer::ORDER_TYPES)
       scope = scope.where(direction: directions) if directions.any?
@@ -99,7 +105,7 @@ module Api
 
     # Ship To Address changes detected for this upload (current rows only), paged on the server.
     def address_changes
-      scope = UploadBatch.find(params[:id]).address_changes.order(:po_number, :part_number, :ship_date, :id)
+      scope = detections(UploadBatch.find(params[:id]), AddressChange).order(:po_number, :part_number, :ship_date, :id)
       if params[:q].present?
         term = "%#{AddressChange.sanitize_sql_like(params[:q].to_s.strip.first(100))}%"
         scope = scope.where("po_number ILIKE :t OR part_number ILIKE :t OR old_address ILIKE :t OR new_address ILIKE :t", t: term)
@@ -110,7 +116,7 @@ module Api
 
     # MOQ alerts for this upload (current rows with Qty below the Part Number's MOQ), paged on the server.
     def moq_alerts
-      scope = UploadBatch.find(params[:id]).moq_alerts.order(:po_number, :part_number, :order_type, :id)
+      scope = detections(UploadBatch.find(params[:id]), MoqAlert).order(:po_number, :part_number, :order_type, :id)
       if params[:q].present?
         term = "%#{MoqAlert.sanitize_sql_like(params[:q].to_s.strip.first(100))}%"
         scope = scope.where("po_number ILIKE :t OR part_number ILIKE :t", t: term)
@@ -150,6 +156,17 @@ module Api
       digests.each { |d| Ageing::DeliverDigestJob.perform_later(d.id) }
       audit("notification.retry_requested", subject: batch, notifications: notifications.map(&:id), ageing_digests: digests.map(&:id))
       render json: { data: Serializers.upload_emails(batch.reload) }, status: :accepted
+    end
+
+    private
+
+    # Detection records of `model` for the upload. With `manual=1` on the latest upload, also those from
+    # manual order creates/edits made since it was uploaded (the current order data).
+    def detections(batch, model)
+      scope = model.where(upload_batch_id: batch.id)
+      return scope unless params[:manual] == "1" && batch == UploadBatch.latest_completed
+
+      scope.or(ManualOrder.detections(model, since: batch.completed_at))
     end
   end
 end

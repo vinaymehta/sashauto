@@ -2,7 +2,8 @@ module Comparison
   # Finds, in PostgreSQL, the CURRENT rows (latest Ship Date per PO Number + Part Number + Type) of an
   # upload whose Qty is below the Part Number's MOQ. Rows without a Qty and parts without an MOQ are
   # skipped; Qty >= MOQ is fine. Every row below MOQ is alerted on every upload (`new_alert` only
-  # records whether it was already below MOQ in the previous upload). Returns the number of alerts.
+  # records whether it was already below MOQ in the previous upload). Manual orders (not deleted) are
+  # checked the same way on every upload. Returns the number of alerts.
   class MoqChecker
     def self.call(current_batch_id:, previous_batch_id: nil)
       binds = { current: Integer(current_batch_id), previous: previous_batch_id && Integer(previous_batch_id) }
@@ -13,14 +14,29 @@ module Comparison
         )
         SELECT r.upload_batch_id, r.id, p.id, r.group_key, r.po_number, r.part_number, r.order_type,
                r.ship_date, r.qty, p.moq,
-               NOT EXISTS (SELECT 1 FROM moq_alerts a WHERE a.upload_batch_id = :previous AND a.group_key = r.group_key),
+               NOT EXISTS (SELECT 1 FROM moq_alerts a WHERE a.upload_batch_id = :previous AND a.order_row_id IS NOT NULL
+                                                        AND a.group_key = r.group_key),
                CURRENT_TIMESTAMP
         FROM order_rows r
         JOIN products p ON p.part_number = r.part_number
         WHERE r.upload_batch_id = :current AND r.current
           AND r.qty IS NOT NULL AND p.moq IS NOT NULL AND r.qty < p.moq
       SQL
-      ActiveRecord::Base.connection.execute(sql).cmd_tuples
+      manual_sql = ActiveRecord::Base.sanitize_sql_array([ <<~SQL, binds ])
+        INSERT INTO moq_alerts (
+          upload_batch_id, manual_order_id, product_id, group_key, po_number, part_number, order_type,
+          ship_date, qty, moq, new_alert, created_at
+        )
+        SELECT :current, m.id, p.id, m.group_key, m.po_number, m.part_number, m.order_type,
+               m.ship_date, m.qty, p.moq,
+               NOT EXISTS (SELECT 1 FROM moq_alerts a WHERE a.upload_batch_id = :previous AND a.manual_order_id = m.id),
+               CURRENT_TIMESTAMP
+        FROM manual_orders m
+        JOIN products p ON p.part_number = m.part_number
+        WHERE m.deleted_at IS NULL AND m.qty IS NOT NULL AND p.moq IS NOT NULL AND m.qty < p.moq
+      SQL
+      connection = ActiveRecord::Base.connection
+      connection.execute(sql).cmd_tuples + connection.execute(manual_sql).cmd_tuples
     end
   end
 end

@@ -8,8 +8,9 @@ import { Spinner } from "../ui/feedback";
 import { Sheet } from "../ui/sheet";
 
 // Clickable PO Number / Part Number. Opens the right-hand side panel listing the related Part Numbers
-// (for a PO) or PO Numbers (for a Part), fetched from the server for the latest upload.
-export function RelatedLink({ kind, value }: { kind: "po" | "part"; value: string }) {
+// (for a PO) or PO Numbers (for a Part), fetched from the server for the shown upload (`uploadId`;
+// undefined = the current order data).
+export function RelatedLink({ kind, value, uploadId }: { kind: "po" | "part"; value: string; uploadId?: number }) {
   const [open, setOpen] = useState(false);
 
   function openPanel(e: React.MouseEvent) {
@@ -32,7 +33,7 @@ export function RelatedLink({ kind, value }: { kind: "po" | "part"; value: strin
             description={kind === "po" ? "Part Numbers on this PO in the current order data." : "PO Numbers that include this part in the current order data."}
             icon={kind === "po" ? <FileIcon size={18} /> : <BoxIcon size={18} />}
           >
-            <RelatedList kind={kind} value={value} />
+            <RelatedList kind={kind} value={value} uploadId={uploadId} />
           </Sheet>
         </span>
       )}
@@ -40,9 +41,9 @@ export function RelatedLink({ kind, value }: { kind: "po" | "part"; value: strin
   );
 }
 
-function RelatedList({ kind, value }: { kind: "po" | "part"; value: string }) {
+function RelatedList({ kind, value, uploadId }: { kind: "po" | "part"; value: string; uploadId?: number }) {
   const { data, error, loading } = useApi<{ data: RelatedItem[] }>(
-    kind === "po" ? "/api/orders/by_po" : "/api/orders/by_part", kind === "po" ? { po: value } : { part: value },
+    kind === "po" ? "/api/orders/by_po" : "/api/orders/by_part", { ...(kind === "po" ? { po: value } : { part: value }), upload_id: uploadId },
   );
   const items = data?.data ?? [];
   const noun = kind === "po" ? "Part Number" : "PO Number";

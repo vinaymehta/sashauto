@@ -167,7 +167,7 @@ const EMAIL_LABELS: Record<EmailKind, string> = {
 // Shows the delivery status of each email sent for this upload (one per kind: quantity changes, address
 // changes, MOQ alerts, ageing) and keeps it current: delivery happens in the background a few seconds
 // after the upload completes, so queued/failed emails are re-checked until they are sent.
-function EmailStatus({ uploadId, emails: initial, onChanged }: {
+export function EmailStatus({ uploadId, emails: initial, onChanged }: {
   uploadId: number; emails: EmailInfo[]; onChanged?: () => void;
 }) {
   const notify = useToast();

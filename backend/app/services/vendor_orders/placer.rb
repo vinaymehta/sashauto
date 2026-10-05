@@ -48,7 +48,7 @@ module VendorOrders
         raise Invalid, "This order was already placed with vendors." if VendorOrderPlacement.exists?(order_key: key)
 
         placement = VendorOrderPlacement.create!(
-          order_key: key, order_row: @row, upload_batch_id: @row.upload_batch_id, product: product,
+          order_key: key, **order_reference, product: product,
           po_number: @row.po_number, po_line_number: @row.po_line_number, part_number: @row.part_number,
           order_type: @row.order_type, ship_date: @row.ship_date, due_date: @row.due_date, unit: @row.unit&.strip,
           order_qty: order_qty, moq: product&.moq, placed_by: @user, placed_at: Time.current
@@ -63,6 +63,11 @@ module VendorOrders
       Result.new(placement: placement, warnings: moq_warnings(placement))
     rescue ActiveRecord::RecordNotUnique
       raise Invalid, "This order was already placed with vendors."
+    end
+
+    # The placed order: an imported order row (with its upload) or a manual order.
+    def order_reference
+      @row.is_a?(ManualOrder) ? { manual_order: @row } : { order_row: @row, upload_batch_id: @row.upload_batch_id }
     end
 
     # MOQ warnings for a placement's allocations (never blocking).
