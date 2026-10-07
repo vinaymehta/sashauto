@@ -13,6 +13,7 @@ export class ApiError extends Error {
 }
 
 export const SESSION_EXPIRED_EVENT = "session-expired";
+export const PASSWORD_CHANGE_EVENT = "password-change-required";
 
 let csrfToken: string | null = null;
 
@@ -71,6 +72,8 @@ async function request<T>(method: string, path: string, body?: unknown, retried 
     }
     // Lets the session provider return the user to the sign-in page.
     if (res.status === 401 && typeof window !== "undefined") window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+    // The account must choose a new password first: the session provider reloads the user, which shows the form.
+    if (error.code === "password_change_required" && typeof window !== "undefined") window.dispatchEvent(new Event(PASSWORD_CHANGE_EVENT));
     throw new ApiError(error.message ?? `Request failed (${res.status}).`, res.status, error.code, error.details);
   }
   return data as T;

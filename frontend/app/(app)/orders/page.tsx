@@ -59,12 +59,12 @@ const typedColumns = (uploadId?: number): Record<string, Omit<Column, "key" | "l
 });
 
 // All Excel columns of the upload, in file order (same as the history table).
-function buildColumns(columns: { key: string; label: string }[], rows: OrderRow[], uploadId?: number): Column[] {
+function buildColumns(columns: { key: string; label: string }[], uploadId?: number, numericKeys?: Set<string>): Column[] {
   const TYPED = typedColumns(uploadId);
   return columns.map(({ key, label }) => {
     const typed = TYPED[key];
     if (typed) return { key, label, ...typed };
-    const numeric = rows.some((r) => typeof r.source_data?.[label] === "number");
+    const numeric = numericKeys?.has(key) ?? false;
     return {
       key, label, align: numeric ? "right" : "left",
       render: (r) => <span className="block max-w-72 truncate" title={String(r.source_data?.[label] ?? "")}>{cell(r.source_data?.[label])}</span>,
@@ -95,7 +95,7 @@ const OrderTr = memo(function OrderTr({ row, columns, open, today, onSelect }: {
 });
 
 export default function OrdersPage() {
-  const list = useListQuery({}, 50, { key: "ship_date", direction: "asc" });
+  const list = useListQuery({}, 25, { key: "ship_date", direction: "asc" });
   const [search, setSearch] = useState("");
   const term = useDebounced(search.trim());
   const admin = useSession().user?.role === "admin";
@@ -109,9 +109,9 @@ export default function OrdersPage() {
     upload_id: uploadId ?? undefined,
   });
 
-  // Keep the last known option lists so the panel does not empty while a filtered page loads.
-  const [facets, setFacets] = useState<OrdersPage["facets"]>(null);
-  if (data?.facets && data.facets !== facets) setFacets(data.facets);
+  // useApi keeps the previous response while a new page loads, so the option lists and columns never empty.
+  const facets = data?.facets ?? null;
+
   const filters: FilterGroup[] = [
     { key: "type", label: "Type", options: [{ value: "Order", label: "Order" }, { value: "Firm", label: "Firm" }, { value: "Forecast", label: "Forecast" }] },
     { key: "ship_to", label: "Ship To Location", options: (facets?.ship_to_locations ?? []).map((v) => ({ value: v, label: v })) },
@@ -122,11 +122,25 @@ export default function OrdersPage() {
   const filtered = term !== "" || Object.values(list.filters).some(Boolean);
   const clearAll = () => { list.clearFilters(); setSearch(""); };
 
-  // Keep the last known column list so the header does not vanish while a page loads.
-  const [sourceColumns, setSourceColumns] = useState<NonNullable<OrdersPage["columns"]>>([]);
-  if (data?.columns && data.columns !== sourceColumns) setSourceColumns(data.columns);
+  // Keyed by the header names: every response is a new array, but the columns rarely change.
+  const columnsKey = (data?.columns ?? []).map((c) => `${c.key}\u0000${c.label}`).join("\u0001");
+  const sourceColumns = useMemo(
+    () => (columnsKey ? columnsKey.split("\u0001").map((c) => { const [key, label] = c.split("\u0000"); return { key: key!, label: label! }; }) : []),
+    [columnsKey],
+  );
   const rows = data?.data;
-  const COLUMNS = useMemo(() => buildColumns(sourceColumns, rows ?? [], uploadId ?? undefined), [sourceColumns, rows, uploadId]);
+  // Excel columns holding numbers (right-aligned), as a string so the column definitions — and with them the
+  // memoized rows — are rebuilt only when this set changes, not on every page of data.
+  const numericSignature = useMemo(() => {
+    const typed = new Set(Object.keys(typedColumns()));
+    return sourceColumns
+      .filter(({ key, label }) => !typed.has(key) && (rows ?? []).some((r) => typeof r.source_data?.[label] === "number"))
+      .map(({ key }) => key).join(",");
+  }, [sourceColumns, rows]);
+  const COLUMNS = useMemo(
+    () => buildColumns(sourceColumns, uploadId ?? undefined, new Set(numericSignature.split(",").filter(Boolean))),
+    [sourceColumns, uploadId, numericSignature],
+  );
 
   const source = data?.source;
   // Row whose order details are open in the side panel; manual order being edited.

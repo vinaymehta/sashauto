@@ -58,6 +58,10 @@ module Backend
     config.middleware.use ActionDispatch::Cookies
     config.middleware.use config.session_store, config.session_options
 
+    # Gzip JSON responses (the Orders page is ~100 kB of JSON per page, ~6 kB gzipped) whether the API is
+    # reached through the Next.js proxy or directly. Excel downloads are already compressed.
+    config.middleware.use Rack::Deflater, include: %w[application/json]
+
     # Original uploads are only served through the authenticated uploads controller.
     config.active_storage.draw_routes = false
     config.active_storage.variant_processor = :disabled

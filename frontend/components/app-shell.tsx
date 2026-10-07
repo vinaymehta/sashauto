@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { BoxIcon, CloseIcon, DashboardIcon, MenuIcon, TableIcon, TruckIcon } from "./icons";
+import { BoxIcon, CloseIcon, DashboardIcon, MenuIcon, TableIcon, TruckIcon, UsersIcon } from "./icons";
 import { BrandLogo } from "./brand-logo";
+import { ChangePasswordForm } from "./users/change-password-form";
 import { NotificationBell } from "./notification-bell";
 import { useSession } from "./session";
 import { ToastProvider } from "./toast";
@@ -17,10 +18,11 @@ const NAV = [
   { href: "/orders", label: "Orders", icon: TableIcon, match: (p: string) => p.startsWith("/orders") || p.startsWith("/uploads") },
   { href: "/products", label: "Products", icon: BoxIcon, match: (p: string) => p.startsWith("/products") },
   { href: "/vendors", label: "Vendors", icon: TruckIcon, match: (p: string) => p.startsWith("/vendors") },
+  { href: "/users", label: "Users", icon: UsersIcon, match: (p: string) => p.startsWith("/users"), adminOnly: true },
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { user, loading } = useSession();
+  const { user, loading, signOut } = useSession();
   const router = useRouter();
   const pathname = usePathname();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -33,10 +35,17 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [loading, user, router]);
 
   const ready = !loading && !!user;
-  const current = NAV.find((item) => item.match(pathname));
+  const items = NAV.filter((item) => !item.adminOnly || user?.role === "admin");
+  const current = items.find((item) => item.match(pathname));
+
+  // An account created or reset by an admin chooses its own password before anything else.
+  if (ready && user.must_change_password) {
+    return <RequiredPasswordChange name={user.name} onSignOut={() => { void signOut().then(() => router.replace("/login")); }} />;
+  }
+
   const nav = (
     <nav className="space-y-1">
-      {NAV.map(({ href, label, icon: Icon, match }) => {
+      {items.map(({ href, label, icon: Icon, match }) => {
         const active = match(pathname);
         return (
           <Link key={href} href={href} onClick={closeDrawer} aria-current={active ? "page" : undefined}
@@ -116,6 +125,25 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </div>
     </ToastProvider>
+  );
+}
+
+function RequiredPasswordChange({ name, onSignOut }: { name: string; onSignOut: () => void }) {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-canvas px-4 py-10">
+      <div className="w-full max-w-md">
+        <BrandLogo tone="dark" size="md" />
+        <div className="mt-6 rounded-xl border border-line bg-surface p-6 shadow-card sm:p-8">
+          <h1 className="text-xl font-semibold tracking-tight text-ink">Choose your password</h1>
+          <p className="mt-1.5 text-sm text-ink-muted">
+            Welcome, {name}. You signed in with a temporary password from your administrator. Choose your own
+            password to continue.
+          </p>
+          <div className="mt-6"><ChangePasswordForm submitLabel="Save and continue" /></div>
+        </div>
+        <button type="button" onClick={onSignOut} className="mt-4 text-sm text-ink-muted hover:text-ink">Sign out</button>
+      </div>
+    </div>
   );
 }
 

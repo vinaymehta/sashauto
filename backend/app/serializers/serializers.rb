@@ -3,7 +3,7 @@ module Serializers
   module_function
 
   def user(user)
-    { id: user.id, name: user.name, email: user.email, role: user.role }
+    user.slice(:id, :name, :email, :role, :active, :must_change_password, :last_login_at, :created_at)
   end
 
   def qty(value)

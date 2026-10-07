@@ -1,8 +1,9 @@
 module ExcelImport
-  # Turns raw workbook rows into exactly one normalized row per business key, or a list of
+  # Turns raw workbook rows into normalized rows (identical Excel rows counted once), or a list of
   # actionable errors. Nothing here touches the database.
   class OrderRowParser
-    # rows: one per order key (duplicates merged). all_rows: every valid Excel row, unmerged, with its source data.
+    # rows: every valid Excel row, identical rows (all columns equal) merged into one. all_rows: every valid
+    # Excel row, unmerged, with its source data.
     Result = Data.define(:rows, :all_rows, :errors, :warnings, :source_row_count, :duplicate_rows_merged, :unknown_quantity_count) do
       def valid?
         errors.empty?
@@ -37,8 +38,7 @@ module ExcelImport
         errors << { rows: [], column: nil, message: "The workbook has a header row but no data rows." }
       end
 
-      rows, duplicate_errors, merged = resolve_duplicates(candidates)
-      errors.concat(duplicate_errors)
+      rows, merged = merge_identical(candidates)
 
       unknown = rows.count { |row| row[:quantity_source] == "unknown" }
       warnings = []
@@ -132,51 +132,18 @@ module ExcelImport
       nil
     end
 
-    # Duplicate rule: prefer rows with Qty, then rows with Previous Qty. If several equally valid rows
-    # remain they must agree on effective quantity and Commodity Type; otherwise it is a conflict.
-    def resolve_duplicates(candidates)
-      rows = []
-      errors = []
-      merged = 0
-
-      candidates.group_by { |row| row[:business_key_hash] }.each_value do |group|
-        if group.size == 1
-          rows << group.first
-          next
-        end
-
-        preferred = group.select { |row| row[:quantity_source] == "qty" }
-        preferred = group.select { |row| row[:quantity_source] == "previous_qty" } if preferred.empty?
-        preferred = group if preferred.empty?
-
-        if preferred.map { |row| [ row[:effective_qty], row[:commodity_type] ] }.uniq.size > 1
-          errors << duplicate_conflict(preferred)
-          next
-        end
-
-        chosen = preferred.min_by { |row| row[:source_row_numbers].first }
-        rows << chosen.merge(source_row_numbers: group.flat_map { |row| row[:source_row_numbers] }.sort)
-        merged += group.size - 1
+    # Rows equal in every column (text compared without surrounding/repeated spaces; the export writes " " for
+    # empty cells) are one row listed twice: they are merged and counted once. Rows that differ in any column,
+    # even when they share the business key (e.g. one with Qty, one with only Previous Qty), are kept apart.
+    # Returns [rows, number of rows merged away].
+    def merge_identical(candidates)
+      groups = candidates.group_by do |row|
+        row[:source].values.map { |value| value.is_a?(String) ? OrderRows::Normalizer.text(value) : value }
       end
-
-      [ rows, errors, merged ]
-    end
-
-    def duplicate_conflict(rows)
-      first = rows.first
-      numbers = rows.map { |row| row[:source_row_numbers].first }.sort
-      quantities = rows.map { |row| row[:effective_qty]&.to_s("F")&.delete_suffix(".0") || "blank" }.uniq
-      commodities = rows.map { |row| row[:commodity_type] || "blank" }.uniq
-      detail = []
-      detail << "quantities #{quantities.join(' vs ')}" if quantities.size > 1
-      detail << "commodity types #{commodities.join(' vs ')}" if commodities.size > 1
-      {
-        rows: numbers,
-        column: nil,
-        message: "Rows #{numbers.join(', ')} are the same order row (#{first[:order_type]}, PO #{first[:po_number]} " \
-                 "line #{first[:po_line_number]}, part #{first[:part_number]}, ship date #{first[:ship_date].iso8601}, " \
-                 "#{first[:ship_to_location]}) but have conflicting #{detail.join(' and ')}. Keep one row and upload again."
-      }
+      rows = groups.each_value.map do |group|
+        group.first.merge(source_row_numbers: group.flat_map { |row| row[:source_row_numbers] }.sort)
+      end
+      [ rows, candidates.size - rows.size ]
     end
   end
 end

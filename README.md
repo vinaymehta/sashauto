@@ -29,7 +29,7 @@ npm run dev                   # http://localhost:3000 (proxies /api to BACKEND_U
 ```
 
 Emails are sent through Resend (`RESEND_API_KEY`, `RESEND_FROM`). In development without `RESEND_API_KEY`, emails are written to `backend/tmp/mails/`.
-There is no self-registration; users are created with `bin/rails users:create` (ROLE=`admin` or `warehouse_manager`).
+There is no self-registration. Admins add users on the **Users** page (sign-in details are emailed; the user chooses their own password at first sign-in); from the command line, `bin/rails users:create` (ROLE=`admin` or `warehouse_manager`) still works.
 
 ## Business rules (as implemented)
 
@@ -99,8 +99,9 @@ Unexpected processing errors are retried (3 attempts); the transaction guarantee
   random Active Storage keys (no user-controlled paths); Active Storage public routes are disabled, and files are
   only downloadable through the authenticated endpoint.
 - Audit log: sign-in/out and failures, uploads, downloads, product edits, conflict resolutions, notifications.
-- Roles: `admin` and `warehouse_manager` currently have identical permissions; `require_role` in
-  `ApplicationController` is the single place to restrict an action later.
+- Roles: `admin` can also manage users, vendors, manual orders, product MOQ and vendor orders;
+  `warehouse_manager` works with orders, uploads, products and vendors without those admin changes.
+  `require_role` in `ApplicationController` restricts an action.
 
 ## Operations
 

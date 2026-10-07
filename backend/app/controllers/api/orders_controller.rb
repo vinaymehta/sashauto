@@ -41,14 +41,21 @@ module Api
 
       # Every imported row of the upload (not only the current row of each PO + Part + Type).
       dataset = dataset(batch)
-      columns = source_columns(OrderRow.where(upload_batch_id: batch&.id))
+      columns = source_columns(batch)
       scope = filter(search(dataset, (params[:search].presence || params[:q]).to_s.strip.first(100)))
       scope, sort, direction = apply_sort(scope, sorts_for(columns), default: DEFAULT_SORT)
       # Manual orders are always listed first; each part keeps the chosen sort.
       scope = scope.reorder(Arel.sql("order_rows.manual DESC"), *scope.order_values)
 
-      rows, meta = paginate(scope)
-      ship_to_locations, commodity_types = facets(dataset)
+      rows, meta = if filtered?
+        paginate(scope)
+      else
+        # Stored rows of the upload (row_count is the number after merging identical rows, not what is listed).
+        total = OrderRow.where(upload_batch_id: batch&.id).count + (current_view? ? ManualOrder.active.count : 0)
+        paginate_with_known_total(scope, total)
+      end
+
+      ship_to_locations, commodity_types = facets(batch, dataset)
       render json: {
         data: rows.map { |row| Serializers.order_row(row, source: true) },
         meta: meta.merge(sort: sort, direction: direction),
@@ -89,13 +96,32 @@ module Api
 
     private
 
-    # [Ship To Locations, Commodity Types] present in the dataset, sorted, from one scan.
-    def facets(dataset)
-      dataset.pick(
-        Arel.sql("COALESCE(array_agg(DISTINCT order_rows.ship_to_location ORDER BY order_rows.ship_to_location), '{}')"),
-        Arel.sql("COALESCE(array_agg(DISTINCT order_rows.commodity_type ORDER BY order_rows.commodity_type) " \
-                 "FILTER (WHERE order_rows.commodity_type IS NOT NULL), '{}')")
-      )
+    # [Ship To Locations, Commodity Types] present in the dataset, sorted.
+    # Upload batches are immutable, so batch facets are cached in memory.
+    def facets(batch, dataset)
+      batch_facets = if batch
+        Rails.cache.fetch("order_rows_facets_batch_#{batch.id}") do
+          OrderRow.where(upload_batch_id: batch.id).pick(
+            Arel.sql("COALESCE(array_agg(DISTINCT order_rows.ship_to_location ORDER BY order_rows.ship_to_location), '{}')"),
+            Arel.sql("COALESCE(array_agg(DISTINCT order_rows.commodity_type ORDER BY order_rows.commodity_type) " \
+                     "FILTER (WHERE order_rows.commodity_type IS NOT NULL), '{}')")
+          ) || [ [], [] ]
+        end
+      else
+        [ [], [] ]
+      end
+
+      return batch_facets unless current_view? && ManualOrder.active.exists?
+
+      manual_facets = ManualOrder.active.pick(
+        Arel.sql("COALESCE(array_agg(DISTINCT ship_to_location ORDER BY ship_to_location), '{}')"),
+        Arel.sql("COALESCE(array_agg(DISTINCT commodity_type ORDER BY commodity_type) FILTER (WHERE commodity_type IS NOT NULL), '{}')")
+      ) || [ [], [] ]
+
+      [
+        (batch_facets[0] | manual_facets[0]).sort,
+        (batch_facets[1] | manual_facets[1]).sort
+      ]
     end
 
     # A manual order has no other rows: its history is itself.
@@ -133,9 +159,20 @@ module Api
     end
 
     # Headers of the upload in file order; the 47 manual order columns when there is no upload yet.
-    def source_columns(rows)
-      headers = rows.where.not(source_columns: nil).pick(:source_columns) || ManualOrder::HEADERS
-      headers.map { |h| { key: h.parameterize(separator: "_"), label: h } }
+    def source_columns(batch)
+      return ManualOrder::HEADERS.map { |h| { key: h.parameterize(separator: "_"), label: h } } if batch.nil?
+
+      Rails.cache.fetch("order_source_columns_batch_#{batch.id}") do
+        headers = OrderRow.where(upload_batch_id: batch.id).where.not(source_columns: nil).pick(:source_columns) || ManualOrder::HEADERS
+        headers.map { |h| { key: h.parameterize(separator: "_"), label: h } }
+      end
+    end
+
+    # Whether the request has any search or filter active.
+    def filtered?
+      (params[:search].presence || params[:q].presence).present? ||
+        params[:type].present? || params[:ship_to].present? || params[:commodity_type].present? ||
+        params[:ship_date_from].present? || params[:ship_date_to].present? || params[:age].present?
     end
 
     # SORTS plus the Excel columns without a typed column, sorted by their imported value

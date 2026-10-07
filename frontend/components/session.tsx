@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { api, SESSION_EXPIRED_EVENT, setCsrfToken } from "@/lib/api";
+import { api, PASSWORD_CHANGE_EVENT, SESSION_EXPIRED_EVENT, setCsrfToken } from "@/lib/api";
 import type { User } from "@/lib/types";
 import { clearApiCache } from "./use-api";
 
@@ -10,6 +10,8 @@ interface SessionState {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  // The signed-in user changes their own password; the session continues with the updated user.
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
 }
 
 const SessionContext = createContext<SessionState | null>(null);
@@ -34,10 +36,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       .catch(() => active && setUser(null))
       .finally(() => active && setLoading(false));
     const onExpired = () => { clearApiCache(); setUser(null); };
+    // The server requires a new password first: reload the user so the app shows the change-password form.
+    const onPasswordChange = () => {
+      api.get<SessionResponse>("/api/session").then((res) => { setCsrfToken(res.csrf_token); setUser(res.user); }).catch(() => undefined);
+    };
     window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
+    window.addEventListener(PASSWORD_CHANGE_EVENT, onPasswordChange);
     return () => {
       active = false;
       window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
+      window.removeEventListener(PASSWORD_CHANGE_EVENT, onPasswordChange);
     };
   }, []);
 
@@ -57,7 +65,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  return <SessionContext.Provider value={{ user, loading, signIn, signOut }}>{children}</SessionContext.Provider>;
+  const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
+    const res = await api.patch<SessionResponse>("/api/session/password", { current_password: currentPassword, new_password: newPassword });
+    setCsrfToken(res.csrf_token);
+    setUser(res.user);
+  }, []);
+
+  return <SessionContext.Provider value={{ user, loading, signIn, signOut, changePassword }}>{children}</SessionContext.Provider>;
 }
 
 export function useSession() {

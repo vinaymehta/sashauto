@@ -8,6 +8,7 @@ class ApplicationController < ActionController::API
 
   protect_from_forgery with: :exception
   before_action :require_login
+  before_action :require_password_change_done
 
   rescue_from ActionController::InvalidAuthenticityToken do
     render_error "Your session has expired. Reload the page and try again.", :unprocessable_content, code: "invalid_csrf_token"
@@ -30,14 +31,24 @@ class ApplicationController < ActionController::API
     authenticated_at = session[:authenticated_at]
     return nil if session[:user_id].nil? || authenticated_at.nil?
     return nil if Time.zone.at(authenticated_at) < SESSION_LIFETIME.ago
-    User.active.find_by(id: session[:user_id])
+    user = User.active.find_by(id: session[:user_id])
+    # A password reset or change signs the account out of every session started before it.
+    return nil if user&.password_changed_at && user.password_changed_at.to_i > authenticated_at
+    user
   end
 
   def require_login
     render_error "Please sign in.", :unauthorized, code: "unauthenticated" unless current_user
   end
 
-  # Both roles currently share the same permissions; this is the single place to restrict an action later.
+  # An account created or reset by an admin signs in with an emailed password and must choose its own before
+  # doing anything else. Controllers that stay usable meanwhile (session, password change) skip this.
+  def require_password_change_done
+    return unless current_user&.must_change_password?
+    render_error "Choose a new password to continue.", :forbidden, code: "password_change_required"
+  end
+
+  # Restricts an action to the given roles (e.g. require_role(:admin)).
   def require_role(*roles)
     render_error "You do not have permission to do this.", :forbidden unless roles.map(&:to_s).include?(current_user.role)
   end
@@ -96,6 +107,12 @@ class ApplicationController < ActionController::API
   # Server-side offset pagination. Returns [records, meta]; a page past the end is clamped to the last page.
   def paginate(scope)
     total = scope.count(:all) # COUNT(*) even when the scope has a custom SELECT
+    page, per_page, meta = pagination_meta(total)
+    [ scope.offset((page - 1) * per_page).limit(per_page), meta ]
+  end
+
+  # Server-side offset pagination with a pre-computed total (avoids COUNT(*) on expensive subqueries).
+  def paginate_with_known_total(scope, total)
     page, per_page, meta = pagination_meta(total)
     [ scope.offset((page - 1) * per_page).limit(per_page), meta ]
   end

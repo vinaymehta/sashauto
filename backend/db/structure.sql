@@ -845,6 +845,9 @@ CREATE TABLE public.users (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     notifications_seen_at timestamp(6) without time zone,
+    must_change_password boolean DEFAULT false NOT NULL,
+    password_changed_at timestamp(6) without time zone,
+    created_by_id bigint,
     CONSTRAINT users_role_valid CHECK (((role)::text = ANY (ARRAY[('admin'::character varying)::text, ('warehouse_manager'::character varying)::text])))
 );
 
@@ -1630,7 +1633,7 @@ CREATE INDEX index_order_rows_on_batch_po_part ON public.order_rows USING btree 
 -- Name: index_order_snapshot_rows_on_batch_and_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX index_order_snapshot_rows_on_batch_and_key ON public.order_snapshot_rows USING btree (upload_batch_id, business_key_hash);
+CREATE INDEX index_order_snapshot_rows_on_batch_and_key ON public.order_snapshot_rows USING btree (upload_batch_id, business_key_hash);
 
 
 --
@@ -1806,6 +1809,13 @@ CREATE INDEX index_upload_batches_on_uploaded_by_id ON public.upload_batches USI
 --
 
 CREATE UNIQUE INDEX index_upload_batches_on_version_number ON public.upload_batches USING btree (version_number);
+
+
+--
+-- Name: index_users_on_created_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_users_on_created_by_id ON public.users USING btree (created_by_id);
 
 
 --
@@ -2070,6 +2080,14 @@ ALTER TABLE ONLY public.vendor_orders
 
 ALTER TABLE ONLY public.vendor_products
     ADD CONSTRAINT fk_rails_443e06182c FOREIGN KEY (product_id) REFERENCES public.products(id);
+
+
+--
+-- Name: users fk_rails_45307c95a3; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.users
+    ADD CONSTRAINT fk_rails_45307c95a3 FOREIGN KEY (created_by_id) REFERENCES public.users(id);
 
 
 --
@@ -2343,6 +2361,8 @@ ALTER TABLE ONLY public.address_changes
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261007090001'),
+('20261006090001'),
 ('20261005140001'),
 ('20261005120001'),
 ('20261005090001'),

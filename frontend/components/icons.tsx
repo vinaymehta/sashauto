@@ -101,3 +101,9 @@ export const ChevronRightSmallIcon = (p: IconProps) => (
 export const MapPinIcon = (p: IconProps) => (
   <Icon {...p}><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21Z" /><circle cx="12" cy="9.5" r="2.5" /></Icon>
 );
+export const UsersIcon = (p: IconProps) => (
+  <Icon {...p}><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20a6.5 6.5 0 0 1 13 0" /><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8" /><path d="M18.5 14.2A6.5 6.5 0 0 1 21.5 20" /></Icon>
+);
+export const KeyIcon = (p: IconProps) => (
+  <Icon {...p}><circle cx="7.5" cy="15.5" r="4.5" /><path d="m10.7 12.3 9.8-9.8" /><path d="m17 6 3 3" /><path d="m15 8 2 2" /></Icon>
+);

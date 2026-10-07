@@ -24,7 +24,7 @@ const qty = (value: string | null) => (value === null ? dash : formatQty(value))
 // Original imported cell value, lightly formatted for reading (blank cells shown as a dash).
 export function cell(value: string | number | null | undefined) {
   if (value === null || value === undefined || (typeof value === "string" && value.trim() === "")) {
-    return <span className="text-neutral-300">—</span>;
+    return dash;
   }
   if (typeof value === "string" && ISO_DATE.test(value)) return formatDate(value);
   if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T/.test(value)) return value.replace("T", " ").slice(0, 16);

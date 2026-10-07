@@ -5,6 +5,19 @@ export interface User {
   name: string;
   email: string;
   role: Role;
+  active: boolean;
+  must_change_password: boolean; // created or reset by an admin: must choose a password before using the app
+  last_login_at: string | null;
+  created_at: string;
+}
+
+// Response of creating a user or resetting a password. When the email could not be sent, the password is
+// returned once so the admin can share it.
+export interface UserCredentialsResponse {
+  data: User;
+  email_sent: boolean;
+  password?: string;
+  email_error?: string;
 }
 
 export type UploadStatus = "pending" | "processing" | "completed" | "failed";

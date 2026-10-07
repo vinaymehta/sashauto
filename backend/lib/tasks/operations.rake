@@ -10,7 +10,9 @@ namespace :users do
     end
 
     user = User.find_or_initialize_by(email: email.strip.downcase)
-    user.assign_attributes(name: ENV.fetch("NAME", user.name || email), role: role, password: password, active: true)
+    # Set from the command line by an operator, so no change is forced at first sign-in.
+    user.assign_attributes(name: ENV.fetch("NAME", user.name || email), role: role, password: password, active: true,
+                           must_change_password: false)
     if user.save
       AuditLog.record(user.previously_new_record? ? "user.created" : "user.updated", subject: user, role: user.role, via: "rake")
       puts "#{user.previously_new_record? ? 'Created' : 'Updated'} #{user.role} #{user.email}"

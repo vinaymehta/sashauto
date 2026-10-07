@@ -2,7 +2,12 @@ Rails.application.routes.draw do
   get "up" => "rails/health#show", as: :rails_health_check
 
   scope :api, module: :api, as: :api, defaults: { format: :json } do
-    resource :session, only: %i[show create destroy]
+    resource :session, only: %i[show create destroy] do
+      patch :password
+    end
+    resources :users, only: %i[index create update] do
+      post :reset_password, on: :member
+    end
     resource :dashboard, only: :show, controller: :dashboard
     resource :stats, only: :show, controller: :stats
     resource :activity, only: :show, controller: :activity do

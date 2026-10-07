@@ -2,9 +2,12 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useRef, useState } from "react";
-import { ChevronDownIcon, LogoutIcon } from "./icons";
+import { ChevronDownIcon, KeyIcon, LogoutIcon } from "./icons";
 import { useSession } from "./session";
+import { useToast } from "./toast";
+import { Sheet } from "./ui/sheet";
 import { useDismiss } from "./use-dismiss";
+import { ChangePasswordForm } from "./users/change-password-form";
 
 const ROLE_LABEL = { admin: "Admin", warehouse_manager: "Warehouse Manager" } as const;
 
@@ -18,6 +21,8 @@ export function UserMenu() {
   const ref = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const notify = useToast();
   const close = useCallback(() => setOpen(false), []);
   useDismiss(ref, open, close);
   if (!user) return null;
@@ -53,12 +58,25 @@ export function UserMenu() {
             <p className="truncate text-xs text-ink-muted">{user.email}</p>
             <p className="mt-1.5"><span className="rounded border border-line bg-subtle px-1.5 py-0.5 text-2xs font-medium text-ink-muted">{ROLE_LABEL[user.role]}</span></p>
           </div>
+          <button role="menuitem" onClick={() => { setOpen(false); setChangingPassword(true); }}
+                  className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-base text-ink transition-colors hover:bg-canvas">
+            <KeyIcon size={16} className="text-ink-muted" />
+            Change password
+          </button>
           <button role="menuitem" onClick={onSignOut} disabled={signingOut}
                   className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-base text-ink transition-colors hover:bg-canvas disabled:text-ink-faint">
             <LogoutIcon size={16} className="text-ink-muted" />
             {signingOut ? "Signing out…" : "Sign out"}
           </button>
         </div>
+      )}
+      {changingPassword && (
+        <Sheet open onClose={() => setChangingPassword(false)} title="Change password" icon={<KeyIcon size={18} />}
+               description="Your other sessions are signed out; this one stays signed in.">
+          <div className="rounded-lg border border-line bg-white px-5 py-5 shadow-card">
+            <ChangePasswordForm onDone={() => { setChangingPassword(false); notify("Password changed."); }} />
+          </div>
+        </Sheet>
       )}
     </div>
   );
