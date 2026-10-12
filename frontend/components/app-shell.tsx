@@ -21,6 +21,9 @@ const NAV = [
   { href: "/users", label: "Users", icon: UsersIcon, match: (p: string) => p.startsWith("/users"), adminOnly: true },
 ];
 
+// The Warehouse Manager uses only the Orders page (other pages are admin-only on the server too).
+const MANAGER_PATH = "/orders";
+
 export function AppShell({ children }: { children: ReactNode }) {
   const { user, loading, signOut } = useSession();
   const router = useRouter();
@@ -35,7 +38,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [loading, user, router]);
 
   const ready = !loading && !!user;
-  const items = NAV.filter((item) => !item.adminOnly || user?.role === "admin");
+  const manager = user?.role === "warehouse_manager";
+  const blocked = manager && !pathname.startsWith(MANAGER_PATH);
+  useEffect(() => {
+    if (ready && blocked) router.replace(MANAGER_PATH);
+  }, [ready, blocked, router]);
+  const items = manager ? NAV.filter((item) => item.href === MANAGER_PATH) : NAV.filter((item) => !item.adminOnly || user?.role === "admin");
   const current = items.find((item) => item.match(pathname));
 
   // An account created or reset by an admin chooses its own password before anything else.
@@ -97,8 +105,8 @@ export function AppShell({ children }: { children: ReactNode }) {
             <div className="ml-auto flex items-center gap-1">
               {ready ? (
                 <>
-                  <NotificationBell />
-                  <div className="mx-1 h-6 w-px bg-white/15" />
+                  {!manager && <NotificationBell />}
+                  {!manager && <div className="mx-1 h-6 w-px bg-white/15" />}
                   <UserMenu />
                 </>
               ) : (
@@ -113,7 +121,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <main className="flex-1 px-4 py-5 sm:px-6">
             {/* Keyed by path so each page fades in instead of snapping into place. */}
             <div key={pathname} className="animate-fade-in">
-              {ready ? children : (
+              {ready && !blocked ? children : (
                 <div role="status" aria-label="Loading">
                   <Skeleton className="h-7 w-48" />
                   <Skeleton className="mt-3 h-4 w-96 max-w-full" />

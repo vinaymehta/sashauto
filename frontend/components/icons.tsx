@@ -59,6 +59,9 @@ export const EyeOffIcon = (p: IconProps) => (
 export const FilterIcon = (p: IconProps) => (
   <Icon {...p}><path d="M3 5h18l-7 8.5V19l-4 2v-7.5z" /></Icon>
 );
+export const CalendarIcon = (p: IconProps) => (
+  <Icon {...p}><rect x="3" y="4.5" width="18" height="16.5" rx="2" /><path d="M16 2.5v4M8 2.5v4M3 9.5h18" /></Icon>
+);
 export const ChevronLeftIcon = (p: IconProps) => (
   <Icon {...p}><path d="m15 18-6-6 6-6" /></Icon>
 );

@@ -11,7 +11,7 @@ import { useToast } from "../toast";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Alert, Spinner } from "../ui/feedback";
-import { Input } from "../ui/field";
+import { DatePicker } from "../ui/date-picker";
 import { Sheet } from "../ui/sheet";
 import { formatAmount, formatPrice } from "../vendors/vendor-products-panel";
 
@@ -266,8 +266,8 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
                     </span>
                     <label className="text-sm">
                       <span className="mb-1 block text-xs font-medium text-ink-muted">Ship date</span>
-                      <Input type="date" value={a.ship_date} invalid={!a.ship_date} aria-label={`Ship date for ${v.vendor_name}`}
-                             onChange={(e) => setAlloc((current) => ({ ...current, [v.vendor_id]: { ...current[v.vendor_id]!, ship_date: e.target.value } }))} />
+                      <DatePicker value={a.ship_date} invalid={!a.ship_date} aria-label={`Ship date for ${v.vendor_name}`} className="w-44"
+                                  onChange={(day) => setAlloc((current) => ({ ...current, [v.vendor_id]: { ...current[v.vendor_id]!, ship_date: day } }))} />
                     </label>
                   </li>
                 );

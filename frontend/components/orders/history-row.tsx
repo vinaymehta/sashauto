@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { OrderHistory, OrderRow } from "@/lib/types";
 import { formatDate, formatQty } from "@/lib/format";
@@ -13,13 +13,12 @@ import { ConfirmDialog } from "../ui/confirm-dialog";
 import { Alert } from "../ui/feedback";
 import { Skeleton } from "../ui/skeleton";
 import { Sheet } from "../ui/sheet";
-import { Tabs } from "../ui/tabs";
+import { OrderDetailsBody } from "./order-details-modal";
 import { VendorOrderSection } from "./vendor-order-section";
-import { FileIcon, PencilIcon, TrashIcon } from "../icons";
+import { FileIcon, PencilIcon, TrashIcon, TruckIcon } from "../icons";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const dash = <span className="text-neutral-300">—</span>;
-const qty = (value: string | null) => (value === null ? dash : formatQty(value));
 
 // Original imported cell value, lightly formatted for reading (blank cells shown as a dash).
 export function cell(value: string | number | null | undefined) {
@@ -31,22 +30,15 @@ export function cell(value: string | number | null | undefined) {
   return typeof value === "string" ? value.trim() : value.toLocaleString("en-US");
 }
 
-// Order detail in the right-hand side panel, in two tabs: Details shows the order; History lists the other
-// rows with the same PO Number + Part Number + Type (by PO Line Number, then Ship Date), each identified by
-// PO Line Number + Ship Date + Qty; clicking one opens its details below it (click again to close). The Orders table stays
-// visible and clickable behind the panel (no blur); ✕ or Escape closes it. A manual order has no other rows;
-// an Admin can edit (`onEdit`) or delete it.
-export function OrderDetailPanel({ row: clicked, onClose, onEdit, onDeleted, onPlaced }: {
+// Order details panel (75% of the screen), opened by clicking a PO Number in the Orders table: the ORDER DETAILS
+// view (header fields + every row of the same PO Number + Part Number + Type) and the delivery marks. An Admin can
+// edit (`onEdit`) or delete a manual order here. Vendor orders are placed from the row (see PlaceOrderPanel).
+export function OrderDetailPanel({ row, onClose, onEdit, onDeleted, onPlaced }: {
   row: OrderRow; onClose: () => void; onEdit?: () => void; onDeleted?: () => void; onPlaced?: () => void;
 }) {
-  const { data, error, loading } = useApi<OrderHistory>(`/api/orders/${clicked.id}/history`, { manual: clicked.manual ? 1 : undefined });
-  const [tab, setTab] = useState<"details" | "history">("details");
-  const row = clicked;
-  // The History row whose details are open below it.
-  const [openId, setOpenId] = useState<number | null>(null);
-  const description = data?.group.description ?? null;
-  const history = data ? data.data.filter((r) => r.id !== row.id) : [];
-  const admin = useSession().user?.role === "admin";
+  const { data, error, loading } = useApi<OrderHistory>(`/api/orders/${row.id}/history`, { manual: row.manual ? 1 : undefined });
+  const role = useSession().user?.role;
+  const admin = role === "admin";
   const notify = useToast();
   const [deleting, setDeleting] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -69,58 +61,26 @@ export function OrderDetailPanel({ row: clicked, onClose, onEdit, onDeleted, onP
   return (
     <Sheet
       open
-      overlay={false}
+      wide
       onClose={onClose}
       title="Order details"
-      description={<>PO <span className="font-medium text-ink">{row.po_number}</span> · {row.order_type}{row.manual && <> · <Badge>Manual</Badge></>}</>}
+      description={<>PO <span className="font-medium text-ink">{row.po_number}</span> · {row.part_number} · {row.order_type}{row.manual && <> · <Badge>Manual</Badge></>}</>}
       icon={<FileIcon size={18} />}
     >
-      <div className="-mt-2 mb-4 border-b border-line">
-        <Tabs
-          active={tab}
-          onChange={setTab}
-          tabs={[
-            { key: "details" as const, label: "Details" },
-            { key: "history" as const, label: "History", count: data ? history.length : null },
-          ]}
-        />
-      </div>
-
-      {tab === "details" ? (
-        <>
-          {row.manual && admin && (
-            <div className="mb-4 flex justify-end gap-2">
-              <Button size="sm" onClick={onEdit}><PencilIcon size={14} className="text-ink-muted" />Edit</Button>
-              <Button size="sm" onClick={() => setDeleting(true)}><TrashIcon size={14} className="text-ink-muted" />Delete</Button>
-            </div>
-          )}
-          <DetailCard row={row} description={description} />
-          <VendorOrderSection key={row.id} orderId={row.id} manual={!!row.manual} onPlaced={onPlaced} />
-        </>
-      ) : error ? (
-        <Alert title="Could not load the history">{error.message}</Alert>
-      ) : loading && !data ? (
-        <Skeleton className="h-48 w-full" />
-      ) : history.length === 0 ? (
-        <p className="rounded-lg border border-line bg-white px-5 py-8 text-center text-sm text-ink-muted shadow-card">
-          No other rows for this PO, Part and Type.
-        </p>
-      ) : (
-        <ul className="divide-y divide-neutral-100 overflow-hidden rounded-lg border border-line bg-white shadow-card">
-          {history.map((r) => (
-            <li key={r.id}>
-              <button type="button" onClick={() => setOpenId(openId === r.id ? null : r.id)} aria-expanded={openId === r.id}
-                      className={`grid w-full grid-cols-4 gap-4 px-5 py-3 text-left text-sm transition-colors hover:bg-canvas ${openId === r.id ? "bg-canvas" : ""}`}>
-                <span><span className="block text-2xs font-medium uppercase tracking-wider text-ink-muted">PO Line</span>{r.po_line_number}</span>
-                <span><span className="block text-2xs font-medium uppercase tracking-wider text-ink-muted">Ship Date</span>{formatDate(r.ship_date)}</span>
-                <span className="text-right"><span className="block text-2xs font-medium uppercase tracking-wider text-ink-muted">Qty</span>{qty(r.qty)}</span>
-                <span className="text-right"><span className="block text-2xs font-medium uppercase tracking-wider text-ink-muted">Excel Row</span>{r.source_row_number ?? "—"}</span>
-              </button>
-              {openId === r.id && <div className="bg-canvas px-3 pb-3"><DetailCard row={r} description={description} /></div>}
-            </li>
-          ))}
-        </ul>
+      {row.manual && admin && (
+        <div className="mb-4 flex justify-end gap-2">
+          <Button size="sm" onClick={onEdit}><PencilIcon size={14} className="text-ink-muted" />Edit</Button>
+          <Button size="sm" onClick={() => setDeleting(true)}><TrashIcon size={14} className="text-ink-muted" />Delete</Button>
+        </div>
       )}
+      {error ? (
+        <Alert title="Could not load the order">{error.message}</Alert>
+      ) : loading && !data ? (
+        <Skeleton className="h-64 w-full" />
+      ) : (
+        <OrderDetailsBody row={row} rows={data?.data ?? [row]} description={data?.group.description ?? null} />
+      )}
+      <DeliveryMarks row={row} admin={admin} onChanged={onPlaced} />
       {deleting && (
         <ConfirmDialog title={`Delete order PO ${row.po_number}?`} busy={busy} error={deleteError}
                        onConfirm={remove} onCancel={() => setDeleting(false)}>
@@ -131,26 +91,50 @@ export function OrderDetailPanel({ row: clicked, onClose, onEdit, onDeleted, onP
   );
 }
 
-function DetailCard({ row, description }: { row: OrderRow; description: string | null }) {
-  const details: [string, ReactNode][] = [
-    ["Description", description ?? dash],
-    ["Item Number", row.part_number],
-    ["Due Date", row.due_date ? formatDate(row.due_date) : dash],
-    ["Ship Date", formatDate(row.ship_date)],
-    ["Quantity Due", qty(row.qty)],
-    ["UOM", row.unit?.trim() || dash],
-  ];
+// Inbound / outbound delivery marks of the order (from the Orders list row). An admin can remove a wrong mark.
+function DeliveryMarks({ row, admin, onChanged }: { row: OrderRow; admin: boolean; onChanged?: () => void }) {
+  const notify = useToast();
+  const marks = Object.values(row.deliveries ?? {}).filter((d) => d !== undefined);
+  const [removed, setRemoved] = useState<number[]>([]);
+  const shown = marks.filter((d) => !removed.includes(d.id));
+  if (shown.length === 0) return null;
+
+  async function remove(id: number, label: string) {
+    try {
+      await api.delete(`/api/order_deliveries/${id}`);
+      setRemoved((r) => [...r, id]);
+      notify(`"${label}" mark removed.`);
+      onChanged?.();
+    } catch (err) {
+      notify(err instanceof ApiError ? err.message : "Could not remove the mark.", "error");
+    }
+  }
 
   return (
-    <section className="overflow-hidden rounded-lg border border-line bg-white shadow-card">
-      <dl className="divide-y divide-neutral-100">
-        {details.map(([label, value]) => (
-          <div key={label} className="grid grid-cols-[9rem_1fr] gap-4 px-5 py-2.5 text-sm">
-            <dt className="font-medium text-ink-muted">{label}</dt>
-            <dd className="min-w-0 break-words text-ink">{value}</dd>
-          </div>
+    <section className="mt-4 overflow-hidden rounded-lg border border-line bg-white shadow-card">
+      <h3 className="border-b border-neutral-100 px-5 py-3 text-xs font-semibold uppercase tracking-wider text-ink-muted">Delivery</h3>
+      <ul className="divide-y divide-neutral-100">
+        {shown.map((d) => (
+          <li key={d.id} className="flex items-center justify-between gap-3 px-5 py-2.5 text-sm">
+            <span className="min-w-0">
+              <span className="block font-medium text-ink">{d.label} · {formatDate(d.delivered_on)}</span>
+              <span className="block truncate text-xs text-ink-muted">{d.marked_by ?? "—"}{d.note ? ` · ${d.note}` : ""}</span>
+            </span>
+            {admin && <Button size="sm" onClick={() => remove(d.id, d.label)}>Remove</Button>}
+          </li>
         ))}
-      </dl>
+      </ul>
     </section>
+  );
+}
+
+// Side panel opened by clicking an order row: place the order with vendors (or see its placed vendor orders).
+export function PlaceOrderPanel({ row, onClose, onPlaced }: { row: OrderRow; onClose: () => void; onPlaced?: () => void }) {
+  return (
+    <Sheet open onClose={onClose} title="Place order" icon={<TruckIcon size={18} />}
+           description={<>PO <span className="font-medium text-ink">{row.po_number}</span> · {row.part_number} · {row.order_type} · ship {formatDate(row.ship_date)}
+             {row.qty !== null && <> · Qty {formatQty(row.qty)}</>}</>}>
+      <VendorOrderSection key={row.id} orderId={row.id} manual={!!row.manual} onPlaced={onPlaced} />
+    </Sheet>
   );
 }

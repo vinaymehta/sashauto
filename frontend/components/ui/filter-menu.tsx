@@ -4,6 +4,7 @@ import { useState } from "react";
 import { formatDate } from "@/lib/format";
 import { CheckIcon, CloseIcon, FilterIcon } from "../icons";
 import { Button } from "./button";
+import { DatePicker } from "./date-picker";
 import { Sheet } from "./sheet";
 
 export interface FilterGroup {
@@ -32,19 +33,18 @@ const isActive = (g: FilterGroup, values: FilterValues) =>
 function DateRange({ group, values, onChange }: { group: FilterGroup; values: FilterValues; onChange: (key: string, value: string) => void }) {
   const from = values[`${group.key}_from`] ?? "";
   const to = values[`${group.key}_to`] ?? "";
-  const input = "h-9 w-full rounded-md border border-neutral-300 bg-white px-3 text-sm text-ink transition-colors hover:border-neutral-400 focus:border-neutral-500 focus:outline-none";
   return (
     <div className="grid grid-cols-2 gap-3 px-4 py-3">
-      <label className="space-y-1.5 text-xs font-medium text-ink-muted">
-        From
-        <input type="date" value={from} max={to || undefined} className={input}
-               onChange={(e) => onChange(`${group.key}_from`, e.target.value)} />
-      </label>
-      <label className="space-y-1.5 text-xs font-medium text-ink-muted">
-        To
-        <input type="date" value={to} min={from || undefined} className={input}
-               onChange={(e) => onChange(`${group.key}_to`, e.target.value)} />
-      </label>
+      <div className="space-y-1.5">
+        <span className="block text-xs font-medium text-ink-muted">From</span>
+        <DatePicker value={from} max={to || undefined} clearable placeholder="Any" aria-label={`${group.label} from`} className="w-full text-sm"
+                    onChange={(day) => onChange(`${group.key}_from`, day)} />
+      </div>
+      <div className="space-y-1.5">
+        <span className="block text-xs font-medium text-ink-muted">To</span>
+        <DatePicker value={to} min={from || undefined} clearable placeholder="Any" aria-label={`${group.label} to`} className="w-full text-sm"
+                    onChange={(day) => onChange(`${group.key}_to`, day)} />
+      </div>
     </div>
   );
 }

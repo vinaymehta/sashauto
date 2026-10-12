@@ -16,7 +16,7 @@ module Activity
     end
 
     def call
-      items = (upload_items + conflict_items).sort_by { |item| -item.at.to_f }.first(LIMIT)
+      items = (upload_items + conflict_items + delivery_items).sort_by { |item| -item.at.to_f }.first(LIMIT)
       seen = @user.notifications_seen_at
       { items: items.map(&:to_h), unread_count: items.count { |item| seen.nil? || item.at > seen } }
     end
@@ -62,6 +62,14 @@ module Activity
                           at: email[:last_attempt_at] || batch.completed_at, href: href)
       end
       items
+    end
+
+    # Inbound / outbound deliveries marked by the Warehouse Manager.
+    def delivery_items
+      OrderDelivery.active.includes(:marked_by).order(created_at: :desc).limit(LIMIT).map do |d|
+        Item.new(id: "delivery-#{d.id}", kind: "delivered", title: "#{d.kind == 'inbound' ? 'Inbound' : 'Outbound'}: #{d.label}",
+                 description: "PO #{d.po_number} · #{d.part_number} · #{d.marked_by.name}", at: d.created_at, href: "/orders")
+      end
     end
 
     def conflict_items

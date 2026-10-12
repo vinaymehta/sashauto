@@ -9,6 +9,7 @@ class ApplicationController < ActionController::API
   protect_from_forgery with: :exception
   before_action :require_login
   before_action :require_password_change_done
+  before_action :limit_warehouse_manager
 
   rescue_from ActionController::InvalidAuthenticityToken do
     render_error "Your session has expired. Reload the page and try again.", :unprocessable_content, code: "invalid_csrf_token"
@@ -46,6 +47,19 @@ class ApplicationController < ActionController::API
   def require_password_change_done
     return unless current_user&.must_change_password?
     render_error "Choose a new password to continue.", :forbidden, code: "password_change_required"
+  end
+
+  # What a Warehouse Manager may use: the Orders table (rows, order details) and inbound / outbound delivery marks.
+  # Uploads, detections (quantity / address / MOQ), dashboard, products, vendors and users are admin-only.
+  WAREHOUSE_MANAGER_ACTIONS = {
+    "api/sessions" => :all, "api/orders" => %w[index history by_po by_part], "api/order_deliveries" => %w[create]
+  }.freeze
+
+  def limit_warehouse_manager
+    return unless current_user&.role == "warehouse_manager"
+    allowed = WAREHOUSE_MANAGER_ACTIONS[controller_path]
+    return if allowed == :all || allowed&.include?(action_name)
+    render_error "You do not have permission to do this.", :forbidden
   end
 
   # Restricts an action to the given roles (e.g. require_role(:admin)).

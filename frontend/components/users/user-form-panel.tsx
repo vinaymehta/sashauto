@@ -15,7 +15,7 @@ import { PasswordRules } from "./password-rules";
 export const ROLE_LABEL: Record<Role, string> = { admin: "Admin", warehouse_manager: "Warehouse Manager" };
 const ROLE_HINT: Record<Role, string> = {
   admin: "Everything, including users, vendors, manual orders, MOQ and vendor orders.",
-  warehouse_manager: "Orders, uploads, products and vendors (view), without admin changes.",
+  warehouse_manager: "Orders only (view), and marks Inbound / Outbound deliveries.",
 };
 
 // Side panel to add a user (`user` absent) or edit one. A new user gets their password by email and must choose

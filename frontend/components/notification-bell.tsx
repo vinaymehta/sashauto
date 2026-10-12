@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type { ActivityFeed, ActivityKind } from "@/lib/types";
 import { formatRelative } from "@/lib/format";
-import { AlertIcon, BellIcon, BoxIcon, CheckIcon, FileIcon } from "./icons";
+import { AlertIcon, BellIcon, BoxIcon, CheckIcon, FileIcon, TruckIcon } from "./icons";
 import { Spinner } from "./ui/feedback";
 import { useDismiss } from "./use-dismiss";
 
@@ -19,6 +19,7 @@ const KIND_STYLE: Record<ActivityKind, { icon: typeof BellIcon; className: strin
   upload_failed: { icon: AlertIcon, className: "bg-white text-neutral-900 ring-1 ring-neutral-900" },
   email_failed: { icon: AlertIcon, className: "bg-white text-neutral-900 ring-1 ring-neutral-900" },
   conflicts: { icon: BoxIcon, className: "bg-white text-neutral-900 ring-1 ring-neutral-300" },
+  delivered: { icon: TruckIcon, className: "bg-inc text-white" },
 };
 
 export function NotificationBell() {

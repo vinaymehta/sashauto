@@ -551,6 +551,52 @@ ALTER SEQUENCE public.notifications_id_seq OWNED BY public.notifications.id;
 
 
 --
+-- Name: order_deliveries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.order_deliveries (
+    id bigint NOT NULL,
+    order_key character varying(64) NOT NULL,
+    kind character varying NOT NULL,
+    order_row_id bigint,
+    manual_order_id bigint,
+    po_number character varying NOT NULL,
+    po_line_number character varying NOT NULL,
+    part_number character varying NOT NULL,
+    order_type character varying NOT NULL,
+    ship_date date NOT NULL,
+    delivered_on date NOT NULL,
+    note character varying(500),
+    marked_by_id bigint NOT NULL,
+    removed_at timestamp(6) without time zone,
+    removed_by_id bigint,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT order_deliveries_kind_valid CHECK (((kind)::text = ANY ((ARRAY['inbound'::character varying, 'outbound'::character varying])::text[]))),
+    CONSTRAINT order_deliveries_one_order CHECK (((order_row_id IS NULL) <> (manual_order_id IS NULL)))
+);
+
+
+--
+-- Name: order_deliveries_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.order_deliveries_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: order_deliveries_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.order_deliveries_id_seq OWNED BY public.order_deliveries.id;
+
+
+--
 -- Name: order_rows; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -900,6 +946,7 @@ CREATE TABLE public.users (
     must_change_password boolean DEFAULT false NOT NULL,
     password_changed_at timestamp(6) without time zone,
     created_by_id bigint,
+    deleted_at timestamp(6) without time zone,
     CONSTRAINT users_role_valid CHECK (((role)::text = ANY (ARRAY[('admin'::character varying)::text, ('warehouse_manager'::character varying)::text])))
 );
 
@@ -1194,6 +1241,13 @@ ALTER TABLE ONLY public.notifications ALTER COLUMN id SET DEFAULT nextval('publi
 
 
 --
+-- Name: order_deliveries id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_deliveries ALTER COLUMN id SET DEFAULT nextval('public.order_deliveries_id_seq'::regclass);
+
+
+--
 -- Name: order_rows id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -1364,6 +1418,14 @@ ALTER TABLE ONLY public.moq_alerts
 
 ALTER TABLE ONLY public.notifications
     ADD CONSTRAINT notifications_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: order_deliveries order_deliveries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_deliveries
+    ADD CONSTRAINT order_deliveries_pkey PRIMARY KEY (id);
 
 
 --
@@ -1705,6 +1767,41 @@ CREATE INDEX index_notifications_on_status ON public.notifications USING btree (
 --
 
 CREATE UNIQUE INDEX index_notifications_on_upload_batch_id_and_kind ON public.notifications USING btree (upload_batch_id, kind);
+
+
+--
+-- Name: index_order_deliveries_on_manual_order_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_order_deliveries_on_manual_order_id ON public.order_deliveries USING btree (manual_order_id);
+
+
+--
+-- Name: index_order_deliveries_on_marked_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_order_deliveries_on_marked_by_id ON public.order_deliveries USING btree (marked_by_id);
+
+
+--
+-- Name: index_order_deliveries_on_order_row_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_order_deliveries_on_order_row_id ON public.order_deliveries USING btree (order_row_id);
+
+
+--
+-- Name: index_order_deliveries_on_removed_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_order_deliveries_on_removed_by_id ON public.order_deliveries USING btree (removed_by_id);
+
+
+--
+-- Name: index_order_deliveries_one_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_order_deliveries_one_active ON public.order_deliveries USING btree (order_key, kind) WHERE (removed_at IS NULL);
 
 
 --
@@ -2108,6 +2205,14 @@ ALTER TABLE ONLY public.address_changes
 
 
 --
+-- Name: order_deliveries fk_rails_076b5c56c4; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_deliveries
+    ADD CONSTRAINT fk_rails_076b5c56c4 FOREIGN KEY (marked_by_id) REFERENCES public.users(id);
+
+
+--
 -- Name: vendor_orders fk_rails_07cb380306; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2185,6 +2290,14 @@ ALTER TABLE ONLY public.ageing_digests
 
 ALTER TABLE ONLY public.vendor_orders
     ADD CONSTRAINT fk_rails_39c0467bd1 FOREIGN KEY (vendor_id) REFERENCES public.vendors(id);
+
+
+--
+-- Name: order_deliveries fk_rails_3af6b051b4; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_deliveries
+    ADD CONSTRAINT fk_rails_3af6b051b4 FOREIGN KEY (removed_by_id) REFERENCES public.users(id);
 
 
 --
@@ -2273,6 +2386,14 @@ ALTER TABLE ONLY public.import_issues
 
 ALTER TABLE ONLY public.quantity_changes
     ADD CONSTRAINT fk_rails_6db61947e6 FOREIGN KEY (upload_batch_id) REFERENCES public.upload_batches(id);
+
+
+--
+-- Name: order_deliveries fk_rails_7a7f674dbb; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_deliveries
+    ADD CONSTRAINT fk_rails_7a7f674dbb FOREIGN KEY (order_row_id) REFERENCES public.order_rows(id);
 
 
 --
@@ -2452,6 +2573,14 @@ ALTER TABLE ONLY public.order_rows
 
 
 --
+-- Name: order_deliveries fk_rails_eb5d2fbcc0; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_deliveries
+    ADD CONSTRAINT fk_rails_eb5d2fbcc0 FOREIGN KEY (manual_order_id) REFERENCES public.manual_orders(id);
+
+
+--
 -- Name: product_conflicts fk_rails_f74a21bb34; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2506,6 +2635,8 @@ ALTER TABLE ONLY public.address_changes
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261013130001'),
+('20261013120001'),
 ('20261013090001'),
 ('20261012150001'),
 ('20261012120001'),

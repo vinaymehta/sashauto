@@ -68,6 +68,11 @@ module Serializers
                     vendor_orders: placement.vendor_orders.map { |vo| vendor_order(vo) })
   end
 
+  def order_delivery(delivery)
+    delivery.slice(:id, :kind, :delivered_on, :note, :created_at)
+            .merge(label: delivery.label, marked_by: delivery.marked_by&.name)
+  end
+
   def vendor_order(order)
     order.slice(:id, :number, :vendor_id, :ship_date, :email_status, :email_recipient, :email_sent_at, :email_last_error, :created_at)
          .merge(vendor_name: order.vendor.name, qty: qty(order.qty), unit: order.unit, price_amount: qty(order.unit_price),

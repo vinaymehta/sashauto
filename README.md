@@ -100,7 +100,8 @@ Unexpected processing errors are retried (3 attempts); the transaction guarantee
   only downloadable through the authenticated endpoint.
 - Audit log: sign-in/out and failures, uploads, downloads, product edits, conflict resolutions, notifications.
 - Roles: `admin` can also manage users, vendors, manual orders, product MOQ and vendor orders;
-  `warehouse_manager` works with orders, uploads, products and vendors without those admin changes.
+  `warehouse_manager` sees only the Orders page and marks Inbound (received at SASH US) / Outbound (delivered to
+  Deere) deliveries, which email the admins; uploads, detections, dashboard, products and vendors are admin-only.
   `require_role` in `ApplicationController` restricts an action.
 
 ## Operations

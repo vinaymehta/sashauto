@@ -5,7 +5,7 @@ Rails.application.routes.draw do
     resource :session, only: %i[show create destroy] do
       patch :password
     end
-    resources :users, only: %i[index create update] do
+    resources :users, only: %i[index create update destroy] do
       post :reset_password, on: :member
     end
     resource :dashboard, only: :show, controller: :dashboard
@@ -30,11 +30,13 @@ Rails.application.routes.draw do
     resources :orders, only: :index do
       get :history, on: :member
       resource :vendor_order, only: %i[show create], controller: :vendor_orders
+      resources :deliveries, only: :create, controller: :order_deliveries
       collection do
         get :by_po
         get :by_part
       end
     end
+    resources :order_deliveries, only: :destroy
     resources :manual_orders, only: %i[show create update destroy] do
       get :fields, on: :collection
     end

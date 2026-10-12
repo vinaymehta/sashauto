@@ -7,6 +7,8 @@ export function useDismiss(ref: RefObject<HTMLElement | null>, open: boolean, on
   useEffect(() => {
     if (!open) return;
     const onPointer = (e: PointerEvent) => {
+      // Floating layers rendered on <body> (e.g. a date picker's calendar) belong to whatever opened them.
+      if ((e.target as Element | null)?.closest?.("[data-floating]")) return;
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     };
     const onKey = (e: KeyboardEvent) => {

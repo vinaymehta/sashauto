@@ -4,7 +4,7 @@ import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { Paginated, User } from "@/lib/types";
 import { formatCount, formatDateTime } from "@/lib/format";
-import { PencilIcon, PlusIcon } from "@/components/icons";
+import { PencilIcon, PlusIcon, TrashIcon } from "@/components/icons";
 import { useSession } from "@/components/session";
 import { useToast } from "@/components/toast";
 import { useApi, useDebounced } from "@/components/use-api";
@@ -29,8 +29,8 @@ const FILTERS: FilterGroup[] = [
   { key: "status", label: "Status", options: [{ value: "active", label: "Active" }, { value: "inactive", label: "Inactive" }] },
 ];
 
-// User accounts (admins only): add users, edit name/email/role, reset passwords, deactivate and reactivate.
-// Users are never deleted; a deactivated user cannot sign in and is signed out.
+// User accounts (admins only): add users, edit name/email/role, reset passwords, deactivate, reactivate and delete.
+// A deactivated or deleted user cannot sign in and is signed out; a deleted user is hidden and their email freed.
 export default function UsersPage() {
   const { user: me, refresh: refreshSession } = useSession();
   const isAdmin = me?.role === "admin";
@@ -49,6 +49,23 @@ export default function UsersPage() {
   const [toggling, setToggling] = useState<User | null>(null);
   const [busy, setBusy] = useState(false);
   const [toggleError, setToggleError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<User | null>(null);
+
+  async function deleteUser() {
+    if (!deleting) return;
+    setBusy(true);
+    setToggleError(null);
+    try {
+      await api.delete(`/api/users/${deleting.id}`);
+      notify(`${deleting.name} deleted.`);
+      setDeleting(null);
+      reload();
+    } catch (err) {
+      setToggleError(err instanceof ApiError ? err.message : "Could not delete the user.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function toggleActive() {
     if (!toggling) return;
@@ -131,9 +148,17 @@ export default function UsersPage() {
                       </Td>
                       <Td className="tabular">{u.last_login_at ? formatDateTime(u.last_login_at) : <span className="text-ink-faint">Never</span>}</Td>
                       <Td align="right">
-                        <button type="button" className={iconButton} onClick={() => setEditing(u)} aria-label={`Edit ${u.name}`} title="Edit user">
-                          <PencilIcon size={16} />
-                        </button>
+                        <span className="inline-flex items-center gap-1">
+                          <button type="button" className={iconButton} onClick={() => setEditing(u)} aria-label={`Edit ${u.name}`} title="Edit user">
+                            <PencilIcon size={16} />
+                          </button>
+                          {!self && (
+                            <button type="button" className={`${iconButton} hover:text-dec`} onClick={() => { setToggleError(null); setDeleting(u); }}
+                                    aria-label={`Delete ${u.name}`} title="Delete user">
+                              <TrashIcon size={16} />
+                            </button>
+                          )}
+                        </span>
                       </Td>
                     </tr>
                   );
@@ -154,6 +179,13 @@ export default function UsersPage() {
                        onToggleActive={() => { if (editing !== "new") { setToggleError(null); setToggling(editing); setEditing(null); } }} />
       )}
       {resetting && <ResetPasswordPanel user={resetting} onClose={() => setResetting(null)} onSaved={reload} />}
+      {deleting && (
+        <ConfirmDialog title={`Delete ${deleting.name}?`} confirmLabel="Delete user" busyLabel="Deleting…" busy={busy} error={toggleError}
+                       onConfirm={deleteUser} onCancel={() => setDeleting(null)}>
+          {deleting.email} is signed out now and can no longer sign in. The user is removed from this list and the email
+          can be used for a new account. Their past uploads, orders and history stay.
+        </ConfirmDialog>
+      )}
       {toggling && (
         <ConfirmDialog
           title={toggling.active ? `Deactivate ${toggling.name}?` : `Reactivate ${toggling.name}?`}

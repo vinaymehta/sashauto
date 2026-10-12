@@ -57,8 +57,12 @@ module Api
 
       ship_to_locations, commodity_types = facets(batch, dataset)
       placed = placed_keys(rows)
+      deliveries = deliveries_by_key(rows)
       render json: {
-        data: rows.map { |row| Serializers.order_row(row, source: true).merge(placed: placed.include?(placement_key(row))) },
+        data: rows.map do |row|
+          key = placement_key(row)
+          Serializers.order_row(row, source: true).merge(placed: placed.include?(key), deliveries: deliveries.fetch(key, {}))
+        end,
         meta: meta.merge(sort: sort, direction: direction),
         # Every Excel column of the upload, in file order; `key` is the sort key.
         columns: columns,
@@ -105,6 +109,13 @@ module Api
     # Placement keys of the listed rows that were placed with vendors (in one query).
     def placed_keys(rows)
       VendorOrderPlacement.where(order_key: rows.map { |row| placement_key(row) }).pluck(:order_key).to_set
+    end
+
+    # Active inbound / outbound delivery marks of the listed rows: { key => { "inbound" => {...}, "outbound" => {...} } }.
+    def deliveries_by_key(rows)
+      OrderDelivery.active.includes(:marked_by).where(order_key: rows.map { |row| placement_key(row) })
+                   .group_by(&:order_key)
+                   .transform_values { |list| list.to_h { |d| [ d.kind, Serializers.order_delivery(d) ] } }
     end
 
     # [Ship To Locations, Commodity Types] present in the dataset, sorted.

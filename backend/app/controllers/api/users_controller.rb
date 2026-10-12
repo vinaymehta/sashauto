@@ -1,8 +1,8 @@
 module Api
   # User accounts, managed by admins: list (search, filters, sort and pagination in PostgreSQL), create,
-  # edit, deactivate/reactivate and password reset. A created or reset account gets its password by email and
-  # must choose its own at first sign-in. Users are never deleted (uploads, orders and the audit log refer to
-  # them); deactivating blocks sign-in and ends their sessions.
+  # edit, deactivate/reactivate, password reset and delete. A created or reset account gets its password by email
+  # and must choose its own at first sign-in. Deactivating blocks sign-in and ends their sessions. Deleting also
+  # hides the user and frees the email; the row stays because uploads, orders and the audit log refer to it.
   class UsersController < ApplicationController
     SORTS = {
       "name" => "users.name", "email" => "users.email", "role" => "users.role",
@@ -15,7 +15,7 @@ module Api
                with: -> { render_error "Too many account changes in a short time. Try again later.", :too_many_requests }
 
     def index
-      scope = User.all
+      scope = User.where(deleted_at: nil)
       if params[:q].present?
         term = "%#{User.sanitize_sql_like(params[:q].to_s.strip.first(100))}%"
         scope = scope.where("users.name ILIKE :t OR users.email ILIKE :t", t: term)
@@ -43,7 +43,7 @@ module Api
     end
 
     def update
-      user = User.find(params[:id])
+      user = User.where(deleted_at: nil).find(params[:id])
       attrs = user_params
       attrs[:active] = ActiveModel::Type::Boolean.new.cast(params[:active]) if params.key?(:active)
       if (problem = lockout_problem(user, attrs))
@@ -68,7 +68,7 @@ module Api
     # Sets a new password (given or generated), emails it, and signs the user out of every session; they must
     # choose their own at the next sign-in.
     def reset_password
-      user = User.find(params[:id])
+      user = User.where(deleted_at: nil).find(params[:id])
       password = params[:password].presence || User.generate_password
       if user.update(password: password, must_change_password: true)
         audit("user.password_reset", subject: user, email: user.email)
@@ -76,6 +76,21 @@ module Api
       else
         render_error user.errors.full_messages.to_sentence, :unprocessable_content, details: { password: user.errors[:password] }
       end
+    end
+
+    # Deletes a user: signs them out everywhere, blocks sign-in, hides them from the list and frees the email so
+    # the person can be added again. Not your own account, and not the only active Admin.
+    def destroy
+      user = User.where(deleted_at: nil).find(params[:id])
+      return render_error("You cannot delete your own account.", :unprocessable_content) if user == current_user
+      if user.admin? && user.active && User.active.admins.where.not(id: user.id).none?
+        return render_error("This is the only active Admin. Make another user an Admin first.", :unprocessable_content)
+      end
+
+      email = user.email
+      user.update!(active: false, deleted_at: Time.current, email: "deleted-#{user.id}-#{SecureRandom.hex(4)}@deleted.invalid")
+      audit("user.deleted", subject: user, email: email, role: user.role)
+      head :no_content
     end
 
     private

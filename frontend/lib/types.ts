@@ -167,7 +167,19 @@ export interface Dashboard {
   manual_detections: { quantity_changes: number; address_changes: number; moq_alerts: number };
 }
 
-export type ActivityKind = "changes" | "no_changes" | "baseline" | "upload_failed" | "email_failed" | "conflicts";
+export type ActivityKind = "changes" | "no_changes" | "baseline" | "upload_failed" | "email_failed" | "conflicts" | "delivered";
+
+// Inbound (received at SASH US) / outbound (delivered to Deere) mark on an order, set by the Warehouse Manager.
+export type DeliveryKind = "inbound" | "outbound";
+export interface OrderDeliveryInfo {
+  id: number;
+  kind: DeliveryKind;
+  label: string;
+  delivered_on: string;
+  note: string | null;
+  marked_by: string | null;
+  created_at: string;
+}
 
 export interface ActivityItem {
   id: string;
@@ -264,6 +276,7 @@ export interface OrderRow {
   source_data?: Record<string, string | number | null>;
   manual?: boolean; // created by hand (Create order), not imported
   placed?: boolean; // placed with vendors (Orders list only)
+  deliveries?: Partial<Record<DeliveryKind, OrderDeliveryInfo>>; // Orders list only
 }
 
 // One field of the manual order form: an Excel column of the Supplier Requirements export.
