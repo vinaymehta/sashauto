@@ -13,7 +13,7 @@ module Api
     UPLOAD_SORTS = {
       "uploaded_at" => "upload_batches.created_at", "original_filename" => "upload_batches.original_filename",
       "uploaded_by" => "users.name", "row_count" => "upload_batches.row_count",
-      "changes" => "(upload_batches.increase_count + upload_batches.decrease_count)", "status" => "upload_batches.status"
+      "changes" => "(upload_batches.increase_count + upload_batches.decrease_count + upload_batches.new_row_count + upload_batches.missing_row_count)", "status" => "upload_batches.status"
     }.freeze
 
     def index
@@ -56,17 +56,20 @@ module Api
       scope = detections(UploadBatch.find(params[:id]), QuantityChange)
       directions = multi_param(:direction, QuantityChange::DIRECTIONS)
       types = multi_param(:type, OrderRows::Normalizer::ORDER_TYPES)
-      scope = scope.where(direction: directions) if directions.any?
+      # Reschedules (same Qty moved to another date) are listed only when asked for.
+      scope = directions.any? ? scope.where(direction: directions) : scope.where.not(direction: "rescheduled")
       scope = scope.where(order_type: types) if types.any?
       scope = filter_by_age(scope)
       if params[:q].present?
         term = "%#{QuantityChange.sanitize_sql_like(params[:q].to_s.strip.first(100))}%"
         scope = scope.where("po_number ILIKE :t OR part_number ILIKE :t OR commodity_type ILIKE :t", t: term)
       end
+      net = scope.sum(:difference)
+      rescheduled = scope.unscope(where: :direction).where(direction: "rescheduled").count
       scope = scope.order(CHANGE_SORTS.fetch(params[:sort].to_s, CHANGE_SORTS["ship_date"])).order(:id)
 
       changes, meta = paginate(scope)
-      render json: { data: changes.map { |c| Serializers.quantity_change(c) }, meta: meta }
+      render json: { data: changes.map { |c| Serializers.quantity_change(c) }, meta: meta.merge(net: Serializers.qty(net), rescheduled: rescheduled) }
     end
 
     # Uploaded-rows sort keys => fixed SQL (whitelist). "po" and "part" kept for older links.

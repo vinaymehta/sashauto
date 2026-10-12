@@ -158,7 +158,7 @@ export default function OrdersPage() {
   const shown = current ? latest : previous.data?.data;
   const manual = current ? dashboard.data?.manual_detections : undefined;
   const isFirst = shown?.previous_version === null;
-  const quantityChanges = (shown?.stats.increase_count ?? 0) + (shown?.stats.decrease_count ?? 0) + (manual?.quantity_changes ?? 0);
+  const quantityChanges = (shown?.stats.increase_count ?? 0) + (shown?.stats.decrease_count ?? 0) + (shown?.stats.new_row_count ?? 0) + (shown?.stats.missing_row_count ?? 0) + (manual?.quantity_changes ?? 0);
   const addressChanges = (shown?.stats.address_change_count ?? 0) + (manual?.address_changes ?? 0);
   const moqAlerts = (shown?.stats.moq_alert_count ?? 0) + (manual?.moq_alerts ?? 0);
   const tabs = [

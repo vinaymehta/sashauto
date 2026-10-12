@@ -11,7 +11,7 @@ class AgeingMailer < ApplicationMailer
     @url = "#{AppConfig.app_url}/orders"
 
     mail(to: @digest.recipients, subject: @digest.subject,
-         options: { idempotency_key: "ageing-digest-#{@digest.id}" })
+         options: { idempotency_key: "ageing-digest-#{@digest.id}-#{@digest.created_at.to_i}" })
   end
 
   private

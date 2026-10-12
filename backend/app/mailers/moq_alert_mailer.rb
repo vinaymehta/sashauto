@@ -10,6 +10,6 @@ class MoqAlertMailer < ApplicationMailer
     @url = "#{AppConfig.app_url}/orders"
 
     mail(to: @notification.recipients, subject: @notification.subject,
-         options: { idempotency_key: "notification-#{@notification.id}" })
+         options: { idempotency_key: "notification-#{@notification.id}-#{@notification.created_at.to_i}" })
   end
 end

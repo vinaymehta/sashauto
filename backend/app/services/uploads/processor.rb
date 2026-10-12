@@ -89,9 +89,11 @@ module Uploads
           warnings: warnings, address_change_count: address_changes, moq_alert_count: moq_alerts, **stats.to_h
         )
 
-        change_count = stats ? stats.increase_count + stats.decrease_count : 0
+        change_count = stats ? @batch.quantity_change_count : 0
         # A separate email for each kind with rows: quantity changes, address changes, MOQ alerts, ageing.
-        notifications = Notifications::Outbox.enqueue_for_upload(@batch, quantity: change_count, address: address_changes.to_i, moq: moq_alerts)
+        # Reschedules alone also send the quantity email (they are listed there apart from the Qty changes).
+        notifications = Notifications::Outbox.enqueue_for_upload(@batch, quantity: change_count, rescheduled: @batch.rescheduled_count.to_i,
+                                                                 address: address_changes.to_i, moq: moq_alerts)
         ageing_digest = Ageing::DigestBuilder.call(batch: @batch, today: Time.find_zone!(AppConfig.ageing_time_zone).today)
         AuditLog.record("upload.completed", user: @batch.uploaded_by, subject: @batch,
                         version: @batch.version_number, rows: result.rows.size, changes: change_count,

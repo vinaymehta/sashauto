@@ -8,4 +8,11 @@ module QuantityFormatHelper
   def format_difference(value)
     value.positive? ? "+#{format_qty(value)}" : format_qty(value)
   end
+
+  # Label of a quantity change's direction, e.g. in emails.
+  CHANGE_LABELS = { "increase" => "↑ Up", "decrease" => "↓ Down", "added" => "Added", "removed" => "Removed" }.freeze
+
+  def change_label(direction)
+    CHANGE_LABELS.fetch(direction, direction)
+  end
 end

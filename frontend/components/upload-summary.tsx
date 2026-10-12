@@ -69,8 +69,8 @@ export function VersionKpisStrip({ upload }: { upload: UploadDetail }) {
     : [
         <StripKpi key="rows" label="Rows processed" value={formatCount(s.row_count)} hint={`from ${formatCount(s.source_row_count)} Excel rows`} />,
         <StripKpi key="compared" label="Rows compared" value={formatCount(s.compared_count)} hint="with the previous upload" />,
-        <StripKpi key="up" label="↑ Quantity up" value={formatCount(s.increase_count)} tone={s.increase_count ? "up" : undefined} />,
-        <StripKpi key="down" label="↓ Quantity down" value={formatCount(s.decrease_count)} tone={s.decrease_count ? "down" : undefined} />,
+        <StripKpi key="up" label="↑ Quantity up" value={formatCount(s.increase_count)} hint={s.new_row_count ? `+ ${formatCount(s.new_row_count)} rows added` : undefined} tone={s.increase_count ? "up" : undefined} />,
+        <StripKpi key="down" label="↓ Quantity down" value={formatCount(s.decrease_count)} hint={s.missing_row_count ? `+ ${formatCount(s.missing_row_count)} rows removed` : undefined} tone={s.decrease_count ? "down" : undefined} />,
         <StripKpi key="same" label="No change" value={formatCount(s.unchanged_count)} />,
       ];
 
@@ -97,9 +97,9 @@ export function VersionKpis({ upload }: { upload: UploadDetail }) {
     : [
         <Kpi key="rows" label="Rows processed" value={formatCount(s.row_count)} hint={`from ${formatCount(s.source_row_count)} Excel rows`} icon={<FileIcon size={16} />} tint="neutral" />,
         <Kpi key="compared" label="Rows compared" value={formatCount(s.compared_count)} hint="with the previous upload" icon={<ArrowUpDownIcon size={16} />} tint="violet" />,
-        <Kpi key="up" label="↑ Quantity up" value={formatCount(s.increase_count)} tone={s.increase_count ? "up" : undefined} icon={<ArrowUpIcon size={16} />} tint="inc" />,
-        <Kpi key="down" label="↓ Quantity down" value={formatCount(s.decrease_count)} tone={s.decrease_count ? "down" : undefined} icon={<ArrowDownIcon size={16} />} tint="dec" />,
-        <Kpi key="same" label="No change" value={formatCount(s.unchanged_count)} icon={<CheckIcon size={16} />} tint="aqua" />,
+        <Kpi key="up" label="↑ Quantity up" value={formatCount(s.increase_count)} hint={s.new_row_count ? `+ ${formatCount(s.new_row_count)} row${s.new_row_count === 1 ? "" : "s"} added` : undefined} tone={s.increase_count ? "up" : undefined} icon={<ArrowUpIcon size={16} />} tint="inc" />,
+        <Kpi key="down" label="↓ Quantity down" value={formatCount(s.decrease_count)} hint={s.missing_row_count ? `+ ${formatCount(s.missing_row_count)} row${s.missing_row_count === 1 ? "" : "s"} removed` : undefined} tone={s.decrease_count ? "down" : undefined} icon={<ArrowDownIcon size={16} />} tint="dec" />,
+        <Kpi key="same" label="No change" value={formatCount(s.unchanged_count)} hint={s.rescheduled_count ? `${formatCount(s.rescheduled_count)} rescheduled (date moved)` : undefined} icon={<CheckIcon size={16} />} tint="aqua" />,
       ];
 
   return (
@@ -117,7 +117,7 @@ export function VersionMeta({ upload, status }: { upload: UploadDetail; status?:
 
   const meta: [string, number | null][] = baseline
     ? []
-    : [["Duplicates merged", s.duplicate_rows_merged], ["New rows (ignored)", s.new_row_count], ["No longer present (ignored)", s.missing_row_count]];
+    : [["Duplicates merged", s.duplicate_rows_merged], ["Rows added", s.new_row_count], ["Rows removed", s.missing_row_count]];
 
   return (
     <div className="bg-neutral-50 border border-neutral-200 rounded-xl p-4 text-xs space-y-2">
@@ -193,14 +193,14 @@ export function VersionSummary({ upload, status }: { upload: UploadDetail; statu
     : [
         <Kpi key="rows" label="Rows processed" value={formatCount(s.row_count)} hint={`from ${formatCount(s.source_row_count)} Excel rows`} icon={<FileIcon size={16} />} tint="neutral" />,
         <Kpi key="compared" label="Rows compared" value={formatCount(s.compared_count)} hint="with the previous upload" icon={<ArrowUpDownIcon size={16} />} tint="violet" />,
-        <Kpi key="up" label="↑ Quantity up" value={formatCount(s.increase_count)} tone={s.increase_count ? "up" : undefined} icon={<ArrowUpIcon size={16} />} tint="inc" />,
-        <Kpi key="down" label="↓ Quantity down" value={formatCount(s.decrease_count)} tone={s.decrease_count ? "down" : undefined} icon={<ArrowDownIcon size={16} />} tint="dec" />,
+        <Kpi key="up" label="↑ Quantity up" value={formatCount(s.increase_count)} hint={s.new_row_count ? `+ ${formatCount(s.new_row_count)} row${s.new_row_count === 1 ? "" : "s"} added` : undefined} tone={s.increase_count ? "up" : undefined} icon={<ArrowUpIcon size={16} />} tint="inc" />,
+        <Kpi key="down" label="↓ Quantity down" value={formatCount(s.decrease_count)} hint={s.missing_row_count ? `+ ${formatCount(s.missing_row_count)} row${s.missing_row_count === 1 ? "" : "s"} removed` : undefined} tone={s.decrease_count ? "down" : undefined} icon={<ArrowDownIcon size={16} />} tint="dec" />,
         <Kpi key="same" label="No change" value={formatCount(s.unchanged_count)} icon={<CheckIcon size={16} />} tint="aqua" />,
       ];
 
   const meta: [string, number | null][] = baseline
     ? []
-    : [["Duplicates merged", s.duplicate_rows_merged], ["New rows (ignored)", s.new_row_count], ["No longer present (ignored)", s.missing_row_count]];
+    : [["Duplicates merged", s.duplicate_rows_merged], ["Rows added", s.new_row_count], ["Rows removed", s.missing_row_count]];
 
   return (
     <section className="overflow-hidden rounded-lg border border-line bg-surface shadow-card">

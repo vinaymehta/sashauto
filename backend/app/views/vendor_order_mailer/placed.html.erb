@@ -1,10 +1,11 @@
-<div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e5e5e5;border-radius:8px;padding:24px;">
+<% @email_width = 680 %>
+<div>
   <% if @fallback %>
     <p style="margin:0 0 16px;padding:10px 12px;background:#fdf5d8;border-radius:6px;color:#8a5a00;font-size:13px;">
       <%= @order.vendor.name %> has no email address in the Vendors list, so this order was sent to you. Please forward it to the vendor.
     </p>
   <% end %>
-  <h1 style="font-size:20px;font-weight:600;margin:0 0 4px;color:#171717;">Purchase order <%= @order.number %></h1>
+  <h1 style="font-size:20px;font-weight:700;margin:0 0 4px;color:#1d2636;">Purchase order <%= @order.number %></h1>
   <p style="margin:0 0 20px;color:#737373;">Dear <%= @order.vendor.name %>, please supply the following.</p>
   <table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;font-size:14px;">
 <% quantity = if @order.unit == "pcs" || @pack <= 1 then "#{format_qty(@order.qty)} pcs" else "#{format_qty(@order.qty)} sets of #{@pack} pcs (#{format_qty(@order.qty * @pack)} pcs)" end %>

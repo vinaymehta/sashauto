@@ -18,7 +18,7 @@ module Serializers
       original_filename: batch.original_filename, byte_size: batch.byte_size,
       uploaded_by: batch.uploaded_by&.name, uploaded_at: batch.created_at, completed_at: batch.completed_at,
       failed_at: batch.failed_at, row_count: batch.row_count,
-      change_count: batch.completed? && batch.previous_upload_batch_id ? batch.increase_count + batch.decrease_count : nil,
+      change_count: batch.completed? && batch.previous_upload_batch_id ? batch.quantity_change_count : nil,
       error_message: batch.error_message
     }
     return data unless detail
@@ -30,7 +30,7 @@ module Serializers
       problem_count: batch.validation_errors.size,
       problem_columns: batch.validation_errors.group_by { |e| e["column"] || "_none" }.transform_values(&:size),
       stats: batch.slice(:source_row_count, :row_count, :duplicate_rows_merged, :unknown_quantity_count, :compared_count,
-                         :increase_count, :decrease_count, :unchanged_count, :new_row_count, :missing_row_count,
+                         :increase_count, :decrease_count, :unchanged_count, :new_row_count, :missing_row_count, :rescheduled_count,
                          :address_change_count, :moq_alert_count),
       emails: upload_emails(batch)
     )
@@ -53,7 +53,7 @@ module Serializers
 
   def quantity_change(change)
     change.slice(:id, :po_number, :po_line_number, :part_number, :commodity_type, :order_type, :ship_date,
-                 :ship_to_location, :direction)
+                 :ship_to_location, :direction, :previous_ship_date)
           .merge(old_qty: qty(change.old_qty), new_qty: qty(change.new_qty), difference: qty(change.difference))
   end
 

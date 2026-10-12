@@ -10,9 +10,9 @@ module Notifications
 
     # Must be called inside the upload's commit transaction. One email per kind that has rows, each with
     # its own template. Returns the created notifications.
-    def enqueue_for_upload(batch, quantity:, address:, moq:)
+    def enqueue_for_upload(batch, quantity:, address:, moq:, rescheduled: 0)
       { "quantity_changes" => quantity, "address_changes" => address, "moq_alerts" => moq }.filter_map do |kind, count|
-        next unless count.positive?
+        next unless count.positive? || (kind == "quantity_changes" && rescheduled.positive?)
 
         Notification.create!(
           upload_batch: batch, kind: kind, status: "pending", recipients: recipients, subject: subject(batch, kind, count),

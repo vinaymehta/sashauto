@@ -22,6 +22,11 @@ class UploadBatch < ApplicationRecord
     latest_completed_first.first
   end
 
+  # Quantity changes recorded against the previous version: Qty up/down, rows added and rows removed.
+  def quantity_change_count
+    increase_count.to_i + decrease_count.to_i + new_row_count.to_i + missing_row_count.to_i
+  end
+
   def completed?
     status == "completed"
   end

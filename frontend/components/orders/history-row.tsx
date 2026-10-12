@@ -33,7 +33,7 @@ export function cell(value: string | number | null | undefined) {
 
 // Order detail in the right-hand side panel, in two tabs: Details shows the order; History lists the other
 // rows with the same PO Number + Part Number + Type (by PO Line Number, then Ship Date), each identified by
-// PO Line Number + Ship Date + Qty; clicking one shows its details in the same panel. The Orders table stays
+// PO Line Number + Ship Date + Qty; clicking one opens its details below it (click again to close). The Orders table stays
 // visible and clickable behind the panel (no blur); ✕ or Escape closes it. A manual order has no other rows;
 // an Admin can edit (`onEdit`) or delete it.
 export function OrderDetailPanel({ row: clicked, onClose, onEdit, onDeleted }: {
@@ -41,8 +41,9 @@ export function OrderDetailPanel({ row: clicked, onClose, onEdit, onDeleted }: {
 }) {
   const { data, error, loading } = useApi<OrderHistory>(`/api/orders/${clicked.id}/history`, { manual: clicked.manual ? 1 : undefined });
   const [tab, setTab] = useState<"details" | "history">("details");
-  // The row shown: the clicked row, or a related row chosen in History (same group, so the list is shared).
-  const [row, setRow] = useState(clicked);
+  const row = clicked;
+  // The History row whose details are open below it.
+  const [openId, setOpenId] = useState<number | null>(null);
   const description = data?.group.description ?? null;
   const history = data ? data.data.filter((r) => r.id !== row.id) : [];
   const admin = useSession().user?.role === "admin";
@@ -108,12 +109,13 @@ export function OrderDetailPanel({ row: clicked, onClose, onEdit, onDeleted }: {
         <ul className="divide-y divide-neutral-100 overflow-hidden rounded-lg border border-line bg-white shadow-card">
           {history.map((r) => (
             <li key={r.id}>
-              <button type="button" onClick={() => { setRow(r); setTab("details"); }}
-                      className="grid w-full grid-cols-3 gap-4 px-5 py-3 text-left text-sm transition-colors hover:bg-canvas">
+              <button type="button" onClick={() => setOpenId(openId === r.id ? null : r.id)} aria-expanded={openId === r.id}
+                      className={`grid w-full grid-cols-3 gap-4 px-5 py-3 text-left text-sm transition-colors hover:bg-canvas ${openId === r.id ? "bg-canvas" : ""}`}>
                 <span><span className="block text-2xs font-medium uppercase tracking-wider text-ink-muted">PO Line</span>{r.po_line_number}</span>
                 <span><span className="block text-2xs font-medium uppercase tracking-wider text-ink-muted">Ship Date</span>{formatDate(r.ship_date)}</span>
                 <span className="text-right"><span className="block text-2xs font-medium uppercase tracking-wider text-ink-muted">Qty</span>{qty(r.qty)}</span>
               </button>
+              {openId === r.id && <div className="bg-canvas px-3 pb-3"><DetailCard row={r} description={description} /></div>}
             </li>
           ))}
         </ul>

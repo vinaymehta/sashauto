@@ -787,8 +787,9 @@ CREATE TABLE public.quantity_changes (
     order_row_id bigint,
     previous_order_row_id bigint,
     manual_order_id bigint,
-    CONSTRAINT quantity_changes_difference_valid CHECK (((difference = (new_qty - old_qty)) AND (difference <> (0)::numeric))),
-    CONSTRAINT quantity_changes_direction_valid CHECK (((((direction)::text = 'increase'::text) AND (difference > (0)::numeric)) OR (((direction)::text = 'decrease'::text) AND (difference < (0)::numeric)))),
+    previous_ship_date date,
+    CONSTRAINT quantity_changes_difference_valid CHECK (((difference = (new_qty - old_qty)) AND ((difference <> (0)::numeric) OR ((direction)::text = ANY ((ARRAY['added'::character varying, 'removed'::character varying, 'rescheduled'::character varying])::text[]))))),
+    CONSTRAINT quantity_changes_direction_valid CHECK (((((direction)::text = 'increase'::text) AND (difference > (0)::numeric)) OR (((direction)::text = 'decrease'::text) AND (difference < (0)::numeric)) OR (((direction)::text = 'added'::text) AND (old_qty = (0)::numeric)) OR (((direction)::text = 'removed'::text) AND (new_qty = (0)::numeric)) OR (((direction)::text = 'rescheduled'::text) AND (difference = (0)::numeric) AND (previous_ship_date IS NOT NULL)))),
     CONSTRAINT quantity_changes_source_present CHECK (((manual_order_id IS NOT NULL) OR ((upload_batch_id IS NOT NULL) AND (previous_upload_batch_id IS NOT NULL))))
 );
 
@@ -856,6 +857,7 @@ CREATE TABLE public.upload_batches (
     updated_at timestamp(6) without time zone NOT NULL,
     address_change_count integer,
     moq_alert_count integer,
+    rescheduled_count integer,
     CONSTRAINT upload_batches_status_valid CHECK (((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('processing'::character varying)::text, ('completed'::character varying)::text, ('failed'::character varying)::text]))),
     CONSTRAINT upload_batches_version_iff_completed CHECK ((((status)::text = 'completed'::text) = (version_number IS NOT NULL)))
 );
@@ -2503,6 +2505,8 @@ ALTER TABLE ONLY public.address_changes
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261012150001'),
+('20261012120001'),
 ('20261012090001'),
 ('20261009160001'),
 ('20261009120001'),

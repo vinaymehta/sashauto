@@ -10,6 +10,6 @@ class VendorOrderMailer < ApplicationMailer
     @pack = @order.vendor.vendor_products.find_by(product_id: @placement.product_id)&.pack_size || @product&.pack_size || 1
     subject = "Purchase order #{@order.number} from SASH: #{@placement.part_number}"
     subject = "[Forward to #{@order.vendor.name}] #{subject}" if @fallback
-    mail(to: params.fetch(:recipients), subject: subject, options: { idempotency_key: "vendor-order-#{@order.id}" })
+    mail(to: params.fetch(:recipients), subject: subject, options: { idempotency_key: "vendor-order-#{@order.id}-#{@order.created_at.to_i}" })
   end
 end

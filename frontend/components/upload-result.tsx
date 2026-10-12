@@ -112,7 +112,7 @@ function FailedUpload({ upload }: { upload: UploadDetail }) {
 
 function VersionData({ upload, status }: { upload: UploadDetail; status?: ReactNode }) {
   const isFirst = upload.previous_version === null;
-  const changes = (upload.stats.increase_count ?? 0) + (upload.stats.decrease_count ?? 0);
+  const changes = (upload.stats.increase_count ?? 0) + (upload.stats.decrease_count ?? 0) + (upload.stats.new_row_count ?? 0) + (upload.stats.missing_row_count ?? 0);
   const moqAlerts = upload.stats.moq_alert_count ?? 0;
   const [tab, setTab] = useState<"changes" | "addresses" | "moq" | "rows">(isFirst ? (moqAlerts > 0 ? "moq" : "rows") : "changes");
 

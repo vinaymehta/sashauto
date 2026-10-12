@@ -51,7 +51,7 @@ export function UploadCard({ onFinished }: { onFinished: (upload: UploadDetail) 
     if (upload.status === "completed") {
       const n = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
       const found = [
-        [(upload.stats.increase_count ?? 0) + (upload.stats.decrease_count ?? 0), "quantity change"],
+        [(upload.stats.increase_count ?? 0) + (upload.stats.decrease_count ?? 0) + (upload.stats.new_row_count ?? 0) + (upload.stats.missing_row_count ?? 0), "quantity change"],
         [upload.stats.address_change_count ?? 0, "address change"],
         [upload.stats.moq_alert_count ?? 0, "MOQ alert"],
       ].filter(([count]) => (count as number) > 0).map(([count, noun]) => n(count as number, noun as string));

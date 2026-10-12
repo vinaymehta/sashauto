@@ -80,12 +80,10 @@ module OrderRows
       number
     end
 
-    # Business rule: Qty when present, otherwise Previous Qty, otherwise unknown (never assumed to be zero).
-    # Returns [effective_qty, source].
-    def effective_quantity(qty, previous_qty)
-      return [ qty, "qty" ] unless qty.nil?
-      return [ previous_qty, "previous_qty" ] unless previous_qty.nil?
-      [ nil, "unknown" ]
+    # Business rule: the Qty column; a blank Qty means nothing is required (0), as in the release reconciliation.
+    # Previous Qty is kept for display only. Returns [effective_qty, source].
+    def effective_quantity(qty, _previous_qty)
+      [ qty || BigDecimal("0"), "qty" ]
     end
 
     # Business key: Ship To Location + Type + PO Number + PO Line Number + Part Number + Ship Date.

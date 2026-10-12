@@ -1,35 +1,42 @@
-<div style="max-width:760px;margin:0 auto;background:#ffffff;border:1px solid #e5e5e5;border-radius:8px;padding:24px;">
-  <h1 style="font-size:20px;font-weight:600;margin:0 0 4px;color:#171717;">Quantity changes detected</h1>
+<div>
+  <h1 style="font-size:20px;font-weight:700;margin:0 0 4px;color:#1d2636;">Quantity changes detected</h1>
   <p style="margin:0 0 16px;color:#737373;">
     <%= @batch.original_filename %> · uploaded by <%= @batch.uploaded_by.name %> on <%= @batch.completed_at.utc.strftime("%-d %b %Y, %H:%M UTC") %>
   </p>
+  <p style="margin:0 0 6px;color:#171717;">
+    <strong><%= @total %></strong> order row<%= "s" unless @total == 1 %> (PO + PO Line + Part + Ship Date) changed quantity compared with the previous upload:
+    <%= @batch.increase_count %> up, <%= @batch.decrease_count %> down, <%= @batch.new_row_count %> added, <%= @batch.missing_row_count %> removed.
+  </p>
   <p style="margin:0 0 16px;color:#171717;">
-    <strong><%= @total %></strong> existing order row<%= "s" unless @total == 1 %> changed quantity compared with the previous upload
-    (<%= @batch.increase_count %> &uarr; &nbsp;<%= @batch.decrease_count %> &darr;).
+    <% if @batch.rescheduled_count.to_i.positive? %><%= @batch.rescheduled_count %> rescheduled (same Qty moved to another ship date, not listed below). <% end %>Net quantity change: <strong style="color:<%= @net.positive? ? "#17693f" : @net.negative? ? "#a8321f" : "#171717" %>;"><%= format_difference(@net) %></strong>
   </p>
   <table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;font-size:13px;">
     <thead>
       <tr style="text-align:left;color:#404040;background:#fafafa;border-bottom:1px solid #e5e5e5;">
+        <th style="padding:8px 10px;font-weight:600;">Change</th>
         <th style="padding:8px 10px;font-weight:600;">PO Number</th>
         <th style="padding:8px 10px;font-weight:600;">Part Number</th>
+        <th style="padding:8px 10px;font-weight:600;">Type</th>
+        <th style="padding:8px 10px;font-weight:600;">PO Line</th>
         <th style="padding:8px 10px;font-weight:600;">Ship Date</th>
         <th style="padding:8px 10px;font-weight:600;text-align:right;">Old Qty</th>
         <th style="padding:8px 10px;font-weight:600;text-align:right;">New Qty</th>
-        <th style="padding:8px 10px;font-weight:600;text-align:right;">Change</th>
+        <th style="padding:8px 10px;font-weight:600;text-align:right;">Difference</th>
       </tr>
     </thead>
     <tbody>
       <% @changes.each do |change| %>
-        <% up = change.direction == "increase" %>
+        <% tone = change.difference.positive? ? "#17693f" : change.difference.negative? ? "#a8321f" : "#737373" %>
         <tr style="border-bottom:1px solid #f5f5f5;">
+          <td style="padding:8px 10px;color:<%= tone %>;font-weight:600;white-space:nowrap;"><%= change_label(change.direction) %></td>
           <td style="padding:8px 10px;color:#171717;"><%= change.po_number %></td>
           <td style="padding:8px 10px;color:#171717;"><%= change.part_number %></td>
+          <td style="padding:8px 10px;color:#171717;"><%= change.order_type %></td>
+          <td style="padding:8px 10px;color:#171717;"><%= change.po_line_number %></td>
           <td style="padding:8px 10px;color:#171717;white-space:nowrap;"><%= change.ship_date.strftime("%-d %b %Y") %></td>
           <td style="padding:8px 10px;color:#737373;text-align:right;"><%= format_qty(change.old_qty) %></td>
           <td style="padding:8px 10px;color:#171717;text-align:right;"><%= format_qty(change.new_qty) %></td>
-          <td style="padding:8px 10px;text-align:right;white-space:nowrap;font-weight:600;color:<%= up ? "#17693f" : "#a8321f" %>;">
-            <%= up ? "&uarr;".html_safe : "&darr;".html_safe %> <%= format_difference(change.difference) %>
-          </td>
+          <td style="padding:8px 10px;text-align:right;white-space:nowrap;font-weight:600;color:<%= tone %>;"><%= format_difference(change.difference) %></td>
         </tr>
       <% end %>
     </tbody>
@@ -37,5 +44,5 @@
   <% if @total > @changes.size %>
     <p style="margin:16px 0 0;color:#737373;">Showing the first <%= @changes.size %> of <%= @total %> changes.</p>
   <% end %>
-  <p style="margin:20px 0 0;"><a href="<%= @url %>" style="color:#171717;">View all changes in the dashboard</a></p>
+  <p style="margin:24px 0 0;"><a href="<%= @url %>" style="display:inline-block;background:#1d2636;color:#ffffff;text-decoration:none;padding:10px 18px;border-radius:6px;font-weight:600;">View all changes in the dashboard</a></p>
 </div>

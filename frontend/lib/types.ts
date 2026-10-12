@@ -60,6 +60,7 @@ export interface UploadStats {
   unchanged_count: number | null;
   new_row_count: number | null;
   missing_row_count: number | null;
+  rescheduled_count?: number | null;
   address_change_count?: number | null;
   moq_alert_count?: number | null;
 }
@@ -92,7 +93,9 @@ export interface UploadDetail extends UploadSummary {
   emails: EmailInfo[];
 }
 
-export type Direction = "increase" | "decrease";
+// Per PO + PO Line + Part + Ship Date. added: only in this upload (old Qty 0); removed: only in the previous one (new Qty 0);
+// rescheduled: the same Qty moved from previous_ship_date to ship_date on the same PO line (difference 0).
+export type Direction = "increase" | "decrease" | "added" | "removed" | "rescheduled";
 export type OrderType = "Order" | "Forecast" | "Firm";
 
 export interface QuantityChange {
@@ -105,6 +108,7 @@ export interface QuantityChange {
   ship_date: string;
   ship_to_location: string;
   direction: Direction;
+  previous_ship_date: string | null;
   old_qty: string;
   new_qty: string;
   difference: string;

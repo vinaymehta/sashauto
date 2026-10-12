@@ -21,7 +21,11 @@ const FILTERS: FilterGroup[] = [
     { value: "ship_date", label: "Ship date" }, { value: "po", label: "PO" },
     { value: "part", label: "Part number" }, { value: "difference", label: "Largest change" },
   ] },
-  { key: "direction", label: "Change", options: [{ value: "increase", label: "↑ Quantity up" }, { value: "decrease", label: "↓ Quantity down" }] },
+  { key: "direction", label: "Change", options: [
+    { value: "increase", label: "↑ Quantity up" }, { value: "decrease", label: "↓ Quantity down" },
+    { value: "added", label: "Row added" }, { value: "removed", label: "Row removed" },
+    { value: "rescheduled", label: "Rescheduled (moved date)" },
+  ] },
   { key: "type", label: "Type", options: [{ value: "Order", label: "Order" }, { value: "Firm", label: "Firm" }, { value: "Forecast", label: "Forecast" }] },
   AGE_FILTER,
 ];
@@ -32,7 +36,7 @@ export function ChangesTable({ uploadId, emptyDescription, manual = false }: { u
   const [search, setSearch] = useState("");
   const q = useDebounced(search.trim());
 
-  const { data, error, loading } = useApi<Paginated<QuantityChange>>(`/api/uploads/${uploadId}/changes`, {
+  const { data, error, loading } = useApi<Paginated<QuantityChange> & { meta: { net: string; rescheduled: number } }>(`/api/uploads/${uploadId}/changes`, {
     q, ...list.filters, today: todayParam(), page: list.page, per_page: list.perPage, manual: manual ? 1 : undefined,
   });
   const filtered = q !== "" || Object.values(list.filters).some(Boolean);
@@ -41,7 +45,16 @@ export function ChangesTable({ uploadId, emptyDescription, manual = false }: { u
 
   return (
     <div>
-      <ListToolbar summary={data ? `${formatCount(data.meta.total)} change${data.meta.total === 1 ? "" : "s"}` : ""}>
+      <ListToolbar summary={data ? (
+        <>
+          {formatCount(data.meta.total)} change{data.meta.total === 1 ? "" : "s"} · net {formatDifference(data.meta.net)}
+          {data.meta.rescheduled > 0 && !list.filters.direction && (
+            <> · <button type="button" className="font-medium text-accent hover:underline" onClick={() => list.setFilter("direction", "rescheduled")}>
+              {formatCount(data.meta.rescheduled)} rescheduled
+            </button></>
+          )}
+        </>
+      ) : ""}>
         <SearchInput label="Search changes" placeholder="Search PO, part number or commodity" value={search}
                      onSearch={(v) => { setSearch(v); list.resetPage(); }} className="w-full sm:w-72" />
         <FilterMenu groups={FILTERS} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
@@ -92,13 +105,15 @@ export function ChangesTable({ uploadId, emptyDescription, manual = false }: { u
                   <Td>{c.part_number}</Td>
                   <Td className="text-ink-muted">{c.commodity_type ?? "—"}</Td>
                   <Td>{c.order_type}</Td>
-                  <Td className="tabular">{formatDate(c.ship_date)}</Td>
+                  <Td className="tabular">
+                    {c.previous_ship_date ? <><span className="text-ink-muted">{formatDate(c.previous_ship_date)} →</span> {formatDate(c.ship_date)}</> : formatDate(c.ship_date)}
+                  </Td>
                   <Td align="right" className="text-ink-muted">{formatQty(c.old_qty)}</Td>
                   <Td align="right">{formatQty(c.new_qty)}</Td>
                   <Td align="right">
-                    <span className={`font-semibold ${c.direction === "increase" ? "text-inc" : "text-dec"}`}>{formatDifference(c.difference)}</span>
+                    <span className={`font-semibold ${Number(c.difference) > 0 ? "text-inc" : Number(c.difference) < 0 ? "text-dec" : "text-ink-muted"}`}>{formatDifference(c.difference)}</span>
                   </Td>
-                  <Td align="center"><ChangeArrow direction={c.direction} /></Td>
+                  <Td align="center"><ChangeArrow direction={c.direction} difference={c.difference} /></Td>
                 </tr>
               ))}
             </tbody>

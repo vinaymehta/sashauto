@@ -1,5 +1,5 @@
-<div style="max-width:760px;margin:0 auto;background:#ffffff;border:1px solid #e5e5e5;border-radius:8px;padding:24px;">
-  <h1 style="font-size:20px;font-weight:600;margin:0 0 4px;color:#171717;">Order ageing</h1>
+<div>
+  <h1 style="font-size:20px;font-weight:700;margin:0 0 4px;color:#1d2636;">Order ageing</h1>
   <p style="margin:0 0 20px;color:#737373;">
     <%= @digest.row_count %> order row<%= "s" unless @digest.row_count == 1 %>
     (one per PO Number, Part Number and Type, latest ship date) are 30 or more days past their ship date as of <%= @today.strftime("%-d %b %Y") %>.
@@ -41,5 +41,5 @@
       <p style="margin:8px 0 0;color:#737373;">Showing the first <%= rows.size %> of <%= @digest.counts[threshold.to_s] %> rows.</p>
     <% end %>
   <% end %>
-  <p style="margin:20px 0 0;"><a href="<%= @url %>" style="color:#171717;">Open the Orders page</a></p>
+  <p style="margin:24px 0 0;"><a href="<%= @url %>" style="display:inline-block;background:#1d2636;color:#ffffff;text-decoration:none;padding:10px 18px;border-radius:6px;font-weight:600;">Open the Orders page</a></p>
 </div>
