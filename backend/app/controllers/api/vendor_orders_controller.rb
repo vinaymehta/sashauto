@@ -16,7 +16,9 @@ module Api
         data: {
           order: { id: row.id, po_number: row.po_number, po_line_number: row.po_line_number, part_number: row.part_number,
                    order_type: row.order_type, ship_date: row.ship_date, qty: Serializers.qty(row.qty) },
-          moq: Serializers.qty(product&.moq),
+          # Order Qty counts sets; the part's MOQ in sets and pieces, and how many pieces make a set.
+          moq: Serializers.qty(product && (product.moq_sets || product.moq)), moq_pcs: Serializers.qty(product&.moq),
+          pack_size: product&.pack_size || 1,
           vendors: vendors.map { |vp| Serializers.product_vendor(vp).merge(has_email: vp.vendor.email.present?) },
           placement: placement && Serializers.vendor_order_placement(placement),
           warnings: placement ? VendorOrders::Placer.moq_warnings(placement) : [],
@@ -27,7 +29,7 @@ module Api
 
     def create
       row = order
-      allocations = params.permit(allocations: %i[vendor_id qty]).fetch(:allocations, [])
+      allocations = params.permit(allocations: %i[vendor_id qty unit]).fetch(:allocations, [])
       result = VendorOrders::Placer.call(row: row, allocations: allocations, user: current_user)
       placement = result.placement
       audit("vendor_order.placed", subject: placement, po_number: placement.po_number, part_number: placement.part_number,

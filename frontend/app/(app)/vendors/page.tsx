@@ -9,7 +9,9 @@ import { useSession } from "@/components/session";
 import { useToast } from "@/components/toast";
 import { useApi, useDebounced } from "@/components/use-api";
 import { useListQuery } from "@/components/use-list-query";
-import { DtpImportButton, DtpImportSkipped } from "@/components/vendors/dtp-import";
+import { DtpImportButton } from "@/components/vendors/dtp-import";
+import { ImportIssuesPanel, useOpenImportIssues } from "@/components/vendors/import-issues";
+import { Tabs } from "@/components/ui/tabs";
 import { VendorFormPanel } from "@/components/vendors/vendor-form-panel";
 import { VendorProductsPanel } from "@/components/vendors/vendor-products-panel";
 import { Button } from "@/components/ui/button";
@@ -42,7 +44,10 @@ export default function VendorsPage() {
   const [deleting, setDeleting] = useState<Vendor | null>(null);
   const [busy, setBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [importResult, setImportResult] = useState<VendorImportResult | null>(null);
+  // The list, or the Import issues tab (problems from vendor file imports).
+  const [view, setView] = useState<"list" | "issues">("list");
+  const issues = useOpenImportIssues();
+  const onImported = (r: VendorImportResult) => { reload(); issues.reload(); if (r.issues) setView("issues"); };
 
   async function remove() {
     if (!deleting) return;
@@ -66,15 +71,23 @@ export default function VendorsPage() {
         title="Vendors"
         actions={isAdmin && (
           <div className="flex items-center gap-2">
-            <DtpImportButton onImported={(r) => { setImportResult(r); reload(); }} />
+            <DtpImportButton onImported={onImported} />
             <Button variant="primary" onClick={() => setEditing("new")}><PlusIcon size={15} />Add vendor</Button>
           </div>
         )}
       />
 
-      <DtpImportSkipped result={importResult} />
+      <div className="flex items-center border-b border-line">
+        <Tabs active={view} onChange={setView} tabs={[
+          { key: "list" as const, label: "Vendors", count: data?.meta.total ?? null },
+          { key: "issues" as const, label: "Import issues", count: issues.count },
+        ]} />
+      </div>
 
-      <Panel flush>
+      {view === "issues" ? (
+        <div className="mt-4"><ImportIssuesPanel canEdit={isAdmin} onChanged={() => { reload(); issues.reload(); }} /></div>
+      ) : (
+      <div className="mt-4"><Panel flush>
         <ListToolbar summary={data ? `${formatCount(data.meta.total)} vendor${data.meta.total === 1 ? "" : "s"}` : ""}>
           <SearchInput label="Search vendors" placeholder="Search vendor or part number" value={search}
                        onSearch={(v) => { setSearch(v); list.resetPage(); }} className="w-full sm:w-72" />
@@ -128,7 +141,8 @@ export default function VendorsPage() {
             <Pagination meta={data.meta} onPage={list.setPage} onPerPage={list.setPerPage} noun="vendors" />
           </div>
         ) : null}
-      </Panel>
+      </Panel></div>
+      )}
 
       {open && <VendorProductsPanel key={open.id} vendor={open} canEdit={isAdmin} onClose={() => setOpen(null)} onChanged={reload} />}
       {editing && (

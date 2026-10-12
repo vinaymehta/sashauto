@@ -70,19 +70,23 @@ module Serializers
 
   def vendor_order(order)
     order.slice(:id, :number, :vendor_id, :email_status, :email_recipient, :email_sent_at, :email_last_error, :created_at)
-         .merge(vendor_name: order.vendor.name, qty: qty(order.qty), price_amount: qty(order.unit_price),
+         .merge(vendor_name: order.vendor.name, qty: qty(order.qty), unit: order.unit, price_amount: qty(order.unit_price),
                 price_currency: order.price_currency, price_note: order.price_note)
   end
 
   def product_vendor(item)
-    { id: item.id, vendor_id: item.vendor_id, vendor_name: item.vendor.name, price_amount: qty(item.price_amount),
-      price_currency: item.price_currency, price_note: item.price_note }
+    { id: item.id, vendor_id: item.vendor_id, vendor_name: item.vendor.name, pack_size: item.pack_size,
+      price_amount: qty(item.price_amount), set_price_amount: qty(item.set_price_amount),
+      moq: qty(item.moq), moq_sets: qty(item.moq_sets), moq_text: item.moq_text, price_currency: item.price_currency,
+      price_note: item.price_note, price_text: item.price_text }
   end
 
   def vendor_product(item)
-    item.slice(:id, :vendor_id, :product_id, :sash_part, :vendor_part, :description, :price_currency, :price_note, :updated_at)
+    item.slice(:id, :vendor_id, :product_id, :sash_part, :vendor_part, :description, :price_currency, :price_note, :moq_text,
+               :price_text, :updated_at)
         .merge(part_number: item.product.part_number, commodity_type: item.product.commodity_type,
-               moq: qty(item.moq), weight_kg: qty(item.weight_kg), price_amount: qty(item.price_amount))
+               pack_size: item.pack_size, moq: qty(item.moq), moq_sets: qty(item.moq_sets), weight_kg: qty(item.weight_kg),
+               price_amount: qty(item.price_amount), set_price_amount: qty(item.set_price_amount))
   end
 
   def moq_alert(alert)
@@ -123,9 +127,18 @@ module Serializers
   end
 
   def product(product, open_conflicts: [])
-    product.slice(:id, :part_number, :commodity_type, :source, :sash_part, :vendor_part, :description, :created_at, :updated_at)
-           .merge(moq: qty(product.moq), weight_kg: qty(product.weight_kg))
+    product.slice(:id, :part_number, :commodity_type, :source, :sash_part, :vendor_part, :description, :moq_text, :created_at,
+                  :updated_at)
+           .merge(pack_size: product.pack_size, moq: qty(product.moq), moq_sets: qty(product.moq_sets), weight_kg: qty(product.weight_kg))
            .merge(open_conflicts: open_conflicts.map { |c| product_conflict(c) })
+  end
+
+  def import_issue(issue)
+    issue.slice(:id, :filename, :excel_row, :kind, :field, :message, :row_data, :status, :resolution, :created_at, :resolved_at)
+         .merge(imported_by: issue.imported_by&.name, resolved_by: issue.resolved_by&.name,
+                part_number: issue.row_data["part_number"], vendor_name: issue.row_data["vendor_name"],
+                vendor_id: issue.vendor_product&.vendor_id, product_id: issue.product_id,
+                has_part: issue.vendor_product_id.present? || issue.product_id.present?)
   end
 
   def product_conflict(conflict)

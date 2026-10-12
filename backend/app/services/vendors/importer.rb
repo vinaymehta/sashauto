@@ -1,44 +1,53 @@
 module Vendors
   # Imports a vendor workbook (like "DTP Details.xlsx"): one row per part and vendor with the columns
-  # Customer Part, SASH Part, Vendor Part, Description, MOQ, Per Pc Weight in Kg, Vendor Name, Vendor Price.
+  # Part Number (or "Customer Part"), SASH Part, Vendor Part, Description, MOQ, Per Pc Weight in Kg, Vendor Name,
+  # Vendor Price.
   # The file is also the source of the product fields: each row sets its Product's SASH Part, Vendor Part,
   # Description, MOQ and Per Pc Weight (blank cells leave the product's value unchanged).
   # Headers are matched by name (case and spaces ignored). Vendors are matched by name and parts by
-  # Part Number: existing vendor/part pairs are updated, new ones added. Rows whose Part Number is not in
-  # Products, or without a vendor, are skipped and reported. Everything is saved in one transaction.
+  # Part Number: existing vendor/part pairs are updated, new ones added. A Part Number not yet in Products is
+  # added to Products (source "manual", created by the importing user). Rows without a Part Number or vendor,
+  # or with an invalid Part Number, are skipped and reported. Everything is saved in one transaction.
   class Importer
     class InvalidFile < StandardError; end
 
+    # Field => accepted header names (lowercase); the first is the name used in messages.
     COLUMNS = {
-      part_number: "customer part", sash_part: "sash part", vendor_part: "vendor part", description: "description",
-      moq: "moq", weight_kg: "per pc weight in kg", vendor_name: "vendor name", price: "vendor price"
+      part_number: [ "part number", "customer part" ], sash_part: [ "sash part" ], vendor_part: [ "vendor part" ],
+      description: [ "description" ], moq: [ "moq" ], weight_kg: [ "per pc weight in kg" ],
+      vendor_name: [ "vendor name" ], price: [ "vendor price" ]
     }.freeze
     REQUIRED = %i[part_number vendor_name].freeze
     CURRENCY_SYMBOLS = { "$" => "USD", "USD" => "USD", "€" => "EUR", "EUR" => "EUR", "₹" => "INR", "RS" => "INR",
-                         "RS." => "INR", "INR" => "INR", "¥" => "CNY", "CNY" => "CNY", "RMB" => "CNY" }.freeze
-    PRICE = /\A\s*(\$|€|₹|¥|USD|EUR|INR|CNY|RMB|RS\.?)?\s*(\d[\d,]*(?:\.\d+)?)\s*(.*)\z/i
+                         "RS." => "INR", "INR" => "INR", "¥" => "CNY", "CNY" => "CNY", "RMB" => "CNY",
+                         "£" => "GBP", "GBP" => "GBP" }.freeze
 
-    Result = Data.define(:vendors_created, :added, :updated, :skipped) do
-      def to_h = { vendors_created: vendors_created, added: added, updated: updated, skipped: skipped }
+    Result = Data.define(:vendors_created, :products_created, :added, :updated, :skipped, :issues) do
+      def to_h = { vendors_created: vendors_created, products_created: products_created, added: added, updated: updated,
+                   skipped: skipped, issues: issues }
     end
 
-    def self.call(path:)
-      new(path).call
+    # What importing one row did: the product and vendor part it wrote (nil when skipped), whether they were new,
+    # and the problems found ({ kind:, field:, message: }); a row with a "skipped" problem wrote nothing.
+    RowResult = Data.define(:product, :vendor_product, :product_created, :vendor_created, :added, :problems) do
+      def skipped? = problems.any? { |p| p[:kind] == "skipped" }
     end
 
-    # "$1.5 EX CHINA" => [1.5, "USD", "EX CHINA"]; 25.0 => [25.0, "INR", nil]; unreadable text goes to the note.
-    def self.parse_price(value)
-      return [ nil, "INR", nil ] if value.nil? || value.to_s.strip.empty?
-      return [ value.to_d, "INR", nil ] if value.is_a?(Numeric)
-
-      match = PRICE.match(value.to_s)
-      return [ nil, "INR", value.to_s.strip.first(200) ] unless match
-
-      [ match[2].delete(",").to_d, CURRENCY_SYMBOLS.fetch(match[1].to_s.upcase, "INR"), match[3].strip.presence ]
+    # `filename`: the uploaded file's original name, shown on its import issues.
+    def self.call(path:, user: nil, filename: nil)
+      new(path, user, filename).call
     end
 
-    def initialize(path)
+    # Imports one row ({ part_number:, vendor_name:, sash_part:, ... } with the cell values), as the workbook import
+    # does. Used for every workbook row, and for an admin fixing a row from the Import issues tab.
+    def self.import_row(row, user: nil, vendors: nil)
+      new(nil, user).import_row(row, vendors || Vendor.all.index_by { |v| v.name.downcase })
+    end
+
+    def initialize(path, user = nil, filename = nil)
       @path = path
+      @user = user
+      @filename = filename.to_s.first(255).presence || File.basename(path.to_s)
     end
 
     def call
@@ -46,49 +55,120 @@ module Vendors
       raise InvalidFile, "The workbook is empty." unless sheet.first_row
 
       index = header_index(sheet.row(sheet.first_row))
-      created = added = updated = 0
+      counts = Hash.new(0)
       skipped = []
+      issues = 0
 
       VendorProduct.transaction do
+        # Importing the same file again replaces its open issues: those still present are recorded anew below.
+        ImportIssue.open.where(filename: @filename)
+                   .update_all(status: "resolved", resolution: "reimported", resolved_by_id: @user&.id, resolved_at: Time.current,
+                               updated_at: Time.current)
         vendors = Vendor.all.index_by { |v| v.name.downcase }
         ((sheet.first_row + 1)..sheet.last_row).each do |number|
           cells = sheet.row(number)
           next if cells.compact.all? { |c| c.to_s.strip.empty? }
 
           row = COLUMNS.keys.to_h { |key| [ key, index[key] && cells[index[key]] ] }
-          name = row[:vendor_name].to_s.squish
-          part = OrderRows::Normalizer.part_number(row[:part_number].to_s)
-          next skipped << { row: number, message: "Vendor Name is blank." } if name.empty?
-          product = Product.find_by(part_number: part) if part.present?
-          next skipped << { row: number, message: "Part Number #{part.presence || '(blank)'} is not in Products." } unless product
-
-          product.update!({ sash_part: row[:sash_part].to_s.strip.presence, vendor_part: row[:vendor_part].to_s.strip.presence,
-                            description: row[:description].to_s.strip.presence, moq: number_or_nil(row[:moq]),
-                            weight_kg: number_or_nil(row[:weight_kg]) }.compact)
-          vendor = vendors[name.downcase] ||= Vendor.create!(name: name).tap { created += 1 }
-          amount, currency, note = self.class.parse_price(row[:price])
-          item = VendorProduct.find_or_initialize_by(vendor: vendor, product: product)
-          item.new_record? ? added += 1 : updated += 1
-          item.update!(sash_part: row[:sash_part], vendor_part: row[:vendor_part], description: row[:description],
-                       moq: number_or_nil(row[:moq]), weight_kg: number_or_nil(row[:weight_kg]),
-                       price_amount: amount, price_currency: currency, price_note: note)
-        rescue ActiveRecord::RecordInvalid => e
-          skipped << { row: number, message: e.record.errors.full_messages.to_sentence }
+          result = import_row(row, vendors)
+          counts[:products_created] += 1 if result.product_created
+          counts[:vendors_created] += 1 if result.vendor_created
+          counts[result.added ? :added : :updated] += 1 unless result.skipped?
+          result.problems.each do |problem|
+            skipped << { row: number, message: problem[:message] } if problem[:kind] == "skipped"
+            ImportIssue.create!(filename: @filename, excel_row: number, kind: problem[:kind],
+                                field: problem[:field], message: problem[:message], row_data: row_data(row),
+                                product: result.product, vendor_product: result.vendor_product, imported_by: @user)
+            issues += 1
+          end
         end
       end
-      Result.new(vendors_created: created, added: added, updated: updated, skipped: skipped.first(200))
+      Result.new(vendors_created: counts[:vendors_created], products_created: counts[:products_created],
+                 added: counts[:added], updated: counts[:updated], skipped: skipped.first(200), issues: issues)
     rescue Zip::Error, ArgumentError, Roo::Error => e
       raise InvalidFile, "The file could not be read as an .xlsx workbook (#{e.class.name.demodulize})."
+    end
+
+    def import_row(row, vendors)
+      name = row[:vendor_name].to_s.squish
+      part = OrderRows::Normalizer.part_number(row[:part_number].to_s)
+      return skip(:part_number, "Part Number is blank.") if part.blank?
+      return skip(:vendor_name, "Vendor Name is blank.") if name.empty?
+
+      problems = unreadable_values(row)
+      pack = PackParser.pack_size(description: row[:description], moq: row[:moq], price: row[:price])
+      moq = PackParser.moq(row[:moq], pack)
+      price = PackParser.price(row[:price], pack, currencies: CURRENCY_SYMBOLS)
+      product = Product.find_by(part_number: part)
+      product_created = product.nil?
+      product ||= Product.create!(part_number: part, source: "manual", created_by: @user)
+      product.update!({ sash_part: row[:sash_part].to_s.strip.presence, vendor_part: row[:vendor_part].to_s.strip.presence,
+                        description: row[:description].to_s.strip.presence, pack_size: pack,
+                        moq: moq&.pcs, moq_sets: moq&.sets, moq_text: moq && file_text(row[:moq]),
+                        weight_kg: number_or_nil(row[:weight_kg]) }.compact)
+      vendor_created = !vendors.key?(name.downcase)
+      vendor = vendors[name.downcase] ||= Vendor.create!(name: name)
+      item = VendorProduct.find_or_initialize_by(vendor: vendor, product: product)
+      added = item.new_record?
+      item.update!(sash_part: row[:sash_part], vendor_part: row[:vendor_part], description: row[:description], pack_size: pack,
+                   moq: moq&.pcs, moq_sets: moq&.sets, moq_text: moq && file_text(row[:moq]), weight_kg: number_or_nil(row[:weight_kg]),
+                   price_amount: price.pc, set_price_amount: price.set, price_currency: price.currency, price_note: price.note,
+                   price_text: price.set && file_text(row[:price]))
+      RowResult.new(product: product, vendor_product: item, product_created: product_created,
+                    vendor_created: vendor_created, added: added, problems: problems)
+    rescue ActiveRecord::RecordInvalid => e
+      field = e.record.is_a?(Product) && e.record.errors.include?(:part_number) ? :part_number : nil
+      skip(field, e.record.errors.full_messages.to_sentence)
     end
 
     private
 
     def header_index(headers)
       normalized = headers.map { |h| h.to_s.squish.downcase }
-      index = COLUMNS.transform_values { |name| normalized.index(name) }
+      index = COLUMNS.transform_values { |names| names.filter_map { |name| normalized.index(name) }.first }
       missing = REQUIRED.reject { |key| index[key] }
-      raise InvalidFile, "Missing column(s): #{missing.map { |k| COLUMNS[k].titleize }.join(', ')}." if missing.any?
+      raise InvalidFile, "Missing column(s): #{missing.map { |k| COLUMNS[k].first.titleize }.join(', ')}." if missing.any?
       index
+    end
+
+    def skip(field, message)
+      RowResult.new(product: nil, vendor_product: nil, product_created: false, vendor_created: false, added: false,
+                    problems: [ { kind: "skipped", field: field&.to_s, message: message } ])
+    end
+
+    # Values present in the row that the import cannot use (they are left blank): MOQ and weight must be numbers,
+    # the price must start with a number (otherwise the text is kept as the price note).
+    def unreadable_values(row)
+      problems = []
+      { moq: "MOQ", weight_kg: "Per Pc Weight in Kg" }.each do |field, label|
+        value = row[field]
+        next if value.nil? || value.to_s.strip.empty? || (field == :moq ? PackParser.moq(value, 1) : number_or_nil(value))
+        problems << { kind: "unreadable", field: field.to_s, message: "#{label} \"#{value.to_s.strip.first(80)}\" is not a number, so it was left blank." }
+      end
+      price = row[:price]
+      if price.present? && PackParser.price(price, 1, currencies: CURRENCY_SYMBOLS).set.nil?
+        text = price.to_s.gsub(/[[:space:]]+/, " ").strip.first(80)
+        currency = text[/\A([A-Z]{3}|£)\s*\d/, 1]
+        message = if currency
+          "Vendor Price \"#{text}\" is in #{currency == '£' ? 'GBP' : currency}, " \
+            "which is not a supported currency (#{VendorProduct::CURRENCIES.join(', ')}), so it was kept as a note."
+        else
+          "Vendor Price \"#{text}\" has no amount, so it was kept as a note."
+        end
+        problems << { kind: "unreadable", field: "price", message: message }
+      end
+      problems
+    end
+
+    # The row as stored on an issue: every field as text, as it appeared in the cell.
+    def row_data(row)
+      row.transform_values { |v| v.nil? ? nil : (v.is_a?(Float) && v == v.floor ? v.to_i.to_s : v.to_s.strip) }
+    end
+
+    # A cell as written in the file, for display: "200 of 10 pcs", "₹12 per pc (₹60 per Set)", 200.0 → "200".
+    def file_text(value)
+      text = value.is_a?(Numeric) ? value.to_d.to_s("F").delete_suffix(".0") : PackParser.text(value)
+      text.first(200).presence
     end
 
     def number_or_nil(value)

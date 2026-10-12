@@ -1,4 +1,5 @@
 class Product < ApplicationRecord
+  include PackQuantities
   SOURCES = %w[upload manual].freeze
 
   belongs_to :created_by, class_name: "User", optional: true

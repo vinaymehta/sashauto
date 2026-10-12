@@ -12,6 +12,8 @@ interface SessionState {
   signOut: () => Promise<void>;
   // The signed-in user changes their own password; the session continues with the updated user.
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
+  // Reloads the signed-in user (e.g. after an admin changed their own name, email or role).
+  refresh: () => Promise<void>;
 }
 
 const SessionContext = createContext<SessionState | null>(null);
@@ -71,7 +73,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setUser(res.user);
   }, []);
 
-  return <SessionContext.Provider value={{ user, loading, signIn, signOut, changePassword }}>{children}</SessionContext.Provider>;
+  const refresh = useCallback(async () => {
+    const res = await api.get<SessionResponse>("/api/session");
+    setCsrfToken(res.csrf_token);
+    setUser(res.user);
+  }, []);
+
+  return <SessionContext.Provider value={{ user, loading, signIn, signOut, changePassword, refresh }}>{children}</SessionContext.Provider>;
 }
 
 export function useSession() {

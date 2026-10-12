@@ -8,7 +8,7 @@ const inter = Inter({ variable: "--font-inter", subsets: ["latin"] });
 const brand = Archivo_Black({ variable: "--font-brand", weight: "400", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: { default: "Order Change Tracker", template: "%s · Order Change Tracker" },
+  title: { default: "SASH", template: "%s · SASH" },
   description: "Detects order quantity changes between uploaded supplier requirement files.",
   robots: { index: false, follow: false },
 };

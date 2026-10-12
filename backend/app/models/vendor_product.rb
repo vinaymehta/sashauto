@@ -1,6 +1,7 @@
 # One part (Product / Part Number) supplied by one vendor, with that vendor's details for it.
 class VendorProduct < ApplicationRecord
-  CURRENCIES = %w[INR USD EUR CNY].freeze
+  include PackQuantities
+  CURRENCIES = %w[INR USD EUR CNY GBP].freeze
 
   belongs_to :vendor, touch: true
   belongs_to :product
@@ -15,6 +16,6 @@ class VendorProduct < ApplicationRecord
   validates :price_note, length: { maximum: 200 }
   validates :moq, numericality: { greater_than: 0, less_than: 1_000_000_000_000 }, allow_nil: true
   validates :weight_kg, numericality: { greater_than_or_equal_to: 0, less_than: 100_000_000 }, allow_nil: true
-  validates :price_amount, numericality: { greater_than_or_equal_to: 0, less_than: 100_000_000_000 }, allow_nil: true
+  validates :price_amount, :set_price_amount, numericality: { greater_than_or_equal_to: 0, less_than: 100_000_000_000 }, allow_nil: true
   validates :price_currency, inclusion: { in: CURRENCIES }
 end

@@ -75,7 +75,7 @@ module Api
         return render_error("The file is larger than #{AppConfig.max_upload_bytes / 1.megabyte} MB.", :unprocessable_content, code: "invalid_file")
       end
 
-      result = Vendors::Importer.call(path: file.path)
+      result = Vendors::Importer.call(path: file.path, user: current_user, filename: file.original_filename)
       audit("vendor.imported", filename: file.original_filename.to_s.first(255), **result.to_h.except(:skipped), skipped: result.skipped.size)
       render json: { data: result.to_h }
     rescue Vendors::Importer::InvalidFile => e

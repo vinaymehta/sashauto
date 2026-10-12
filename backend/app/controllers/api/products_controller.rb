@@ -49,9 +49,18 @@ module Api
     # Only the MOQ can be edited (admins). Blank clears it. Used for MOQ alerts on the next upload.
     def update
       product = Product.find(params[:id])
-      before = product.moq
-      if product.update(moq: params[:moq].presence)
-        audit("product.moq_updated", subject: product, moq_before: before&.to_s, moq_after: product.moq&.to_s)
+      before = { moq: product.moq&.to_s, moq_sets: product.moq_sets&.to_s, pack_size: product.pack_size }
+      # MOQ in sets with the pack size (pieces derived), or — from older clients — MOQ in pieces.
+      attrs = {}
+      attrs[:pack_size] = params[:pack_size] if params.key?(:pack_size)
+      if params.key?(:moq_sets)
+        attrs[:moq_sets] = params[:moq_sets].presence
+      elsif params.key?(:moq)
+        attrs[:moq] = params[:moq].presence
+      end
+      if product.update(attrs)
+        audit("product.moq_updated", subject: product, before: before,
+                                     after: { moq: product.moq&.to_s, moq_sets: product.moq_sets&.to_s, pack_size: product.pack_size })
         render json: { data: Serializers.product(product, open_conflicts: product.product_conflicts.open.includes(:upload_batch)) }
       else
         render_validation_errors(product)

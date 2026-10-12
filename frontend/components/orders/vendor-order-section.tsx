@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import type { VendorEmailStatus, VendorOrderState } from "@/lib/types";
+import type { OrderUnit, ProductVendor, VendorEmailStatus, VendorOrderState } from "@/lib/types";
 import { formatDateTime, formatQty } from "@/lib/format";
 import { AlertIcon } from "../icons";
 import { useSession } from "../session";
@@ -12,7 +12,7 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { ConfirmDialog } from "../ui/confirm-dialog";
 import { Alert, Spinner } from "../ui/feedback";
-import { formatPrice } from "../vendors/vendor-products-panel";
+import { formatAmount, formatPrice } from "../vendors/vendor-products-panel";
 
 const QTY = /^\d+(\.\d{1,3})?$/;
 // Quantities are compared in thousandths so decimal totals add up exactly (Qty has 3 decimals).
@@ -66,9 +66,19 @@ export function VendorOrderSection({ orderId, manual = false }: { orderId: numbe
   );
 }
 
+type Allocation = { qty: string; unit: OrderUnit };
+
+// One vendor line: its price and MOQ in the unit the allocation is entered in.
+function unitInfo(v: ProductVendor, unit: OrderUnit, fallbackMoq: { sets: string | null; pcs: string | null }) {
+  const pack = Math.max(v.pack_size ?? 1, 1);
+  const price = formatAmount(unit === "pcs" ? v.price_amount : v.set_price_amount, v.price_currency);
+  const moq = unit === "pcs" ? v.moq ?? fallbackMoq.pcs : v.moq_sets ?? fallbackMoq.sets;
+  return { pack, price, moq };
+}
+
 function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; path: string; onPlaced: () => void }) {
   const notify = useToast();
-  const [qty, setQty] = useState<Record<number, string>>({});
+  const [alloc, setAlloc] = useState<Record<number, Allocation>>({});
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -77,22 +87,41 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
     return <p className="px-5 py-6 text-sm text-ink-muted">No vendor is linked to this part. Link one on the Vendors page to place this order.</p>;
   }
 
-  const orderQty = milli(state.order.qty ?? "0");
-  const selected = state.vendors.filter((v) => qty[v.vendor_id] !== undefined);
-  const invalid = selected.filter((v) => !QTY.test(qty[v.vendor_id]!.trim()) || milli(qty[v.vendor_id]!) <= 0);
-  const total = selected.reduce((sum, v) => sum + (QTY.test(qty[v.vendor_id]!.trim()) ? milli(qty[v.vendor_id]!) : 0), 0);
+  const fallbackMoq = { sets: state.moq, pcs: state.moq_pcs };
+  const orderQty = milli(state.order.qty ?? "0"); // in sets
+  const selected = state.vendors.filter((v) => alloc[v.vendor_id] !== undefined);
+  const valid = (a: Allocation) => QTY.test(a.qty.trim()) && milli(a.qty) > 0;
+  const invalid = selected.filter((v) => !valid(alloc[v.vendor_id]!));
+  // Order Qty counts sets: an allocation in pieces counts as pieces ÷ that vendor's pack size.
+  const inSets = (v: ProductVendor, a: Allocation) => (a.unit === "pcs" ? Math.round(milli(a.qty) / Math.max(v.pack_size ?? 1, 1)) : milli(a.qty));
+  const total = selected.reduce((sum, v) => sum + (valid(alloc[v.vendor_id]!) ? inSets(v, alloc[v.vendor_id]!) : 0), 0);
   const remaining = orderQty - total;
-  const moq = state.moq !== null ? milli(state.moq) : null;
-  const belowMoq = moq === null ? [] : selected.filter((v) => QTY.test(qty[v.vendor_id]!.trim()) && milli(qty[v.vendor_id]!) < moq);
+  const belowMoq = selected.filter((v) => {
+    const a = alloc[v.vendor_id]!;
+    const { moq } = unitInfo(v, a.unit, fallbackMoq);
+    return valid(a) && moq !== null && milli(a.qty) < milli(moq);
+  });
   const ready = selected.length > 0 && invalid.length === 0 && remaining === 0;
 
-  // Selecting a vendor starts it with the quantity not yet allocated (editable).
+  // Selecting a vendor starts it with the sets not yet allocated (editable, in sets).
   function toggle(vendorId: number) {
-    setQty((current) => {
+    setAlloc((current) => {
       const next = { ...current };
       if (next[vendorId] !== undefined) delete next[vendorId];
-      else next[vendorId] = remaining > 0 ? String(remaining / 1000) : "";
+      else next[vendorId] = { qty: remaining > 0 ? String(remaining / 1000) : "", unit: "sets" };
       return next;
+    });
+  }
+
+  // Switching the unit converts the quantity, so the same amount stays allocated.
+  function setUnit(v: ProductVendor, unit: OrderUnit) {
+    setAlloc((current) => {
+      const a = current[v.vendor_id]!;
+      if (a.unit === unit) return current;
+      const pack = Math.max(v.pack_size ?? 1, 1);
+      const n = Number(a.qty);
+      const qty = QTY.test(a.qty.trim()) ? String(unit === "pcs" ? +(n * pack).toFixed(3) : +(n / pack).toFixed(3)) : a.qty;
+      return { ...current, [v.vendor_id]: { qty, unit } };
     });
   }
 
@@ -101,7 +130,7 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
     setError(null);
     try {
       const res = await api.post<{ warnings: { message: string }[] }>(path, {
-        allocations: selected.map((v) => ({ vendor_id: v.vendor_id, qty: qty[v.vendor_id]!.trim() })),
+        allocations: selected.map((v) => ({ vendor_id: v.vendor_id, qty: alloc[v.vendor_id]!.qty.trim(), unit: alloc[v.vendor_id]!.unit })),
       });
       notify(`${selected.length} vendor order${selected.length === 1 ? "" : "s"} placed. Emails are being sent to the vendors.`);
       if (res.warnings.length) notify(`Placed below MOQ: ${res.warnings.map((w) => w.message).join(" ")}`, "error");
@@ -114,13 +143,22 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
     }
   }
 
+  const describe = (v: ProductVendor) => {
+    const a = alloc[v.vendor_id]!;
+    const { pack } = unitInfo(v, a.unit, fallbackMoq);
+    if (a.unit === "pcs") return `${formatQty(a.qty)} pcs`;
+    return pack > 1 ? `${formatQty(a.qty)} sets (${formatQty(String(Number(a.qty) * pack))} pcs)` : formatQty(a.qty);
+  };
+
   return (
     <div>
       <ul className="divide-y divide-neutral-100">
         {state.vendors.map((v) => {
-          const checked = qty[v.vendor_id] !== undefined;
-          const value = qty[v.vendor_id] ?? "";
-          const bad = checked && (!QTY.test(value.trim()) || milli(value) <= 0);
+          const a = alloc[v.vendor_id];
+          const checked = a !== undefined;
+          const unit = a?.unit ?? "sets";
+          const { pack, price, moq } = unitInfo(v, unit, fallbackMoq);
+          const bad = checked && !valid(a);
           return (
             <li key={v.vendor_id} className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-5 py-2.5 text-sm">
               <input type="checkbox" checked={checked} onChange={() => toggle(v.vendor_id)} aria-label={`Select ${v.vendor_name}`}
@@ -128,14 +166,25 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
               <span className="min-w-0">
                 <span className="block truncate font-medium text-ink">{v.vendor_name}</span>
                 <span className="block text-xs text-ink-muted">
-                  {formatPrice(v) ?? "No price"}{!v.has_email && <span className="ml-1.5 text-age-yellow-ink" title="The order email goes to the default recipient from .env, to forward to the vendor">· no email, sent to default recipient</span>}
+                  {price ? `${price} / ${unit === "pcs" ? "pc" : pack > 1 ? `set of ${pack}` : "pc"}` : formatPrice(v) ?? "No price"}
+                  {moq !== null && ` · MOQ ${formatQty(moq)} ${unit === "pcs" || pack <= 1 ? "pcs" : "sets"}`}
+                  {!v.has_email && <span className="ml-1.5 text-age-yellow-ink" title="The order email goes to the default recipient from .env, to forward to the vendor">· no email, sent to default recipient</span>}
                 </span>
               </span>
-              <input type="text" inputMode="decimal" value={value} disabled={!checked} placeholder="Qty" aria-label={`Quantity for ${v.vendor_name}`}
-                     aria-invalid={bad || undefined}
-                     onChange={(e) => setQty((current) => ({ ...current, [v.vendor_id]: e.target.value }))}
-                     className={`tabular h-8 w-28 rounded-md border bg-white px-2.5 text-right text-sm text-ink transition-colors focus:outline-none disabled:bg-neutral-50 disabled:text-ink-faint ${
-                       bad ? "border-dec" : "border-neutral-300 hover:border-neutral-400 focus:border-neutral-500"}`} />
+              <span className="flex items-center gap-1.5">
+                <input type="text" inputMode="decimal" value={a?.qty ?? ""} disabled={!checked} placeholder="Qty" aria-label={`Quantity for ${v.vendor_name}`}
+                       aria-invalid={bad || undefined}
+                       onChange={(e) => setAlloc((current) => ({ ...current, [v.vendor_id]: { ...current[v.vendor_id]!, qty: e.target.value } }))}
+                       className={`tabular h-8 w-24 rounded-md border bg-white px-2.5 text-right text-sm text-ink transition-colors focus:outline-none disabled:bg-neutral-50 disabled:text-ink-faint ${
+                         bad ? "border-dec" : "border-neutral-300 hover:border-neutral-400 focus:border-neutral-500"}`} />
+                {pack > 1 ? (
+                  <select value={unit} disabled={!checked} aria-label={`Unit for ${v.vendor_name}`} onChange={(e) => setUnit(v, e.target.value as OrderUnit)}
+                          className="h-8 rounded-md border border-neutral-300 bg-white px-1.5 text-sm text-ink disabled:bg-neutral-50 disabled:text-ink-faint">
+                    <option value="sets">Sets</option>
+                    <option value="pcs">Pcs</option>
+                  </select>
+                ) : <span className="w-[3.25rem] text-xs text-ink-muted">pcs</span>}
+              </span>
             </li>
           );
         })}
@@ -145,7 +194,8 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-ink-muted">
             Allocated <span className="tabular font-semibold text-ink">{fromMilli(total)}</span> of{" "}
-            <span className="tabular font-semibold text-ink">{fromMilli(orderQty)}</span>
+            <span className="tabular font-semibold text-ink">{fromMilli(orderQty)}</span>{state.pack_size > 1 ? " sets" : ""}
+            {state.pack_size > 1 && <span className="ml-1 text-xs">({fromMilli(orderQty * state.pack_size)} pcs)</span>}
           </span>
           <span className={`tabular text-xs font-semibold ${remaining === 0 ? "text-inc" : "text-dec"}`}>
             {remaining === 0 ? "Fully allocated" : remaining > 0 ? `${fromMilli(remaining)} left to allocate` : `${fromMilli(-remaining)} over the order Qty`}
@@ -155,8 +205,11 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
           <p className="flex items-start gap-2 rounded-md bg-age-yellow px-3 py-2 text-xs text-age-yellow-ink">
             <AlertIcon size={14} className="mt-px shrink-0" />
             <span>
-              Below the MOQ of {formatQty(state.moq!)}: {belowMoq.map((v) => `${v.vendor_name} (${formatQty(qty[v.vendor_id]!)})`).join(", ")}.
-              You can still place the order, or change the allocation.
+              Below the MOQ: {belowMoq.map((v) => {
+                const { moq } = unitInfo(v, alloc[v.vendor_id]!.unit, fallbackMoq);
+                const u = alloc[v.vendor_id]!.unit === "pcs" || (v.pack_size ?? 1) <= 1 ? "pcs" : "sets";
+                return `${v.vendor_name} (${formatQty(alloc[v.vendor_id]!.qty)} of ${formatQty(moq!)} ${u})`;
+              }).join(", ")}. You can still place the order, or change the allocation.
             </span>
           </p>
         )}
@@ -173,7 +226,7 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
                        confirmLabel="Place orders" busyLabel="Placing…" busy={busy} error={error}
                        onConfirm={place} onCancel={() => setConfirming(false)}>
           <ul className="mt-1 space-y-0.5">
-            {selected.map((v) => <li key={v.vendor_id}>{v.vendor_name}: <span className="tabular font-semibold text-ink">{formatQty(qty[v.vendor_id]!)}</span></li>)}
+            {selected.map((v) => <li key={v.vendor_id}>{v.vendor_name}: <span className="tabular font-semibold text-ink">{describe(v)}</span></li>)}
           </ul>
           <p className="mt-2">Each vendor is emailed its own order. After placing, the allocation is locked.</p>
           {belowMoq.length > 0 && <p className="mt-2 font-medium text-age-yellow-ink">{belowMoq.length} allocation{belowMoq.length === 1 ? " is" : "s are"} below the MOQ.</p>}
@@ -221,7 +274,7 @@ function PlacedOrders({ state, onChanged }: { state: VendorOrderState; onChanged
                 <span className="block truncate text-xs text-ink-muted">{vo.vendor_name}{vo.email_recipient ? ` · ${vo.email_recipient}` : ""}</span>
               </span>
               <span className="flex items-center gap-3">
-                <span className="tabular font-semibold text-ink">{formatQty(vo.qty)}</span>
+                <span className="tabular font-semibold text-ink">{formatQty(vo.qty)} {vo.unit === "pcs" || state.pack_size <= 1 ? "pcs" : "sets"}</span>
                 <span title={vo.email_last_error ?? (vo.email_sent_at ? `Sent ${formatDateTime(vo.email_sent_at)}` : undefined)}>
                   <Badge tone={badge.tone}>{badge.label}</Badge>
                 </span>
@@ -236,7 +289,7 @@ function PlacedOrders({ state, onChanged }: { state: VendorOrderState; onChanged
       {state.warnings.length > 0 && (
         <p className="mx-5 mb-3 flex items-start gap-2 rounded-md bg-age-yellow px-3 py-2 text-xs text-age-yellow-ink">
           <AlertIcon size={14} className="mt-px shrink-0" />
-          <span>Placed below the MOQ of {formatQty(placement.moq!)}: {state.warnings.map((w) => w.vendor_name).join(", ")}.</span>
+          <span>Placed below the MOQ: {state.warnings.map((w) => w.message).join(" ")}</span>
         </p>
       )}
       <p className="border-t border-neutral-100 bg-neutral-50 px-5 py-2.5 text-xs text-ink-muted">

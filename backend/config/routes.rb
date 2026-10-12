@@ -48,6 +48,13 @@ Rails.application.routes.draw do
     resources :products, only: %i[index create update] do
       get :vendors, on: :member
     end
+    resources :import_issues, only: :index do
+      member do
+        post :resolve
+        post :dismiss
+        post :delete_part
+      end
+    end
     resources :product_conflicts, only: [] do
       post :resolve, on: :member
     end

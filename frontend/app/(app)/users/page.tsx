@@ -32,7 +32,7 @@ const FILTERS: FilterGroup[] = [
 // User accounts (admins only): add users, edit name/email/role, reset passwords, deactivate and reactivate.
 // Users are never deleted; a deactivated user cannot sign in and is signed out.
 export default function UsersPage() {
-  const { user: me } = useSession();
+  const { user: me, refresh: refreshSession } = useSession();
   const isAdmin = me?.role === "admin";
   const notify = useToast();
   const list = useListQuery({}, 25, { key: "name", direction: "asc" });
@@ -147,7 +147,9 @@ export default function UsersPage() {
 
       {editing && (
         <UserFormPanel user={editing === "new" ? undefined : editing} isSelf={editing !== "new" && editing.id === me?.id}
-                       onClose={() => setEditing(null)} onSaved={reload}
+                       onClose={() => setEditing(null)}
+                       // Editing your own account also updates the name and role shown in the top bar.
+                       onSaved={() => { reload(); if (editing !== "new" && editing.id === me?.id) void refreshSession().catch(() => undefined); }}
                        onResetPassword={() => { if (editing !== "new") { setResetting(editing); setEditing(null); } }}
                        onToggleActive={() => { if (editing !== "new") { setToggleError(null); setToggling(editing); setEditing(null); } }} />
       )}

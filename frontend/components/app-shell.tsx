@@ -149,7 +149,7 @@ function RequiredPasswordChange({ name, onSignOut }: { name: string; onSignOut: 
 
 function Brand({ compact = false }: { compact?: boolean }) {
   return (
-    <Link href="/" aria-label="SASH Order Change Tracker home" className="flex items-center">
+    <Link href="/" aria-label="SASH home" className="flex items-center">
       <BrandLogo tone="light" size={compact ? "sm" : "md"} />
     </Link>
   );

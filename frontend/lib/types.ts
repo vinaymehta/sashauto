@@ -130,7 +130,10 @@ export interface Product {
   sash_part: string | null;
   vendor_part: string | null;
   description: string | null;
-  moq: string | null;
+  pack_size: number; // pieces in one set (1 = sold singly)
+  moq: string | null; // MOQ in pieces
+  moq_sets: string | null; // MOQ in sets — what order Qty is compared with
+  moq_text: string | null; // MOQ as written in the vendor file
   weight_kg: string | null;
   source: "upload" | "manual";
   created_at: string;
@@ -310,7 +313,7 @@ export interface Vendor {
   updated_at: string;
 }
 
-export type Currency = "INR" | "USD" | "EUR" | "CNY";
+export type Currency = "INR" | "USD" | "EUR" | "CNY" | "GBP";
 
 export interface VendorProduct {
   id: number;
@@ -321,11 +324,16 @@ export interface VendorProduct {
   sash_part: string | null;
   vendor_part: string | null;
   description: string | null;
-  moq: string | null;
+  pack_size: number;
+  moq: string | null; // in pieces
+  moq_sets: string | null;
+  moq_text: string | null; // as written in the vendor file
   weight_kg: string | null;
-  price_amount: string | null;
+  price_amount: string | null; // per piece
+  set_price_amount: string | null; // per set
   price_currency: Currency;
   price_note: string | null;
+  price_text: string | null; // as written in the vendor file
   updated_at: string;
 }
 
@@ -333,12 +341,21 @@ export interface ProductVendor {
   id: number;
   vendor_id: number;
   vendor_name: string;
-  price_amount: string | null;
+  pack_size: number;
+  price_amount: string | null; // per piece
+  set_price_amount: string | null; // per set
+  moq: string | null; // in pieces
+  moq_sets: string | null;
+  moq_text: string | null;
   price_currency: Currency;
   price_note: string | null;
+  price_text: string | null;
 }
 
 export type VendorEmailStatus = "pending" | "sent" | "failed" | "no_email";
+
+// A vendor order is placed in sets or in pieces; order Qty always counts sets.
+export type OrderUnit = "sets" | "pcs";
 
 export interface VendorOrderInfo {
   id: number;
@@ -346,6 +363,7 @@ export interface VendorOrderInfo {
   vendor_id: number;
   vendor_name: string;
   qty: string;
+  unit: OrderUnit;
   price_amount: string | null;
   price_currency: Currency | null;
   price_note: string | null;
@@ -375,7 +393,9 @@ export interface VendorOrderWarning { vendor_order_id?: number; vendor_id: numbe
 
 export interface VendorOrderState {
   order: { id: number; po_number: string; po_line_number: string; part_number: string; order_type: OrderType; ship_date: string; qty: string | null };
-  moq: string | null;
+  moq: string | null; // the part's MOQ in sets (order Qty counts sets)
+  moq_pcs: string | null;
+  pack_size: number;
   vendors: (ProductVendor & { has_email: boolean })[];
   placement: VendorOrderPlacementInfo | null;
   warnings: VendorOrderWarning[];
@@ -384,6 +404,8 @@ export interface VendorOrderState {
 
 export interface VendorImportResult {
   vendors_created: number;
+  products_created: number; // Part Numbers that were not in Products yet
+  issues: number; // problems recorded on the Import issues tab
   added: number;
   updated: number;
   skipped: { row: number; message: string }[];
@@ -407,4 +429,29 @@ export interface AddressChange {
   ship_date: string;
   old_address: string | null;
   new_address: string | null;
+}
+
+// The fields of one vendor workbook row, as text (keys of Vendors::Importer::COLUMNS).
+export type ImportRowData = Partial<Record<"part_number" | "sash_part" | "vendor_part" | "description" | "moq" | "weight_kg" | "vendor_name" | "price", string | null>>;
+
+// A problem from a vendor workbook import: a skipped row, or a value that could not be read.
+export interface ImportIssue {
+  id: number;
+  filename: string;
+  excel_row: number;
+  kind: "skipped" | "unreadable";
+  field: string | null;
+  message: string;
+  row_data: ImportRowData;
+  status: "open" | "resolved" | "dismissed";
+  resolution: "fixed" | "deleted" | "reimported" | null;
+  created_at: string;
+  resolved_at: string | null;
+  imported_by: string | null;
+  resolved_by: string | null;
+  part_number: string | null;
+  vendor_name: string | null;
+  vendor_id: number | null;
+  product_id: number | null;
+  has_part: boolean;
 }

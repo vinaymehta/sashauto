@@ -14,14 +14,37 @@ import { Field, Input, Select, Textarea } from "../ui/field";
 import { SearchInput } from "../ui/search-input";
 import { Sheet } from "../ui/sheet";
 
-const CURRENCIES: Currency[] = ["INR", "USD", "EUR", "CNY"];
+const CURRENCIES: Currency[] = ["INR", "USD", "EUR", "CNY", "GBP"];
 const dash = <span className="text-neutral-300">—</span>;
 
-export function formatPrice(item: Pick<VendorProduct, "price_amount" | "price_currency" | "price_note">) {
-  if (item.price_amount === null) return item.price_note ?? null;
-  const amount = new Intl.NumberFormat("en-IN", { style: "currency", currency: item.price_currency, maximumFractionDigits: 4 })
-    .format(Number(item.price_amount));
-  return item.price_note ? `${amount} ${item.price_note}` : amount;
+export function formatAmount(amount: string | null, currency: string) {
+  if (amount === null) return null;
+  return new Intl.NumberFormat("en-IN", { style: "currency", currency, maximumFractionDigits: 4 }).format(Number(amount));
+}
+
+type PricedItem = Pick<VendorProduct, "price_amount" | "price_currency" | "price_note"> &
+  Partial<Pick<VendorProduct, "set_price_amount" | "pack_size" | "price_text">>;
+
+// The price as written in the vendor file; otherwise "₹12 / pc · ₹60 / set of 5" for a pack part, "₹12" for a part
+// sold singly, with the note after.
+export function formatPrice(item: PricedItem) {
+  if (item.price_text) return item.price_text;
+  const pack = item.pack_size ?? 1;
+  const pc = formatAmount(item.price_amount, item.price_currency);
+  const set = formatAmount(item.set_price_amount ?? null, item.price_currency);
+  if (!pc && !set) return item.price_note ?? null;
+  const price = pack > 1 ? [pc && `${pc} / pc`, set && `${set} / set of ${pack}`].filter(Boolean).join(" · ") : (pc ?? set)!;
+  return item.price_note ? `${price} ${item.price_note}` : price;
+}
+
+// The MOQ as written in the vendor file; otherwise "200 sets · 2,000 pcs" for a pack part, "150" for a part sold singly.
+export function formatMoq(item: { moq: string | null; moq_sets?: string | null; pack_size?: number; moq_text?: string | null }) {
+  if (item.moq_text) return item.moq_text;
+  const pack = item.pack_size ?? 1;
+  if (pack <= 1) return item.moq === null ? null : formatQty(item.moq);
+  const sets = item.moq_sets ?? (item.moq === null ? null : String(Number(item.moq) / pack));
+  if (sets === null) return null;
+  return `${formatQty(sets)} sets · ${formatQty(item.moq ?? String(Number(sets) * pack))} pcs`;
 }
 
 const iconButton = "inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-neutral-100 hover:text-ink";
@@ -91,9 +114,9 @@ export function VendorProductsPanel({ vendor, canEdit, onClose, onChanged }: {
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="text-2xs font-bold uppercase tracking-wider text-neutral-600">
-                  {["Customer Part", "SASH Part", "Vendor Part", "Description", "MOQ", "Weight (kg)", "Vendor Price", ...(canEdit ? ["Action"] : [])].map((h) => (
+                  {["Part Number", "SASH Part", "Vendor Part", "Description", "Pack", "MOQ", "Weight (kg)", "Vendor Price", ...(canEdit ? ["Action"] : [])].map((h) => (
                     <th key={h} className={`h-9 whitespace-nowrap border-b border-neutral-200 bg-neutral-50 px-4 ${
-                      ["MOQ", "Weight (kg)", "Vendor Price"].includes(h) ? "text-right" : h === "Action" ? "text-center" : "text-left"}`}>{h}</th>
+                      ["Pack", "MOQ", "Weight (kg)", "Vendor Price"].includes(h) ? "text-right" : h === "Action" ? "text-center" : "text-left"}`}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -104,7 +127,8 @@ export function VendorProductsPanel({ vendor, canEdit, onClose, onChanged }: {
                     <td className="whitespace-nowrap border-b border-neutral-100 px-4">{item.sash_part ?? dash}</td>
                     <td className="whitespace-nowrap border-b border-neutral-100 px-4">{item.vendor_part ?? dash}</td>
                     <td className="max-w-72 truncate border-b border-neutral-100 px-4 text-ink-muted" title={item.description ?? undefined}>{item.description ?? dash}</td>
-                    <td className="tabular whitespace-nowrap border-b border-neutral-100 px-4 text-right">{item.moq !== null ? formatQty(item.moq) : dash}</td>
+                    <td className="tabular whitespace-nowrap border-b border-neutral-100 px-4 text-right">{item.pack_size > 1 ? `${item.pack_size} pcs` : dash}</td>
+                    <td className="tabular whitespace-nowrap border-b border-neutral-100 px-4 text-right">{formatMoq(item) ?? dash}</td>
                     <td className="tabular whitespace-nowrap border-b border-neutral-100 px-4 text-right">{item.weight_kg !== null ? formatQty(item.weight_kg) : dash}</td>
                     <td className="tabular whitespace-nowrap border-b border-neutral-100 px-4 text-right font-medium">{formatPrice(item) ?? dash}</td>
                     {canEdit && (
@@ -144,8 +168,9 @@ function VendorProductForm({ vendor, item, onBack, onClose, onSaved }: {
   const notify = useToast();
   const [values, setValues] = useState({
     part_number: item?.part_number ?? "", sash_part: item?.sash_part ?? "", vendor_part: item?.vendor_part ?? "",
-    description: item?.description ?? "", moq: item?.moq ?? "", weight_kg: item?.weight_kg ?? "",
-    price_amount: item?.price_amount ?? "", price_currency: item?.price_currency ?? "INR", price_note: item?.price_note ?? "",
+    description: item?.description ?? "", pack_size: String(item?.pack_size ?? 1), moq_sets: item?.moq_sets ?? "", moq: item?.moq ?? "",
+    weight_kg: item?.weight_kg ?? "", set_price_amount: item?.set_price_amount ?? "", price_amount: item?.price_amount ?? "",
+    price_currency: item?.price_currency ?? "INR", price_note: item?.price_note ?? "",
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -153,10 +178,42 @@ function VendorProductForm({ vendor, item, onBack, onClose, onSaved }: {
   const set = (key: keyof typeof values) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setValues((v) => ({ ...v, [key]: e.target.value }));
 
+  // Sets and pieces stay in step: changing one side (or the pack size) recalculates the other.
+  const round = (n: number, places: number) => String(+n.toFixed(places));
+  const packOf = (v: typeof values) => Math.max(parseInt(v.pack_size, 10) || 1, 1);
+  const linked = (key: "moq_sets" | "moq" | "set_price_amount" | "price_amount") => (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    setValues((v) => {
+      const pack = packOf(v);
+      const n = Number(raw);
+      const ok = raw.trim() !== "" && NUMBER.test(raw.trim());
+      const other = { moq_sets: "moq", moq: "moq_sets", set_price_amount: "price_amount", price_amount: "set_price_amount" }[key] as keyof typeof values;
+      const toPieces = key === "moq_sets" || key === "set_price_amount";
+      const places = key.includes("price") ? 4 : 3;
+      return { ...v, [key]: raw, [other]: ok ? round(toPieces ? (key === "moq_sets" ? n * pack : n / pack) : (key === "moq" ? n / pack : n * pack), places) : raw.trim() === "" ? "" : v[other] };
+    });
+  };
+  const setPack = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value.replace(/\D/g, "");
+    setValues((v) => {
+      const pack = Math.max(parseInt(raw, 10) || 1, 1);
+      const sets = Number(v.moq_sets);
+      const setPrice = Number(v.set_price_amount);
+      return {
+        ...v, pack_size: raw,
+        moq: v.moq_sets.trim() && NUMBER.test(v.moq_sets.trim()) ? round(sets * pack, 3) : v.moq,
+        price_amount: v.set_price_amount.trim() && NUMBER.test(v.set_price_amount.trim()) ? round(setPrice / pack, 4) : v.price_amount,
+      };
+    });
+  };
+
   function validate() {
     const next: Record<string, string> = {};
     if (!item && !values.part_number.trim()) next.part_number = "Enter the Part Number.";
+    if (!/^\d+$/.test(values.pack_size.trim()) || Number(values.pack_size) < 1) next.pack_size = "Enter a whole number of pieces, 1 or more.";
+    if (values.moq_sets.trim() && (!NUMBER.test(values.moq_sets.trim()) || Number(values.moq_sets) <= 0)) next.moq_sets = "Enter a number greater than 0, or leave blank.";
     if (values.moq.trim() && (!NUMBER.test(values.moq.trim()) || Number(values.moq) <= 0)) next.moq = "Enter a number greater than 0, or leave blank.";
+    if (values.set_price_amount.trim() && !NUMBER.test(values.set_price_amount.trim())) next.set_price_amount = "Enter a number, or leave blank.";
     if (values.weight_kg.trim() && !NUMBER.test(values.weight_kg.trim())) next.weight_kg = "Enter a number, or leave blank.";
     if (values.price_amount.trim() && !NUMBER.test(values.price_amount.trim())) next.price_amount = "Enter a number, or leave blank.";
     setErrors(next);
@@ -184,7 +241,7 @@ function VendorProductForm({ vendor, item, onBack, onClose, onSaved }: {
   }
 
   const field = (key: keyof typeof values, label: string, props: React.InputHTMLAttributes<HTMLInputElement> = {}) => (
-    <Field label={label} htmlFor={`vp-${key}`} error={errors[key]} optional={key !== "part_number"} required={key === "part_number"}>
+    <Field label={label} htmlFor={`vp-${key}`} error={errors[key]} optional={key !== "part_number" && key !== "pack_size"} required={key === "part_number" || key === "pack_size"}>
       <Input id={`vp-${key}`} value={values[key]} onChange={set(key)} invalid={!!errors[key]} className="w-full" {...props} />
     </Field>
   );
@@ -208,10 +265,10 @@ function VendorProductForm({ vendor, item, onBack, onClose, onSaved }: {
         <section className="space-y-4 rounded-lg border border-line bg-white px-5 py-4 shadow-card">
           {item ? (
             <div>
-              <p className="text-sm font-medium text-ink">Customer Part</p>
+              <p className="text-sm font-medium text-ink">Part Number</p>
               <p className="mt-1 font-semibold text-ink">{item.part_number}</p>
             </div>
-          ) : field("part_number", "Customer Part (Part Number)", { autoFocus: true, placeholder: "e.g. JXA22628" })}
+          ) : field("part_number", "Part Number", { autoFocus: true, placeholder: "e.g. JXA22628" })}
           <div className="grid grid-cols-2 gap-4">
             {field("sash_part", "SASH Part", { autoFocus: !!item })}
             {field("vendor_part", "Vendor Part")}
@@ -220,13 +277,18 @@ function VendorProductForm({ vendor, item, onBack, onClose, onSaved }: {
             <Textarea id="vp-description" value={values.description} onChange={set("description")} maxLength={1000} className="w-full" />
           </Field>
           <div className="grid grid-cols-2 gap-4">
-            {field("moq", "MOQ", { inputMode: "decimal" })}
+            {field("pack_size", "Pieces per set", { inputMode: "numeric", onChange: setPack })}
             {field("weight_kg", "Per Pc Weight (kg)", { inputMode: "decimal" })}
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            {field("moq_sets", packOf(values) > 1 ? "MOQ (sets)" : "MOQ", { inputMode: "decimal", onChange: linked("moq_sets") })}
+            {packOf(values) > 1 && field("moq", "MOQ (pcs)", { inputMode: "decimal", onChange: linked("moq") })}
           </div>
         </section>
         <section className="space-y-4 rounded-lg border border-line bg-white px-5 py-4 shadow-card">
-          <div className="grid grid-cols-[1fr_7rem] gap-4">
-            {field("price_amount", "Vendor Price", { inputMode: "decimal" })}
+          <div className="grid grid-cols-[1fr_1fr_7rem] gap-4">
+            {field("set_price_amount", packOf(values) > 1 ? `Price per set of ${packOf(values)}` : "Vendor Price", { inputMode: "decimal", onChange: linked("set_price_amount") })}
+            {packOf(values) > 1 ? field("price_amount", "Price per pc", { inputMode: "decimal", onChange: linked("price_amount") }) : <span />}
             <Field label="Currency" htmlFor="vp-currency">
               <Select id="vp-currency" value={values.price_currency} onChange={set("price_currency")} className="w-full">
                 {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}

@@ -36,10 +36,11 @@ module VendorOrders
 
       links = product ? product.vendor_products.includes(:vendor).index_by(&:vendor_id) : {}
       lines = parse(links)
-      total = lines.sum { |l| l[:qty] }
+      # Order Qty counts sets; an allocation in pieces counts as pieces ÷ the vendor's pack size.
+      total = lines.sum { |l| l[:sets] }
       unless total == order_qty
-        raise Invalid.new("The allocated total (#{fmt(total)}) must equal the order Qty (#{fmt(order_qty)}).",
-                          { total: [ "must equal #{fmt(order_qty)}" ] })
+        raise Invalid.new("The allocated total (#{fmt(total)} sets) must equal the order Qty (#{fmt(order_qty)} sets).",
+                          { total: [ "must equal #{fmt(order_qty)} sets" ] })
       end
 
       placement = nil
@@ -51,13 +52,14 @@ module VendorOrders
           order_key: key, **order_reference, product: product,
           po_number: @row.po_number, po_line_number: @row.po_line_number, part_number: @row.part_number,
           order_type: @row.order_type, ship_date: @row.ship_date, due_date: @row.due_date, unit: @row.unit&.strip,
-          order_qty: order_qty, moq: product&.moq, placed_by: @user, placed_at: Time.current
+          order_qty: order_qty, moq: product && (product.moq_sets || product.moq), placed_by: @user, placed_at: Time.current
         )
         lines.each do |line|
           link = links.fetch(line[:vendor_id])
           VendorOrder.create!(vendor_order_placement: placement, vendor: link.vendor, number: VendorOrder.next_number,
-                              qty: line[:qty], unit_price: link.price_amount, price_currency: link.price_currency,
-                              price_note: link.price_note, email_status: "pending")
+                              qty: line[:qty], unit: line[:unit],
+                              unit_price: line[:unit] == "pcs" ? link.price_amount : link.set_price_amount,
+                              price_currency: link.price_currency, price_note: link.price_note, email_status: "pending")
         end
       end
       Result.new(placement: placement, warnings: moq_warnings(placement))
@@ -70,14 +72,24 @@ module VendorOrders
       @row.is_a?(ManualOrder) ? { manual_order: @row } : { order_row: @row, upload_batch_id: @row.upload_batch_id }
     end
 
-    # MOQ warnings for a placement's allocations (never blocking).
+    # MOQ warnings for a placement's allocations (never blocking): each vendor order is checked against that
+    # vendor's MOQ in the unit it was placed in (sets or pieces), else the part's MOQ.
     def self.moq_warnings(placement)
-      moq = placement.moq
-      return [] unless moq
+      links = VendorProduct.where(product_id: placement.product_id).index_by(&:vendor_id)
+      placement.vendor_orders.includes(:vendor).filter_map do |vo|
+        moq = moq_for(links[vo.vendor_id], placement, vo.unit)
+        next unless moq && vo.qty < moq
 
-      placement.vendor_orders.includes(:vendor).select { |vo| vo.qty < moq }.map do |vo|
         { vendor_order_id: vo.id, vendor_id: vo.vendor_id, vendor_name: vo.vendor.name,
-          message: "#{vo.vendor.name}: #{fmt(vo.qty)} is below the MOQ of #{fmt(moq)}." }
+          message: "#{vo.vendor.name}: #{fmt(vo.qty)} #{vo.unit} is below the MOQ of #{fmt(moq)} #{vo.unit}." }
+      end
+    end
+
+    def self.moq_for(link, placement, unit)
+      if unit == "pcs"
+        link&.moq || placement.product&.moq
+      else
+        link&.moq_sets || placement.moq
       end
     end
 
@@ -98,6 +110,8 @@ module VendorOrders
         a = a.to_h.symbolize_keys
         vendor_id = Integer(a[:vendor_id], exception: false)
         qty = a[:qty].to_s.strip
+        unit = a[:unit].to_s.presence || "sets"
+        raise Invalid.new("Allocation #{i + 1}: the unit must be sets or pcs.", { unit: [ "is invalid" ] }) unless %w[sets pcs].include?(unit)
         raise Invalid.new("Allocation #{i + 1}: choose a vendor linked to this part.", { vendor_id: [ "is not linked to this part" ] }) unless vendor_id && links[vendor_id]
         raise Invalid, "#{links[vendor_id].vendor.name} is selected more than once." if seen[vendor_id]
         unless qty.match?(/\A\d+(\.\d{1,3})?\z/) && qty.to_d.positive?
@@ -105,7 +119,8 @@ module VendorOrders
         end
 
         seen[vendor_id] = true
-        { vendor_id: vendor_id, qty: qty.to_d }
+        pack = [ links[vendor_id].pack_size.to_i, 1 ].max
+        { vendor_id: vendor_id, qty: qty.to_d, unit: unit, sets: unit == "pcs" ? (qty.to_d / pack).round(3) : qty.to_d }
       end
     end
   end

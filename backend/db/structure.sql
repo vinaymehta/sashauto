@@ -72,7 +72,7 @@ BEGIN
   IF TG_OP = 'DELETE' OR NEW.id IS DISTINCT FROM OLD.id
      OR NEW.vendor_order_placement_id IS DISTINCT FROM OLD.vendor_order_placement_id
      OR NEW.vendor_id IS DISTINCT FROM OLD.vendor_id OR NEW.number IS DISTINCT FROM OLD.number
-     OR NEW.qty IS DISTINCT FROM OLD.qty OR NEW.unit_price IS DISTINCT FROM OLD.unit_price
+     OR NEW.qty IS DISTINCT FROM OLD.qty OR NEW.unit IS DISTINCT FROM OLD.unit OR NEW.unit_price IS DISTINCT FROM OLD.unit_price
      OR NEW.price_currency IS DISTINCT FROM OLD.price_currency OR NEW.price_note IS DISTINCT FROM OLD.price_note
      OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
     RAISE EXCEPTION 'placed vendor orders are locked: % of the allocation is not allowed', TG_OP;
@@ -353,6 +353,51 @@ CREATE SEQUENCE public.audit_logs_id_seq
 --
 
 ALTER SEQUENCE public.audit_logs_id_seq OWNED BY public.audit_logs.id;
+
+
+--
+-- Name: import_issues; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.import_issues (
+    id bigint NOT NULL,
+    filename character varying NOT NULL,
+    excel_row integer NOT NULL,
+    kind character varying NOT NULL,
+    field character varying,
+    message character varying NOT NULL,
+    row_data jsonb DEFAULT '{}'::jsonb NOT NULL,
+    product_id bigint,
+    vendor_product_id bigint,
+    status character varying DEFAULT 'open'::character varying NOT NULL,
+    resolution character varying,
+    imported_by_id bigint,
+    resolved_by_id bigint,
+    resolved_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT import_issues_kind_valid CHECK (((kind)::text = ANY ((ARRAY['skipped'::character varying, 'unreadable'::character varying])::text[]))),
+    CONSTRAINT import_issues_status_valid CHECK (((status)::text = ANY ((ARRAY['open'::character varying, 'resolved'::character varying, 'dismissed'::character varying])::text[])))
+);
+
+
+--
+-- Name: import_issues_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.import_issues_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: import_issues_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.import_issues_id_seq OWNED BY public.import_issues.id;
 
 
 --
@@ -686,7 +731,12 @@ CREATE TABLE public.products (
     vendor_part character varying,
     description text,
     weight_kg numeric(12,4),
+    pack_size integer DEFAULT 1 NOT NULL,
+    moq_sets numeric(15,3),
+    moq_text character varying(200),
     CONSTRAINT products_moq_positive CHECK (((moq IS NULL) OR (moq > (0)::numeric))),
+    CONSTRAINT products_moq_sets_positive CHECK (((moq_sets IS NULL) OR (moq_sets > (0)::numeric))),
+    CONSTRAINT products_pack_size_positive CHECK ((pack_size >= 1)),
     CONSTRAINT products_source_valid CHECK (((source)::text = ANY (ARRAY[('upload'::character varying)::text, ('manual'::character varying)::text]))),
     CONSTRAINT products_weight_valid CHECK (((weight_kg IS NULL) OR (weight_kg >= (0)::numeric)))
 );
@@ -953,8 +1003,10 @@ CREATE TABLE public.vendor_orders (
     email_provider_message_id character varying,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
+    unit character varying DEFAULT 'sets'::character varying NOT NULL,
     CONSTRAINT vendor_orders_email_status_valid CHECK (((email_status)::text = ANY ((ARRAY['pending'::character varying, 'sent'::character varying, 'failed'::character varying, 'no_email'::character varying])::text[]))),
-    CONSTRAINT vendor_orders_qty_positive CHECK ((qty > (0)::numeric))
+    CONSTRAINT vendor_orders_qty_positive CHECK ((qty > (0)::numeric)),
+    CONSTRAINT vendor_orders_unit_valid CHECK (((unit)::text = ANY ((ARRAY['sets'::character varying, 'pcs'::character varying])::text[])))
 );
 
 
@@ -995,9 +1047,17 @@ CREATE TABLE public.vendor_products (
     price_note character varying,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT vendor_products_currency_valid CHECK (((price_currency)::text = ANY ((ARRAY['INR'::character varying, 'USD'::character varying, 'EUR'::character varying, 'CNY'::character varying])::text[]))),
+    pack_size integer DEFAULT 1 NOT NULL,
+    moq_sets numeric(15,3),
+    set_price_amount numeric(15,4),
+    moq_text character varying(200),
+    price_text character varying(200),
+    CONSTRAINT vendor_products_currency_valid CHECK (((price_currency)::text = ANY ((ARRAY['INR'::character varying, 'USD'::character varying, 'EUR'::character varying, 'CNY'::character varying, 'GBP'::character varying])::text[]))),
     CONSTRAINT vendor_products_moq_positive CHECK (((moq IS NULL) OR (moq > (0)::numeric))),
+    CONSTRAINT vendor_products_moq_sets_positive CHECK (((moq_sets IS NULL) OR (moq_sets > (0)::numeric))),
+    CONSTRAINT vendor_products_pack_size_positive CHECK ((pack_size >= 1)),
     CONSTRAINT vendor_products_price_valid CHECK (((price_amount IS NULL) OR (price_amount >= (0)::numeric))),
+    CONSTRAINT vendor_products_set_price_valid CHECK (((set_price_amount IS NULL) OR (set_price_amount >= (0)::numeric))),
     CONSTRAINT vendor_products_weight_valid CHECK (((weight_kg IS NULL) OR (weight_kg >= (0)::numeric)))
 );
 
@@ -1100,6 +1160,13 @@ ALTER TABLE ONLY public.ageing_notifications ALTER COLUMN id SET DEFAULT nextval
 --
 
 ALTER TABLE ONLY public.audit_logs ALTER COLUMN id SET DEFAULT nextval('public.audit_logs_id_seq'::regclass);
+
+
+--
+-- Name: import_issues id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_issues ALTER COLUMN id SET DEFAULT nextval('public.import_issues_id_seq'::regclass);
 
 
 --
@@ -1262,6 +1329,14 @@ ALTER TABLE ONLY public.ar_internal_metadata
 
 ALTER TABLE ONLY public.audit_logs
     ADD CONSTRAINT audit_logs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: import_issues import_issues_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_issues
+    ADD CONSTRAINT import_issues_pkey PRIMARY KEY (id);
 
 
 --
@@ -1515,6 +1590,41 @@ CREATE INDEX index_audit_logs_on_subject_type_and_subject_id ON public.audit_log
 --
 
 CREATE INDEX index_audit_logs_on_user_id ON public.audit_logs USING btree (user_id);
+
+
+--
+-- Name: index_import_issues_on_imported_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_import_issues_on_imported_by_id ON public.import_issues USING btree (imported_by_id);
+
+
+--
+-- Name: index_import_issues_on_product_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_import_issues_on_product_id ON public.import_issues USING btree (product_id);
+
+
+--
+-- Name: index_import_issues_on_resolved_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_import_issues_on_resolved_by_id ON public.import_issues USING btree (resolved_by_id);
+
+
+--
+-- Name: index_import_issues_on_status_and_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_import_issues_on_status_and_created_at ON public.import_issues USING btree (status, created_at);
+
+
+--
+-- Name: index_import_issues_on_vendor_product_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_import_issues_on_vendor_product_id ON public.import_issues USING btree (vendor_product_id);
 
 
 --
@@ -2139,6 +2249,22 @@ ALTER TABLE ONLY public.moq_alerts
 
 
 --
+-- Name: import_issues fk_rails_63570e8d7d; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_issues
+    ADD CONSTRAINT fk_rails_63570e8d7d FOREIGN KEY (imported_by_id) REFERENCES public.users(id);
+
+
+--
+-- Name: import_issues fk_rails_66b84faf19; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_issues
+    ADD CONSTRAINT fk_rails_66b84faf19 FOREIGN KEY (resolved_by_id) REFERENCES public.users(id);
+
+
+--
 -- Name: quantity_changes fk_rails_6db61947e6; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2176,6 +2302,14 @@ ALTER TABLE ONLY public.quantity_changes
 
 ALTER TABLE ONLY public.active_storage_variant_records
     ADD CONSTRAINT fk_rails_993965df05 FOREIGN KEY (blob_id) REFERENCES public.active_storage_blobs(id);
+
+
+--
+-- Name: import_issues fk_rails_a0cf0ea4e7; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_issues
+    ADD CONSTRAINT fk_rails_a0cf0ea4e7 FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE SET NULL;
 
 
 --
@@ -2283,6 +2417,14 @@ ALTER TABLE ONLY public.moq_alerts
 
 
 --
+-- Name: import_issues fk_rails_d3bb7326ca; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_issues
+    ADD CONSTRAINT fk_rails_d3bb7326ca FOREIGN KEY (vendor_product_id) REFERENCES public.vendor_products(id) ON DELETE SET NULL;
+
+
+--
 -- Name: quantity_changes fk_rails_dba99be903; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2361,6 +2503,10 @@ ALTER TABLE ONLY public.address_changes
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261012090001'),
+('20261009160001'),
+('20261009120001'),
+('20261009090001'),
 ('20261007090001'),
 ('20261006090001'),
 ('20261005140001'),

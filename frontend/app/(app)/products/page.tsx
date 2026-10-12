@@ -6,8 +6,10 @@ import { api, ApiError } from "@/lib/api";
 import type { Paginated, Product, ProductConflict, ProductVendor, VendorImportResult } from "@/lib/types";
 import { formatCount, formatDateTime, formatQty } from "@/lib/format";
 import { PencilIcon, TruckIcon } from "@/components/icons";
-import { formatPrice } from "@/components/vendors/vendor-products-panel";
-import { DtpImportButton, DtpImportSkipped } from "@/components/vendors/dtp-import";
+import { formatMoq, formatPrice } from "@/components/vendors/vendor-products-panel";
+import { DtpImportButton } from "@/components/vendors/dtp-import";
+import { ImportIssuesPanel, useOpenImportIssues } from "@/components/vendors/import-issues";
+import { Tabs } from "@/components/ui/tabs";
 import { useSession } from "@/components/session";
 import { useToast } from "@/components/toast";
 import { Field, Input } from "@/components/ui/field";
@@ -52,17 +54,28 @@ function ProductsView() {
   const clearAll = () => { list.clearFilters(); setSearch(""); };
   const sortProps = { sort: list.sort, direction: list.direction, onSort: list.toggleSort };
   const [viewing, setViewing] = useState<Product | null>(null);
-  const [importResult, setImportResult] = useState<VendorImportResult | null>(null);
+  // The list, or the Import issues tab (problems from vendor file imports).
+  const [view, setView] = useState<"list" | "issues">("list");
+  const issues = useOpenImportIssues();
+  const onImported = (r: VendorImportResult) => { reload(); issues.reload(); if (r.issues) setView("issues"); };
 
   return (
     <>
       <PageHeader
         title="Products"
-        actions={isAdmin && <DtpImportButton label="Upload file" onImported={(r) => { setImportResult(r); reload(); }} />}
+        actions={isAdmin && <DtpImportButton label="Upload file" onImported={onImported} />}
       />
-      <DtpImportSkipped result={importResult} />
+      <div className="flex items-center border-b border-line">
+        <Tabs active={view} onChange={setView} tabs={[
+          { key: "list" as const, label: "Products", count: data?.meta.total ?? null },
+          { key: "issues" as const, label: "Import issues", count: issues.count },
+        ]} />
+      </div>
 
-      <Panel flush>
+      {view === "issues" ? (
+        <div className="mt-4"><ImportIssuesPanel canEdit={isAdmin} onChanged={() => { reload(); issues.reload(); }} /></div>
+      ) : (
+      <div className="mt-4"><Panel flush>
         <ListToolbar summary={data ? `${formatCount(data.meta.total)} product${data.meta.total === 1 ? "" : "s"}` : ""}>
           <SearchInput label="Search products" placeholder="Search part, SASH, vendor part or description" value={search}
                        onSearch={(v) => { setSearch(v); list.resetPage(); }} className="w-full sm:w-72" />
@@ -93,7 +106,7 @@ function ProductsView() {
               </colgroup>
               <thead>
                 <tr>
-                  <SortTh label="Customer Part" sortKey="part_number" {...sortProps} />
+                  <SortTh label="Part Number" sortKey="part_number" {...sortProps} />
                   <SortTh label="SASH Part" sortKey="sash_part" {...sortProps} />
                   <SortTh label="Vendor Part" sortKey="vendor_part" {...sortProps} />
                   <SortTh label="Description" sortKey="description" {...sortProps} />
@@ -112,7 +125,8 @@ function ProductsView() {
             <Pagination meta={data.meta} onPage={list.setPage} onPerPage={list.setPerPage} noun="products" />
           </div>
         ) : null}
-      </Panel>
+      </Panel></div>
+      )}
       {viewing && <ProductVendorsPanel key={viewing.id} product={viewing} onClose={() => setViewing(null)} />}
     </>
   );
@@ -149,7 +163,7 @@ function ProductRow({ product, canEdit, onSaved, active, onOpen }: {
       <Td className="truncate" title={product.sash_part ?? undefined}>{product.sash_part ?? dash}</Td>
       <Td className="truncate" title={product.vendor_part ?? undefined}>{product.vendor_part ?? dash}</Td>
       <Td className="truncate text-ink-muted" title={product.description ?? undefined}>{product.description ?? dash}</Td>
-      <Td align="right" className="tabular">{product.moq !== null ? formatQty(product.moq) : dash}</Td>
+      <Td align="right" className="tabular">{formatMoq(product) ?? dash}</Td>
       <Td align="right" className="tabular">{product.weight_kg !== null ? formatQty(product.weight_kg) : dash}</Td>
       {canEdit && (
         <Td align="center" onClick={(e) => e.stopPropagation()}>
@@ -206,12 +220,16 @@ function ProductVendorsPanel({ product, onClose }: { product: Product; onClose: 
   );
 }
 
-// Side panel for editing a product's MOQ (the only editable field). Blank clears it.
+// Side panel for editing a product's MOQ and pieces per set. Order Qty counts sets, so the MOQ is entered in sets
+// (pieces derived). Blank clears the MOQ.
 function MoqPanel({ product, onClose, onSaved }: { product: Product; onClose: () => void; onSaved: () => void }) {
   const notify = useToast();
-  const [value, setValue] = useState(product.moq ?? "");
+  const [pack, setPack] = useState(String(product.pack_size ?? 1));
+  const [value, setValue] = useState(product.moq_sets ?? product.moq ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const packSize = Math.max(parseInt(pack, 10) || 1, 1);
+  const moqPcs = MOQ_FORMAT.test(value.trim()) ? String(Number(value) * packSize) : null;
 
   async function save(e?: React.FormEvent) {
     e?.preventDefault();
@@ -223,8 +241,8 @@ function MoqPanel({ product, onClose, onSaved }: { product: Product; onClose: ()
     setSaving(true);
     setError(null);
     try {
-      await api.patch(`/api/products/${product.id}`, { moq: moq || null });
-      notify(moq ? `MOQ for ${product.part_number} set to ${formatQty(moq)}.` : `MOQ for ${product.part_number} cleared.`);
+      await api.patch(`/api/products/${product.id}`, { pack_size: packSize, moq_sets: moq || null });
+      notify(moq ? `MOQ for ${product.part_number} set to ${formatMoq({ moq: moqPcs, moq_sets: moq, pack_size: packSize })}.` : `MOQ for ${product.part_number} cleared.`);
       onSaved();
       onClose();
     } catch (err) {
@@ -238,7 +256,7 @@ function MoqPanel({ product, onClose, onSaved }: { product: Product; onClose: ()
       open
       onClose={onClose}
       title="Edit MOQ"
-      description="Order rows with a Qty below the MOQ are emailed as MOQ alerts on the next upload."
+      description="Order rows with a Qty (in sets) below the MOQ are emailed as MOQ alerts on the next upload."
       icon={<PencilIcon size={18} />}
       footer={
         <>
@@ -259,11 +277,18 @@ function MoqPanel({ product, onClose, onSaved }: { product: Product; onClose: ()
           </div>
         </dl>
         <form onSubmit={save} className="rounded-lg border border-line bg-white px-5 py-4 shadow-card">
-          <Field label="MOQ" htmlFor="product-moq" hint="Minimum order quantity. Leave blank for no MOQ." error={error} optional>
-            <Input id="product-moq" autoFocus inputMode="decimal" value={value} invalid={!!error} placeholder="No MOQ"
-                   aria-describedby={error ? "product-moq-error" : undefined}
-                   onChange={(e) => setValue(e.target.value)} className="w-full" />
-          </Field>
+          <div className="space-y-4">
+            <Field label="Pieces per set" htmlFor="product-pack" hint="1 when the part is sold as single pieces." required>
+              <Input id="product-pack" inputMode="numeric" value={pack} className="w-full"
+                     onChange={(e) => setPack(e.target.value.replace(/\D/g, "").slice(0, 5))} />
+            </Field>
+            <Field label={packSize > 1 ? "MOQ (sets)" : "MOQ"} htmlFor="product-moq" error={error} optional
+                   hint={packSize > 1 && moqPcs ? `= ${formatQty(moqPcs)} pcs. Leave blank for no MOQ.` : "Minimum order quantity. Leave blank for no MOQ."}>
+              <Input id="product-moq" autoFocus inputMode="decimal" value={value} invalid={!!error} placeholder="No MOQ"
+                     aria-describedby={error ? "product-moq-error" : undefined}
+                     onChange={(e) => setValue(e.target.value)} className="w-full" />
+            </Field>
+          </div>
         </form>
       </div>
     </Sheet>

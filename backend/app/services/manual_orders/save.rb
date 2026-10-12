@@ -143,12 +143,17 @@ module ManualOrders
       MoqAlert.create!(
         manual_order: @order, product: product, group_key: @order.group_key, po_number: @order.po_number,
         part_number: @order.part_number, order_type: @order.order_type, ship_date: @order.ship_date,
-        qty: @order.qty, moq: product.moq, new_alert: !was_below
+        qty: @order.qty, moq: set_moq, new_alert: !was_below
       )
     end
 
     def below_moq?(qty)
-      !qty.nil? && !product&.moq.nil? && qty < product.moq
+      !qty.nil? && !set_moq.nil? && qty < set_moq
+    end
+
+    # Order Qty counts sets, so it is compared with the MOQ in sets (the piece MOQ for parts sold singly).
+    def set_moq
+      product && (product.moq_sets || product.moq)
     end
 
     def product
@@ -167,7 +172,7 @@ module ManualOrders
       end
       if below_moq?(@order.qty)
         warnings << { code: "below_moq",
-                      message: "Qty #{Serializers.qty(@order.qty)} is below the MOQ of #{Serializers.qty(product.moq)} " \
+                      message: "Qty #{Serializers.qty(@order.qty)} is below the MOQ of #{Serializers.qty(set_moq)}#{product.pack_size > 1 ? " sets" : ""} " \
                                "for Part Number #{@order.part_number}." }
       end
       warnings
