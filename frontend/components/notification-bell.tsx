@@ -51,13 +51,15 @@ export function NotificationBell() {
     };
   }, [load]);
 
-  async function toggle() {
-    const next = !open;
-    setOpen(next);
-    if (next && feed && feed.unread_count > 0) {
-      setFeed({ ...feed, unread_count: 0 });
-      api.post("/api/activity/read").catch(() => undefined);
-    }
+  function toggle() {
+    setOpen(!open);
+  }
+
+  // Notifications stay unread until "Mark as read" is clicked.
+  function markRead() {
+    if (!feed || feed.unread_count === 0) return;
+    setFeed({ ...feed, unread_count: 0 });
+    api.post("/api/activity/read").catch(() => undefined);
   }
 
   const unread = feed?.unread_count ?? 0;
@@ -82,7 +84,10 @@ export function NotificationBell() {
         <div className="absolute right-0 top-11 z-40 w-[min(24rem,calc(100vw-2rem))] origin-top-right animate-pop-in overflow-hidden rounded-lg border border-line bg-surface shadow-pop">
           <div className="flex items-center justify-between border-b border-line px-4 py-3">
             <p className="text-base font-semibold text-ink">Notifications</p>
-            <button onClick={load} className="text-xs text-ink-muted hover:text-ink">Refresh</button>
+            <button onClick={markRead} disabled={unread === 0}
+                    className="text-xs text-ink-muted hover:text-ink disabled:cursor-default disabled:text-ink-faint">
+              Mark as read
+            </button>
           </div>
           <div className="max-h-[26rem] overflow-y-auto">
             {!feed && !failed ? (

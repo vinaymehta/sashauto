@@ -72,7 +72,7 @@ BEGIN
   IF TG_OP = 'DELETE' OR NEW.id IS DISTINCT FROM OLD.id
      OR NEW.vendor_order_placement_id IS DISTINCT FROM OLD.vendor_order_placement_id
      OR NEW.vendor_id IS DISTINCT FROM OLD.vendor_id OR NEW.number IS DISTINCT FROM OLD.number
-     OR NEW.qty IS DISTINCT FROM OLD.qty OR NEW.unit IS DISTINCT FROM OLD.unit OR NEW.unit_price IS DISTINCT FROM OLD.unit_price
+     OR NEW.qty IS DISTINCT FROM OLD.qty OR NEW.unit IS DISTINCT FROM OLD.unit OR NEW.ship_date IS DISTINCT FROM OLD.ship_date OR NEW.unit_price IS DISTINCT FROM OLD.unit_price
      OR NEW.price_currency IS DISTINCT FROM OLD.price_currency OR NEW.price_note IS DISTINCT FROM OLD.price_note
      OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
     RAISE EXCEPTION 'placed vendor orders are locked: % of the allocation is not allowed', TG_OP;
@@ -1006,6 +1006,7 @@ CREATE TABLE public.vendor_orders (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     unit character varying DEFAULT 'sets'::character varying NOT NULL,
+    ship_date date,
     CONSTRAINT vendor_orders_email_status_valid CHECK (((email_status)::text = ANY ((ARRAY['pending'::character varying, 'sent'::character varying, 'failed'::character varying, 'no_email'::character varying])::text[]))),
     CONSTRAINT vendor_orders_qty_positive CHECK ((qty > (0)::numeric)),
     CONSTRAINT vendor_orders_unit_valid CHECK (((unit)::text = ANY ((ARRAY['sets'::character varying, 'pcs'::character varying])::text[])))
@@ -2505,6 +2506,7 @@ ALTER TABLE ONLY public.address_changes
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261013090001'),
 ('20261012150001'),
 ('20261012120001'),
 ('20261012090001'),

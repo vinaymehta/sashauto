@@ -3,15 +3,16 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { OrderUnit, ProductVendor, VendorEmailStatus, VendorOrderState } from "@/lib/types";
-import { formatDateTime, formatQty } from "@/lib/format";
-import { AlertIcon } from "../icons";
+import { formatDate, formatDateTime, formatQty } from "@/lib/format";
+import { AlertIcon, TruckIcon } from "../icons";
 import { useSession } from "../session";
 import { useApi } from "../use-api";
 import { useToast } from "../toast";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
-import { ConfirmDialog } from "../ui/confirm-dialog";
 import { Alert, Spinner } from "../ui/feedback";
+import { Input } from "../ui/field";
+import { Sheet } from "../ui/sheet";
 import { formatAmount, formatPrice } from "../vendors/vendor-products-panel";
 
 const QTY = /^\d+(\.\d{1,3})?$/;
@@ -23,7 +24,8 @@ const fromMilli = (value: number) => formatQty(String(value / 1000));
 // splits the order Qty among them (the total must equal the Qty; below-MOQ allocations are only warned about).
 // After placement the Vendor Orders (VPO-…) are shown, locked, with each vendor's email status.
 // `manual`: the order is a manual order (same flow; its id is a manual order id).
-export function VendorOrderSection({ orderId, manual = false }: { orderId: number; manual?: boolean }) {
+// `onPlaced`: called after the order is placed (e.g. to show the "Order placed" tag in the Orders list).
+export function VendorOrderSection({ orderId, manual = false, onPlaced }: { orderId: number; manual?: boolean; onPlaced?: () => void }) {
   const path = `/api/orders/${orderId}/vendor_order${manual ? "?manual=1" : ""}`;
   const { data, error, loading, reload } = useApi<{ data: VendorOrderState }>(path);
   const state = data?.data;
@@ -54,7 +56,7 @@ export function VendorOrderSection({ orderId, manual = false }: { orderId: numbe
       ) : !state ? null : state.placement ? (
         <PlacedOrders state={state} onChanged={reload} />
       ) : state.can_place ? (
-        <AllocationForm state={state} path={path} onPlaced={reload} />
+        <AllocationForm state={state} path={path} onPlaced={() => { reload(); onPlaced?.(); }} />
       ) : (
         <p className="px-5 py-6 text-sm text-ink-muted">
           {state.order.qty === null || Number(state.order.qty) <= 0
@@ -66,7 +68,8 @@ export function VendorOrderSection({ orderId, manual = false }: { orderId: numbe
   );
 }
 
-type Allocation = { qty: string; unit: OrderUnit };
+// ship_date: YYYY-MM-DD for this vendor's order; starts as the order's Ship Date and can be changed.
+type Allocation = { qty: string; unit: OrderUnit; ship_date: string };
 
 // One vendor line: its price and MOQ in the unit the allocation is entered in.
 function unitInfo(v: ProductVendor, unit: OrderUnit, fallbackMoq: { sets: string | null; pcs: string | null }) {
@@ -83,6 +86,18 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Escape closes only the place-order panel, not the order details panel underneath.
+  useEffect(() => {
+    if (!confirming) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      if (!busy) setConfirming(false);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [confirming, busy]);
+
   if (state.vendors.length === 0) {
     return <p className="px-5 py-6 text-sm text-ink-muted">No vendor is linked to this part. Link one on the Vendors page to place this order.</p>;
   }
@@ -91,6 +106,7 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
   const orderQty = milli(state.order.qty ?? "0"); // in sets
   const selected = state.vendors.filter((v) => alloc[v.vendor_id] !== undefined);
   const valid = (a: Allocation) => QTY.test(a.qty.trim()) && milli(a.qty) > 0;
+  const datesSet = selected.every((v) => alloc[v.vendor_id]!.ship_date !== "");
   const invalid = selected.filter((v) => !valid(alloc[v.vendor_id]!));
   // Order Qty counts sets: an allocation in pieces counts as pieces ÷ that vendor's pack size.
   const inSets = (v: ProductVendor, a: Allocation) => (a.unit === "pcs" ? Math.round(milli(a.qty) / Math.max(v.pack_size ?? 1, 1)) : milli(a.qty));
@@ -108,7 +124,7 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
     setAlloc((current) => {
       const next = { ...current };
       if (next[vendorId] !== undefined) delete next[vendorId];
-      else next[vendorId] = { qty: remaining > 0 ? String(remaining / 1000) : "", unit: "sets" };
+      else next[vendorId] = { qty: remaining > 0 ? String(remaining / 1000) : "", unit: "sets", ship_date: state.order.ship_date };
       return next;
     });
   }
@@ -121,16 +137,19 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
       const pack = Math.max(v.pack_size ?? 1, 1);
       const n = Number(a.qty);
       const qty = QTY.test(a.qty.trim()) ? String(unit === "pcs" ? +(n * pack).toFixed(3) : +(n / pack).toFixed(3)) : a.qty;
-      return { ...current, [v.vendor_id]: { qty, unit } };
+      return { ...current, [v.vendor_id]: { ...a, qty, unit } };
     });
   }
 
   async function place() {
+    if (!datesSet) return;
     setBusy(true);
     setError(null);
     try {
       const res = await api.post<{ warnings: { message: string }[] }>(path, {
-        allocations: selected.map((v) => ({ vendor_id: v.vendor_id, qty: alloc[v.vendor_id]!.qty.trim(), unit: alloc[v.vendor_id]!.unit })),
+        allocations: selected.map((v) => ({
+          vendor_id: v.vendor_id, qty: alloc[v.vendor_id]!.qty.trim(), unit: alloc[v.vendor_id]!.unit, ship_date: alloc[v.vendor_id]!.ship_date,
+        })),
       });
       notify(`${selected.length} vendor order${selected.length === 1 ? "" : "s"} placed. Emails are being sent to the vendors.`);
       if (res.warnings.length) notify(`Placed below MOQ: ${res.warnings.map((w) => w.message).join(" ")}`, "error");
@@ -146,8 +165,7 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
   const describe = (v: ProductVendor) => {
     const a = alloc[v.vendor_id]!;
     const { pack } = unitInfo(v, a.unit, fallbackMoq);
-    if (a.unit === "pcs") return `${formatQty(a.qty)} pcs`;
-    return pack > 1 ? `${formatQty(a.qty)} sets (${formatQty(String(Number(a.qty) * pack))} pcs)` : formatQty(a.qty);
+    return a.unit === "pcs" ? `${formatQty(a.qty)} pcs` : pack > 1 ? `${formatQty(a.qty)} sets (${formatQty(String(Number(a.qty) * pack))} pcs)` : formatQty(a.qty);
   };
 
   return (
@@ -222,15 +240,53 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
       </div>
 
       {confirming && (
-        <ConfirmDialog title={`Place ${selected.length} vendor order${selected.length === 1 ? "" : "s"}?`} tone="primary"
-                       confirmLabel="Place orders" busyLabel="Placing…" busy={busy} error={error}
-                       onConfirm={place} onCancel={() => setConfirming(false)}>
-          <ul className="mt-1 space-y-0.5">
-            {selected.map((v) => <li key={v.vendor_id}>{v.vendor_name}: <span className="tabular font-semibold text-ink">{describe(v)}</span></li>)}
-          </ul>
-          <p className="mt-2">Each vendor is emailed its own order. After placing, the allocation is locked.</p>
-          {belowMoq.length > 0 && <p className="mt-2 font-medium text-age-yellow-ink">{belowMoq.length} allocation{belowMoq.length === 1 ? " is" : "s are"} below the MOQ.</p>}
-        </ConfirmDialog>
+        <Sheet
+          open
+          onClose={() => { if (!busy) setConfirming(false); }}
+          title={`Place ${selected.length} vendor order${selected.length === 1 ? "" : "s"}`}
+          description={<>PO <span className="font-medium text-ink">{state.order.po_number}</span> · {state.order.part_number} · Qty {formatQty(state.order.qty ?? "0")}</>}
+          icon={<TruckIcon size={18} />}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setConfirming(false)} disabled={busy}>Cancel</Button>
+              <Button variant="primary" onClick={place} disabled={busy || !datesSet}>{busy ? "Placing…" : "Place orders"}</Button>
+            </>
+          }
+        >
+          <div className="space-y-4">
+            {error && <Alert>{error}</Alert>}
+            <ul className="divide-y divide-neutral-100 overflow-hidden rounded-lg border border-line bg-white shadow-card">
+              {selected.map((v) => {
+                const a = alloc[v.vendor_id]!;
+                return (
+                  <li key={v.vendor_id} className="grid grid-cols-[1fr_auto] items-center gap-4 px-5 py-4">
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium text-ink">{v.vendor_name}</span>
+                      <span className="tabular block text-sm text-ink-muted">{describe(v)}</span>
+                    </span>
+                    <label className="text-sm">
+                      <span className="mb-1 block text-xs font-medium text-ink-muted">Ship date</span>
+                      <Input type="date" value={a.ship_date} invalid={!a.ship_date} aria-label={`Ship date for ${v.vendor_name}`}
+                             onChange={(e) => setAlloc((current) => ({ ...current, [v.vendor_id]: { ...current[v.vendor_id]!, ship_date: e.target.value } }))} />
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+            <p className="text-sm text-ink-muted">
+              Order ship date: <span className="font-medium text-ink">{formatDate(state.order.ship_date)}</span>. Change a vendor&apos;s date to ask
+              for a different shipment date; the vendor&apos;s email shows its date.
+            </p>
+            {!datesSet && <p className="text-sm text-dec">Choose a ship date for each vendor.</p>}
+            {belowMoq.length > 0 && (
+              <p className="flex items-start gap-2 rounded-md bg-age-yellow px-3 py-2 text-sm text-age-yellow-ink">
+                <AlertIcon size={14} className="mt-0.5 shrink-0" />
+                {belowMoq.length} allocation{belowMoq.length === 1 ? " is" : "s are"} below the MOQ. You can still place the order.
+              </p>
+            )}
+            <p className="text-sm text-ink-muted">Each vendor is emailed its own order. After placing, the allocation and dates are locked.</p>
+          </div>
+        </Sheet>
       )}
     </div>
   );
@@ -271,7 +327,9 @@ function PlacedOrders({ state, onChanged }: { state: VendorOrderState; onChanged
             <li key={vo.id} className="grid grid-cols-[1fr_auto] items-center gap-3 px-5 py-3 text-sm">
               <span className="min-w-0">
                 <span className="block font-semibold text-ink">{vo.number}</span>
-                <span className="block truncate text-xs text-ink-muted">{vo.vendor_name}{vo.email_recipient ? ` · ${vo.email_recipient}` : ""}</span>
+                <span className="block truncate text-xs text-ink-muted">
+                  {vo.vendor_name}{vo.ship_date ? ` · ship ${formatDate(vo.ship_date)}` : ""}{vo.email_recipient ? ` · ${vo.email_recipient}` : ""}
+                </span>
               </span>
               <span className="flex items-center gap-3">
                 <span className="tabular font-semibold text-ink">{formatQty(vo.qty)} {vo.unit === "pcs" || state.pack_size <= 1 ? "pcs" : "sets"}</span>

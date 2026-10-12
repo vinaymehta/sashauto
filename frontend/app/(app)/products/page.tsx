@@ -146,6 +146,7 @@ function ProductRow({ product, canEdit, onSaved, active, onOpen }: {
 }) {
   const conflicts = product.open_conflicts;
   const [editing, setEditing] = useState(false);
+  const [resolving, setResolving] = useState(false);
 
   return (
     <tr onClick={onOpen} aria-haspopup="dialog" aria-expanded={active}
@@ -154,8 +155,14 @@ function ProductRow({ product, canEdit, onSaved, active, onOpen }: {
         <span className="inline-flex max-w-full items-center gap-2">
           {product.part_number}
           {conflicts.length > 0 && (
-            <span title={conflicts.map(conflictNote).join("\n")}>
-              <Badge tone="warn">{conflicts.length} conflict{conflicts.length === 1 ? "" : "s"}</Badge>
+            <button type="button" title={`${conflicts.map(conflictNote).join("\n")}\nClick to review.`} aria-haspopup="dialog"
+                    onClick={(e) => { e.stopPropagation(); setResolving(true); }}>
+              <Badge tone="warn">{conflicts.length} conflict{conflicts.length === 1 ? "" : "s"} · Review</Badge>
+            </button>
+          )}
+          {resolving && (
+            <span onClick={(e) => e.stopPropagation()}>
+              <ConflictsPanel product={product} onClose={() => setResolving(false)} onSaved={onSaved} />
             </span>
           )}
         </span>
@@ -290,6 +297,68 @@ function MoqPanel({ product, onClose, onSaved }: { product: Product; onClose: ()
             </Field>
           </div>
         </form>
+      </div>
+    </Sheet>
+  );
+}
+
+// Side panel for a product's open Commodity Type conflicts: an upload had a different Commodity Type than the
+// product. Each is resolved by keeping the recorded value or using the uploaded one.
+function ConflictsPanel({ product, onClose, onSaved }: { product: Product; onClose: () => void; onSaved: () => void }) {
+  const notify = useToast();
+  const [conflicts, setConflicts] = useState(product.open_conflicts);
+  const [current, setCurrent] = useState(product.commodity_type);
+  const [busy, setBusy] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function resolve(c: ProductConflict, resolution: "kept_existing" | "accepted_incoming") {
+    setBusy(c.id);
+    setError(null);
+    try {
+      const res = await api.post<{ data: Product }>(`/api/product_conflicts/${c.id}/resolve`, { resolution });
+      notify(resolution === "accepted_incoming"
+        ? `${product.part_number}: Commodity Type changed to ${c.incoming_commodity_type}.`
+        : `${product.part_number}: kept Commodity Type ${c.existing_commodity_type ?? "(blank)"}.`);
+      setConflicts(res.data.open_conflicts);
+      setCurrent(res.data.commodity_type);
+      onSaved();
+      if (res.data.open_conflicts.length === 0) onClose();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not resolve the conflict.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <Sheet open onClose={onClose} title="Commodity Type conflicts" icon={<PencilIcon size={18} />}
+           description={<>Part <span className="font-medium text-ink">{product.part_number}</span> · recorded Commodity Type{" "}
+             <span className="font-medium text-ink">{current ?? "—"}</span></>}>
+      <div className="space-y-4 text-left">
+        {error && <Alert>{error}</Alert>}
+        {conflicts.length === 0 ? (
+          <p className="text-sm text-ink-muted">No open conflicts.</p>
+        ) : (
+          <ul className="divide-y divide-neutral-100 overflow-hidden rounded-lg border border-line bg-white shadow-card">
+            {conflicts.map((c) => (
+              <li key={c.id} className="space-y-3 px-5 py-4 text-sm">
+                <p className="text-ink">
+                  The upload{c.uploaded_at ? ` of ${formatDateTime(c.uploaded_at)}` : ""} has Commodity Type{" "}
+                  <span className="font-semibold">{c.incoming_commodity_type}</span>; the product has{" "}
+                  <span className="font-semibold">{c.existing_commodity_type ?? "none"}</span>.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" disabled={busy !== null} onClick={() => resolve(c, "kept_existing")}>
+                    Keep {c.existing_commodity_type ?? "blank"}
+                  </Button>
+                  <Button size="sm" variant="primary" disabled={busy !== null} onClick={() => resolve(c, "accepted_incoming")}>
+                    {busy === c.id ? "Saving…" : `Use ${c.incoming_commodity_type}`}
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </Sheet>
   );

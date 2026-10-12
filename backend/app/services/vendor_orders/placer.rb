@@ -1,7 +1,7 @@
 module VendorOrders
   # Places one order row with vendors: one Vendor Order per selected vendor, in one transaction.
   #
-  #   allocations: [{ vendor_id:, qty: }]
+  #   allocations: [{ vendor_id:, qty:, unit:, ship_date: }]  (ship_date: YYYY-MM-DD, defaults to the order's Ship Date)
   #
   # Rules: at least one vendor; each vendor once and linked to the row's Part Number (Vendors list);
   # every qty a number > 0; the total equals the row's Qty exactly. The original order row is not changed.
@@ -57,7 +57,7 @@ module VendorOrders
         lines.each do |line|
           link = links.fetch(line[:vendor_id])
           VendorOrder.create!(vendor_order_placement: placement, vendor: link.vendor, number: VendorOrder.next_number,
-                              qty: line[:qty], unit: line[:unit],
+                              qty: line[:qty], unit: line[:unit], ship_date: line[:ship_date] || @row.ship_date,
                               unit_price: line[:unit] == "pcs" ? link.price_amount : link.set_price_amount,
                               price_currency: link.price_currency, price_note: link.price_note, email_status: "pending")
         end
@@ -118,9 +118,13 @@ module VendorOrders
           raise Invalid.new("#{links[vendor_id].vendor.name}: enter a quantity greater than 0 (up to 3 decimals).", { qty: [ "is invalid" ] })
         end
 
+        ship_date = a[:ship_date].to_s.strip.presence
+        ship_date &&= (Date.iso8601(ship_date) rescue nil) || raise(Invalid.new("#{links[vendor_id].vendor.name}: enter a valid ship date.", { ship_date: [ "is invalid" ] }))
+
         seen[vendor_id] = true
         pack = [ links[vendor_id].pack_size.to_i, 1 ].max
-        { vendor_id: vendor_id, qty: qty.to_d, unit: unit, sets: unit == "pcs" ? (qty.to_d / pack).round(3) : qty.to_d }
+        { vendor_id: vendor_id, qty: qty.to_d, unit: unit, ship_date: ship_date,
+          sets: unit == "pcs" ? (qty.to_d / pack).round(3) : qty.to_d }
       end
     end
   end

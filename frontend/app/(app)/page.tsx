@@ -178,7 +178,7 @@ export default function DashboardPage() {
                     ? "In the latest upload, by size of the change"
                     : `From the upload of ${formatDateTime(topChanges.completed_at)}; the latest upload had none`
                   : "By size of the change"}
-                action={topChanges.upload_id ? <Link href={topChanges.upload_id === latest.id ? "/orders" : `/uploads/${topChanges.upload_id}`} className="shrink-0 text-sm text-ink-muted hover:text-ink">View all →</Link> : undefined}>
+                action={topChanges.upload_id ? <Link href={topChanges.upload_id === latest.id ? "/orders?tab=changes" : `/uploads/${topChanges.upload_id}`} className="shrink-0 text-sm text-ink-muted hover:text-ink">View all →</Link> : undefined}>
             {top.length === 0 ? (
               <p className="py-10 text-center text-sm text-ink-muted">No quantity changes have been detected yet.</p>
             ) : (

@@ -11,15 +11,11 @@
 <% quantity = if @order.unit == "pcs" || @pack <= 1 then "#{format_qty(@order.qty)} pcs" else "#{format_qty(@order.qty)} sets of #{@pack} pcs (#{format_qty(@order.qty * @pack)} pcs)" end %>
     <% rows = [
          [ "Vendor Order Number", @order.number ],
-         [ "Original PO Number", @placement.po_number ],
-         [ "PO Line Number", @placement.po_line_number ],
-         [ "Order Type", @placement.order_type ],
-         [ "Part Number", @placement.part_number ],
          [ "SASH Part", @product&.sash_part ],
          [ "Vendor Part", @order.vendor.vendor_products.find_by(product_id: @placement.product_id)&.vendor_part || @product&.vendor_part ],
          [ "Description", @product&.description ],
          [ "Quantity", quantity ],
-         [ "Ship Date", @placement.ship_date.strftime("%-d %b %Y") ],
+         [ "Ship Date", (@order.ship_date || @placement.ship_date).strftime("%-d %b %Y") ],
          [ "Due Date", @placement.due_date&.strftime("%-d %b %Y") ]
        ] %>
     <% rows.each do |label, value| %>

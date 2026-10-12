@@ -263,6 +263,7 @@ export interface OrderRow {
   source_row_number?: number | null;
   source_data?: Record<string, string | number | null>;
   manual?: boolean; // created by hand (Create order), not imported
+  placed?: boolean; // placed with vendors (Orders list only)
 }
 
 // One field of the manual order form: an Excel column of the Supplier Requirements export.
@@ -366,6 +367,7 @@ export interface VendorOrderInfo {
   number: string;
   vendor_id: number;
   vendor_name: string;
+  ship_date: string | null; // chosen when placing; null for orders placed before it existed
   qty: string;
   unit: OrderUnit;
   price_amount: string | null;

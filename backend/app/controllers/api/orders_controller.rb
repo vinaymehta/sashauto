@@ -56,8 +56,9 @@ module Api
       end
 
       ship_to_locations, commodity_types = facets(batch, dataset)
+      placed = placed_keys(rows)
       render json: {
-        data: rows.map { |row| Serializers.order_row(row, source: true) },
+        data: rows.map { |row| Serializers.order_row(row, source: true).merge(placed: placed.include?(placement_key(row))) },
         meta: meta.merge(sort: sort, direction: direction),
         # Every Excel column of the upload, in file order; `key` is the sort key.
         columns: columns,
@@ -95,6 +96,16 @@ module Api
     end
 
     private
+
+    # Placement key of a listed row (an imported row, or a manual order listed with `manual`).
+    def placement_key(row)
+      VendorOrderPlacement.order_key(row[:manual] ? ManualOrder.new(id: row.id) : row)
+    end
+
+    # Placement keys of the listed rows that were placed with vendors (in one query).
+    def placed_keys(rows)
+      VendorOrderPlacement.where(order_key: rows.map { |row| placement_key(row) }).pluck(:order_key).to_set
+    end
 
     # [Ship To Locations, Commodity Types] present in the dataset, sorted.
     # Upload batches are immutable, so batch facets are cached in memory.

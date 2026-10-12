@@ -36,8 +36,8 @@ export function cell(value: string | number | null | undefined) {
 // PO Line Number + Ship Date + Qty; clicking one opens its details below it (click again to close). The Orders table stays
 // visible and clickable behind the panel (no blur); ✕ or Escape closes it. A manual order has no other rows;
 // an Admin can edit (`onEdit`) or delete it.
-export function OrderDetailPanel({ row: clicked, onClose, onEdit, onDeleted }: {
-  row: OrderRow; onClose: () => void; onEdit?: () => void; onDeleted?: () => void;
+export function OrderDetailPanel({ row: clicked, onClose, onEdit, onDeleted, onPlaced }: {
+  row: OrderRow; onClose: () => void; onEdit?: () => void; onDeleted?: () => void; onPlaced?: () => void;
 }) {
   const { data, error, loading } = useApi<OrderHistory>(`/api/orders/${clicked.id}/history`, { manual: clicked.manual ? 1 : undefined });
   const [tab, setTab] = useState<"details" | "history">("details");
@@ -95,7 +95,7 @@ export function OrderDetailPanel({ row: clicked, onClose, onEdit, onDeleted }: {
             </div>
           )}
           <DetailCard row={row} description={description} />
-          <VendorOrderSection key={row.id} orderId={row.id} manual={!!row.manual} />
+          <VendorOrderSection key={row.id} orderId={row.id} manual={!!row.manual} onPlaced={onPlaced} />
         </>
       ) : error ? (
         <Alert title="Could not load the history">{error.message}</Alert>
@@ -110,10 +110,11 @@ export function OrderDetailPanel({ row: clicked, onClose, onEdit, onDeleted }: {
           {history.map((r) => (
             <li key={r.id}>
               <button type="button" onClick={() => setOpenId(openId === r.id ? null : r.id)} aria-expanded={openId === r.id}
-                      className={`grid w-full grid-cols-3 gap-4 px-5 py-3 text-left text-sm transition-colors hover:bg-canvas ${openId === r.id ? "bg-canvas" : ""}`}>
+                      className={`grid w-full grid-cols-4 gap-4 px-5 py-3 text-left text-sm transition-colors hover:bg-canvas ${openId === r.id ? "bg-canvas" : ""}`}>
                 <span><span className="block text-2xs font-medium uppercase tracking-wider text-ink-muted">PO Line</span>{r.po_line_number}</span>
                 <span><span className="block text-2xs font-medium uppercase tracking-wider text-ink-muted">Ship Date</span>{formatDate(r.ship_date)}</span>
                 <span className="text-right"><span className="block text-2xs font-medium uppercase tracking-wider text-ink-muted">Qty</span>{qty(r.qty)}</span>
+                <span className="text-right"><span className="block text-2xs font-medium uppercase tracking-wider text-ink-muted">Excel Row</span>{r.source_row_number ?? "—"}</span>
               </button>
               {openId === r.id && <div className="bg-canvas px-3 pb-3"><DetailCard row={r} description={description} /></div>}
             </li>

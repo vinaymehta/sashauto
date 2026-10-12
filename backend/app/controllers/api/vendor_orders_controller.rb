@@ -29,7 +29,7 @@ module Api
 
     def create
       row = order
-      allocations = params.permit(allocations: %i[vendor_id qty unit]).fetch(:allocations, [])
+      allocations = params.permit(allocations: %i[vendor_id qty unit ship_date]).fetch(:allocations, [])
       result = VendorOrders::Placer.call(row: row, allocations: allocations, user: current_user)
       placement = result.placement
       audit("vendor_order.placed", subject: placement, po_number: placement.po_number, part_number: placement.part_number,

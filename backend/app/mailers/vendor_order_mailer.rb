@@ -8,7 +8,7 @@ class VendorOrderMailer < ApplicationMailer
     @fallback = params.fetch(:fallback, false)
     # Pieces per set, for the quantity line ("200 sets of 10 pcs (2,000 pcs)" / "500 pcs").
     @pack = @order.vendor.vendor_products.find_by(product_id: @placement.product_id)&.pack_size || @product&.pack_size || 1
-    subject = "Purchase order #{@order.number} from SASH: #{@placement.part_number}"
+    subject = "Purchase order #{@order.number} from SASH"
     subject = "[Forward to #{@order.vendor.name}] #{subject}" if @fallback
     mail(to: params.fetch(:recipients), subject: subject, options: { idempotency_key: "vendor-order-#{@order.id}-#{@order.created_at.to_i}" })
   end

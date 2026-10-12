@@ -5,15 +5,11 @@
 Dear <%= @order.vendor.name %>, please supply the following.
 
 Vendor Order Number: <%= @order.number %>
-Original PO Number: <%= @placement.po_number %>
-PO Line Number: <%= @placement.po_line_number %>
-Order Type: <%= @placement.order_type %>
-Part Number: <%= @placement.part_number %>
 SASH Part: <%= @product&.sash_part.presence || "—" %>
 Vendor Part: <%= (@order.vendor.vendor_products.find_by(product_id: @placement.product_id)&.vendor_part || @product&.vendor_part).presence || "—" %>
 Description: <%= @product&.description.presence || "—" %>
 Quantity: <%= quantity %>
-Ship Date: <%= @placement.ship_date.strftime("%-d %b %Y") %>
+Ship Date: <%= (@order.ship_date || @placement.ship_date).strftime("%-d %b %Y") %>
 Due Date: <%= @placement.due_date&.strftime("%-d %b %Y") || "—" %>
 
 Please quote <%= @order.number %> on all documents for this order.

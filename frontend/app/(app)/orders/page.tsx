@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { memo, useCallback, useMemo, useState, type ReactNode } from "react";
+import { useSearchParams } from "next/navigation";
+import { memo, Suspense, useCallback, useMemo, useState, type ReactNode } from "react";
 import type { Dashboard, OrderRow, OrdersPage, UploadChoice, UploadDetail } from "@/lib/types";
 import { formatCount, formatDate, formatQty } from "@/lib/format";
 import { AlertIcon, ArrowUpDownIcon, ChevronRightSmallIcon, MapPinIcon, TableIcon } from "@/components/icons";
@@ -46,7 +47,7 @@ const qty = (value: string | null) => (value === null ? dash : formatQty(value))
 // Typed display for the columns the app models itself; every other Excel column shows its imported value.
 // PO / Part links list the related rows of the shown upload (`uploadId`; undefined = current order data).
 const typedColumns = (uploadId?: number): Record<string, Omit<Column, "key" | "label">> => ({
-  type: { render: (r) => <span className="inline-flex items-center gap-1.5">{r.order_type}{r.manual && <Badge>Manual</Badge>}</span> },
+  type: { render: (r) => <span className="inline-flex items-center gap-1.5">{r.order_type}{r.manual && <Badge>Manual</Badge>}{r.placed && <Badge tone="up">Order placed</Badge>}</span> },
   due_date: { render: (r) => date(r.due_date) },
   ship_date: { render: (r) => formatDate(r.ship_date) },
   unit: { render: (r) => <span className="block max-w-64 truncate" title={r.unit ?? undefined}>{text(r.unit)}</span> },
@@ -94,7 +95,17 @@ const OrderTr = memo(function OrderTr({ row, columns, open, today, onSelect }: {
   );
 });
 
+// ?tab=changes opens the Quantity changes tab (e.g. "View all" on the Dashboard).
 export default function OrdersPage() {
+  return (
+    <Suspense fallback={<TableSkeleton rows={10} columns={8} />}>
+      <OrdersView />
+    </Suspense>
+  );
+}
+
+function OrdersView() {
+  const params = useSearchParams();
   const list = useListQuery({}, 25, { key: "ship_date", direction: "asc" });
   const [search, setSearch] = useState("");
   const term = useDebounced(search.trim());
@@ -172,7 +183,7 @@ export default function OrdersPage() {
     ]),
   ];
   type TabKey = (typeof tabs)[number]["key"];
-  const [tab, setTab] = useState<TabKey>("orders");
+  const [tab, setTab] = useState<TabKey>(params.get("tab") === "changes" ? "changes" : "orders");
   // Fall back to the order rows when the chosen tab no longer exists (e.g. a new first upload).
   const activeTab: TabKey = tabs.some((t) => t.key === tab) ? tab : "orders";
 
@@ -287,7 +298,7 @@ export default function OrdersPage() {
       </section>
       {selected && (
         <OrderDetailPanel key={`${selected.manual ? "m" : "r"}${selected.id}`} row={selected} onClose={() => setSelected(null)}
-                          onEdit={() => { setEditing(selected); setSelected(null); }} onDeleted={onManualSaved} />
+                          onEdit={() => { setEditing(selected); setSelected(null); }} onDeleted={onManualSaved} onPlaced={onManualSaved} />
       )}
     </>
   );
