@@ -2,14 +2,14 @@
   <h1 style="font-size:20px;font-weight:700;margin:0 0 4px;color:#1d2636;">Order ageing</h1>
   <p style="margin:0 0 20px;color:#737373;">
     <%= @digest.row_count %> order row<%= "s" unless @digest.row_count == 1 %>
-    (one per PO Number, Part Number and Type, latest ship date) are 30 or more days past their ship date as of <%= @today.strftime("%-d %b %Y") %>.
+    (one per PO Number, Part Number and Type, latest ship date) by days to their ship date, as of <%= @today.strftime("%-d %b %Y") %>.
   </p>
-  <% @bands.each do |threshold, rows| %>
+  <% @bands.each do |band, rows| %>
     <% next if rows.empty? %>
-    <% bg, ink = AgeingMailer::BAND_COLORS[threshold] %>
+    <% bg, ink = AgeingMailer::BAND_COLORS[band] %>
     <h2 style="font-size:15px;font-weight:600;margin:20px 0 8px;color:<%= ink %>;">
       <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:<%= ink %>;margin-right:6px;"></span>
-      <%= AgeingMailer::BAND_TITLES[threshold] %> (<%= @digest.counts[threshold.to_s] || rows.size %>)
+      <%= AgeingMailer::BAND_TITLES[band] %> (<%= @digest.counts[band] || rows.size %>)
     </h2>
     <table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;font-size:13px;">
       <thead>
@@ -19,7 +19,7 @@
           <th style="padding:8px 10px;font-weight:600;">Part Number</th>
           <th style="padding:8px 10px;font-weight:600;">Type</th>
           <th style="padding:8px 10px;font-weight:600;">Ship Date</th>
-          <th style="padding:8px 10px;font-weight:600;text-align:right;">Days</th>
+          <th style="padding:8px 10px;font-weight:600;text-align:right;">Days to ship</th>
           <th style="padding:8px 10px;font-weight:600;text-align:right;">Qty</th>
         </tr>
       </thead>
@@ -31,14 +31,14 @@
             <td style="padding:8px 10px;color:#171717;"><%= row.part_number %></td>
             <td style="padding:8px 10px;color:#171717;"><%= row.order_type %></td>
             <td style="padding:8px 10px;color:#171717;white-space:nowrap;"><%= row.ship_date.strftime("%-d %b %Y") %></td>
-            <td style="padding:8px 10px;text-align:right;font-weight:600;color:<%= ink %>;"><%= Ageing::Rules.days_since(row.ship_date, @today) %></td>
+            <td style="padding:8px 10px;text-align:right;font-weight:600;color:<%= ink %>;"><% days = Ageing::Rules.days_until(row.ship_date, @today) %><%= days.negative? ? "#{-days} overdue" : days %></td>
             <td style="padding:8px 10px;text-align:right;color:#171717;"><%= format_qty(row.effective_qty) %></td>
           </tr>
         <% end %>
       </tbody>
     </table>
-    <% if (@digest.counts[threshold.to_s] || 0) > rows.size %>
-      <p style="margin:8px 0 0;color:#737373;">Showing the first <%= rows.size %> of <%= @digest.counts[threshold.to_s] %> rows.</p>
+    <% if (@digest.counts[band] || 0) > rows.size %>
+      <p style="margin:8px 0 0;color:#737373;">Showing the first <%= rows.size %> of <%= @digest.counts[band] %> rows.</p>
     <% end %>
   <% end %>
   <p style="margin:24px 0 0;"><a href="<%= @url %>" style="display:inline-block;background:#1d2636;color:#ffffff;text-decoration:none;padding:10px 18px;border-radius:6px;font-weight:600;">Open the Orders page</a></p>

@@ -12,13 +12,14 @@ export function SortTh({ label, sortKey, sort, direction, onSort, align = "left"
   return (
     <Th align={align} className={className} aria-sort={active ? (direction === "asc" ? "ascending" : "descending") : "none"}>
       <button type="button" onClick={() => onSort(sortKey)} title={`Sort by ${label}`}
-              className={`inline-flex items-center gap-1 font-bold uppercase tracking-wider transition-colors ${
+              className={`inline-flex max-w-full items-center gap-1 font-bold uppercase tracking-wider transition-colors ${
                 align === "right" ? "flex-row-reverse" : ""
               } ${active ? "text-neutral-900" : "text-neutral-600 hover:text-neutral-900"}`}>
-        {label}
+        {/* In narrow (fixed-width) columns the label is cut with "…" instead of running into the next column. */}
+        <span className="min-w-0 truncate">{label}</span>
         {active
-          ? (direction === "asc" ? <ArrowUpIcon size={12} strokeWidth={2.5} /> : <ArrowDownIcon size={12} strokeWidth={2.5} />)
-          : <SortIcon size={12} className="text-neutral-300" />}
+          ? (direction === "asc" ? <ArrowUpIcon size={12} strokeWidth={2.5} className="shrink-0" /> : <ArrowDownIcon size={12} strokeWidth={2.5} className="shrink-0" />)
+          : <SortIcon size={12} className="shrink-0 text-neutral-300" />}
       </button>
     </Th>
   );

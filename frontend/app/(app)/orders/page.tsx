@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { memo, Suspense, useCallback, useMemo, useState, type ReactNode } from "react";
+import { createContext, memo, Suspense, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import type { Dashboard, OrderRow, OrdersPage, UploadChoice, UploadDetail } from "@/lib/types";
 import { formatCount, formatDate, formatQty } from "@/lib/format";
 import { AlertIcon, ArrowUpDownIcon, MapPinIcon, TableIcon } from "@/components/icons";
@@ -46,6 +46,22 @@ const text = (value: string | null) => value ?? dash;
 const date = (value: string | null) => (value ? formatDate(value) : dash);
 const qty = (value: string | null) => (value === null ? dash : formatQty(value));
 
+// Opens the Place order panel for a row (provided by the Orders page; null for the Warehouse Manager).
+const PlaceOrderContext = createContext<((row: OrderRow) => void) | null>(null);
+
+// Unit, clickable like the PO and Part Numbers: opens Place order. Plain text when placing is not available.
+function UnitLink({ row }: { row: OrderRow }) {
+  const place = useContext(PlaceOrderContext);
+  const label = <span className="block max-w-64 truncate group-data-manager:max-w-56" title={row.unit ?? undefined}>{text(row.unit)}</span>;
+  if (!place || !row.unit?.trim()) return label;
+  return (
+    <button type="button" onClick={(e) => { e.stopPropagation(); place(row); }}
+            className="max-w-full text-left font-medium text-ink underline decoration-neutral-300 underline-offset-2 transition-colors hover:text-accent hover:decoration-accent">
+      {label}
+    </button>
+  );
+}
+
 // Typed display for the columns the app models itself; every other Excel column shows its imported value.
 // PO Number opens the ORDER DETAILS window; Part links list the related POs of the shown upload (`uploadId`;
 // undefined = current order data).
@@ -53,7 +69,8 @@ const typedColumns = (uploadId?: number): Record<string, Omit<Column, "key" | "l
   type: { render: (r) => <span className="inline-flex items-center gap-1.5">{r.order_type}{r.manual && <Badge>Manual</Badge>}{r.placed && <Badge tone="up">Order placed</Badge>}</span> },
   due_date: { render: (r) => date(r.due_date) },
   ship_date: { render: (r) => formatDate(r.ship_date) },
-  unit: { render: (r) => <span className="block max-w-64 truncate" title={r.unit ?? undefined}>{text(r.unit)}</span> },
+  // Narrower for the Warehouse Manager (table wrapper has data-manager), whose table also has the pinned Action column.
+  unit: { render: (r) => <UnitLink row={r} /> },
   po_number: { render: (r) => <OrderDetailsLink row={r} /> },
   part_number: { render: (r) => <RelatedLink kind="part" value={r.part_number} uploadId={uploadId} /> },
   qty: { align: "right", render: (r) => qty(r.qty) },
@@ -293,8 +310,9 @@ function OrdersView() {
             action={filtered ? <Button size="sm" onClick={clearAll}>Clear search and filters</Button> : undefined}
           />
         ) : data ? (
-          <div className={`transition-opacity duration-200 ${loading ? "opacity-50" : ""}`}>
+          <div data-manager={manager || undefined} className={`group transition-opacity duration-200 ${loading ? "opacity-50" : ""}`}>
             <OpenOrderContext.Provider value={setSelected}>
+            <PlaceOrderContext.Provider value={manager ? null : setPlacing}>
             <Table dense>
               <thead>
                 <tr>
@@ -316,6 +334,7 @@ function OrdersView() {
                 ))}
               </tbody>
             </Table>
+            </PlaceOrderContext.Provider>
             </OpenOrderContext.Provider>
             <Pagination meta={data.meta} onPage={list.setPage} onPerPage={list.setPerPage} noun="order rows" />
           </div>

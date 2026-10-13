@@ -94,15 +94,17 @@ function ProductsView() {
           />
         ) : data ? (
           <div className={`transition-opacity duration-200 ${loading ? "opacity-50" : ""}`}>
-            <Table fixed>
+            {/* Fixed column widths (text + 48px cell padding); Description takes the rest. Below ~1250px the table
+                scrolls sideways instead of cutting the columns. */}
+            <Table fixed minWidth="min-w-[1250px]">
               <colgroup>
-                <col className="w-[15%]" />
-                <col className="w-[11%]" />
-                <col className="w-[13%]" />
+                <col className="w-44" />
+                <col className="w-40" />
+                <col className="w-44" />
                 <col />
-                <col className="w-[9%]" />
-                <col className="w-[13%]" />
-                {isAdmin && <col className="w-[8%]" />}
+                <col className="w-64" />
+                <col className="w-40" />
+                {isAdmin && <col className="w-28" />}
               </colgroup>
               <thead>
                 <tr>
@@ -111,7 +113,7 @@ function ProductsView() {
                   <SortTh label="Vendor Part" sortKey="vendor_part" {...sortProps} />
                   <SortTh label="Description" sortKey="description" {...sortProps} />
                   <SortTh label="MOQ" sortKey="moq" align="right" {...sortProps} />
-                  <SortTh label="Per Pc Weight in Kg" sortKey="weight_kg" align="right" {...sortProps} />
+                  <SortTh label="Weight (kg)" sortKey="weight_kg" align="right" {...sortProps} />
                   {isAdmin && <Th align="center">Action</Th>}
                 </tr>
               </thead>
@@ -170,7 +172,7 @@ function ProductRow({ product, canEdit, onSaved, active, onOpen }: {
       <Td className="truncate" title={product.sash_part ?? undefined}>{product.sash_part ?? dash}</Td>
       <Td className="truncate" title={product.vendor_part ?? undefined}>{product.vendor_part ?? dash}</Td>
       <Td className="truncate text-ink-muted" title={product.description ?? undefined}>{product.description ?? dash}</Td>
-      <Td align="right" className="tabular">{formatMoq(product) ?? dash}</Td>
+      <Td align="right" className="tabular truncate" title={formatMoq(product) ?? undefined}>{formatMoq(product) ?? dash}</Td>
       <Td align="right" className="tabular">{product.weight_kg !== null ? formatQty(product.weight_kg) : dash}</Td>
       {canEdit && (
         <Td align="center" onClick={(e) => e.stopPropagation()}>

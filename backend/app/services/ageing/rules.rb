@@ -1,27 +1,35 @@
 module Ageing
-  # Age of an order row = days since its ship date. Bands: 30-59 green, 60-89 yellow, 90+ red;
-  # 0-29 days and future ship dates have no band. An email is sent the first time a row reaches
-  # each threshold (30, 60, 90).
+  # Age group of an order row = days from today until its ship date:
+  #   green   45 or more days away
+  #   yellow  15–44 days away
+  #   red     under 15 days away, or the ship date has already passed
+  # Same rule in the browser (components/age.tsx), the Orders age filter and the ageing email.
   module Rules
-    THRESHOLDS = [ 30, 60, 90 ].freeze
-    BAND = { 30 => "green", 60 => "yellow", 90 => "red" }.freeze
+    BANDS = %w[red yellow green].freeze # most urgent first
+    GREEN_DAYS = 45
+    YELLOW_DAYS = 15
 
     module_function
 
-    def days_since(ship_date, today)
-      (today - ship_date).to_i
+    def days_until(ship_date, today)
+      (ship_date - today).to_i
     end
 
-    # Highest threshold reached, or nil.
-    def threshold_for(ship_date, today)
-      days = days_since(ship_date, today)
-      THRESHOLDS.reverse.find { |t| days >= t }
+    def band_for(ship_date, today)
+      days = days_until(ship_date, today)
+      if days >= GREEN_DAYS then "green"
+      elsif days >= YELLOW_DAYS then "yellow"
+      else "red"
+      end
     end
 
-    # ship_date range for the band that starts at `threshold` (upper band is open-ended).
-    def ship_date_range(threshold, today)
-      upper = THRESHOLDS[THRESHOLDS.index(threshold) + 1]
-      upper ? ((today - (upper - 1))..(today - threshold)) : ..(today - threshold)
+    # ship_date range of a band on `today`.
+    def ship_date_range(band, today)
+      case band
+      when "green" then (today + GREEN_DAYS)..
+      when "yellow" then (today + YELLOW_DAYS)..(today + GREEN_DAYS - 1)
+      else ..(today + YELLOW_DAYS - 1)
+      end
     end
   end
 end

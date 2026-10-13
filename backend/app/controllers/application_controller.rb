@@ -89,8 +89,8 @@ class ApplicationController < ActionController::API
 
   AGE_GROUPS = %w[green yellow red].freeze
 
-  # Age group of an order row = days since its ship date (Ageing::Rules): green 30-59, yellow 60-89,
-  # red 90+ (rows under 30 days or with a future ship date have no group). "Today" is the browser's date (param `today`,
+  # Age group of an order row = days until its ship date (Ageing::Rules): green 45+, yellow 15-44, red under 15 or
+  # already passed. "Today" is the browser's date (param `today`,
   # within a day of the server's) so filters match the colours the user sees; otherwise the server date.
   # Several groups can be selected (age=green,red): rows in any of them.
   def filter_by_age(scope)
@@ -98,9 +98,7 @@ class ApplicationController < ActionController::API
     return scope if groups.empty?
 
     today = request_today
-    ranges = groups.map do |group|
-      Ageing::Rules.ship_date_range({ "green" => 30, "yellow" => 60, "red" => 90 }.fetch(group), today)
-    end
+    ranges = groups.map { |group| Ageing::Rules.ship_date_range(group, today) }
     ranges.map { |range| scope.where(ship_date: range) }.reduce(:or)
   end
 

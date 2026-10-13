@@ -9,7 +9,8 @@ import { useDismiss } from "../use-dismiss";
 // Escape. The body is light gray so white section cards stand out; `footer` stays pinned at the bottom.
 // `wide` is for panels holding wide tables (75% of the window on larger screens).
 // `overlay={false}` keeps the page behind usable: no dim/blur backdrop, the page still scrolls and can be
-// clicked, and only the close button or Escape closes the panel.
+// clicked, and only the close button or Escape closes the panel. Text styles are reset (left-aligned, wrapping), so
+// a panel opened from a table cell does not inherit the cell's alignment or no-wrap.
 export function Sheet({ open, title, description, icon, onClose, children, footer, wide = false, overlay = true }: {
   open: boolean; title: ReactNode; description?: ReactNode; icon?: ReactNode; onClose: () => void; children: ReactNode; footer?: ReactNode;
   wide?: boolean; overlay?: boolean;
@@ -46,8 +47,8 @@ export function Sheet({ open, title, description, icon, onClose, children, foote
       {/* Dimming backdrop behind the drawer, below the navbar and right of the sidebar (both stay sharp). */}
       {overlay && <div aria-hidden className="fixed inset-x-0 top-14 bottom-0 z-40 lg:left-60 animate-fade-in bg-neutral-950/20 backdrop-blur-sm" />}
       <div ref={panel} role="dialog" aria-modal={overlay} aria-labelledby="sheet-title"
-           className={`fixed top-14 bottom-0 right-0 z-50 flex w-full animate-slide-in-right flex-col border-l border-neutral-200 bg-neutral-100 shadow-2xl ${wide ? "md:w-[75vw]" : "md:w-[40vw]"} md:min-w-110`}>
-        <header className="flex items-start justify-between gap-4 border-b border-line bg-white px-6 py-5">
+           className={`fixed top-14 bottom-0 right-0 z-50 flex w-full animate-slide-in-right flex-col whitespace-normal border-l border-neutral-200 bg-neutral-100 text-left font-normal shadow-2xl ${wide ? "md:w-[75vw]" : "md:w-[40vw]"} md:min-w-110`}>
+        <header className="flex items-start justify-between gap-4 border-b border-line bg-white px-4 py-4 sm:px-6 sm:py-5">
           <div className="flex min-w-0 items-start gap-3.5">
             {icon && (
               <span aria-hidden className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-tint-violet text-tint-violet-ink ring-1 ring-tint-violet-ink/15">
@@ -64,8 +65,8 @@ export function Sheet({ open, title, description, icon, onClose, children, foote
             <CloseIcon size={18} />
           </button>
         </header>
-        <div className="flex-1 overflow-y-auto px-6 py-6">{children}</div>
-        {footer && <footer className="flex justify-end gap-2 border-t border-line bg-white px-6 py-4">{footer}</footer>}
+        <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-6">{children}</div>
+        {footer && <footer className="flex flex-wrap justify-end gap-2 border-t border-line bg-white px-4 py-3 sm:px-6 sm:py-4">{footer}</footer>}
       </div>
     </>
   );

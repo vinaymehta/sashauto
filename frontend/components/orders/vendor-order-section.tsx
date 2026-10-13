@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { OrderUnit, ProductVendor, VendorEmailStatus, VendorOrderState } from "@/lib/types";
 import { formatDate, formatDateTime, formatQty } from "@/lib/format";
-import { AlertIcon, TruckIcon } from "../icons";
+import { AlertIcon } from "../icons";
 import { useSession } from "../session";
 import { useApi } from "../use-api";
 import { useToast } from "../toast";
@@ -12,7 +12,6 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Alert, Spinner } from "../ui/feedback";
 import { DatePicker } from "../ui/date-picker";
-import { Sheet } from "../ui/sheet";
 import { formatAmount, formatPrice } from "../vendors/vendor-products-panel";
 
 const QTY = /^\d+(\.\d{1,3})?$/;
@@ -86,18 +85,6 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Escape closes only the place-order panel, not the order details panel underneath.
-  useEffect(() => {
-    if (!confirming) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.stopPropagation();
-      if (!busy) setConfirming(false);
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [confirming, busy]);
-
   if (state.vendors.length === 0) {
     return <p className="px-5 py-6 text-sm text-ink-muted">No vendor is linked to this part. Link one on the Vendors page to place this order.</p>;
   }
@@ -167,6 +154,52 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
     const { pack } = unitInfo(v, a.unit, fallbackMoq);
     return a.unit === "pcs" ? `${formatQty(a.qty)} pcs` : pack > 1 ? `${formatQty(a.qty)} sets (${formatQty(String(Number(a.qty) * pack))} pcs)` : formatQty(a.qty);
   };
+
+  // Review step, in the same panel: each vendor's quantity and ship date, then Place orders (or Back to edit).
+  if (confirming) {
+    return (
+      <div>
+        <div className="space-y-3 px-5 py-4">
+          <p className="text-sm font-semibold text-ink">Review {selected.length} vendor order{selected.length === 1 ? "" : "s"}</p>
+          {error && <Alert>{error}</Alert>}
+          <ul className="divide-y divide-neutral-100 overflow-hidden rounded-lg border border-line">
+            {selected.map((v) => {
+              const a = alloc[v.vendor_id]!;
+              return (
+                <li key={v.vendor_id} className="grid grid-cols-[1fr_auto] items-center gap-4 px-4 py-3">
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium text-ink">{v.vendor_name}</span>
+                    <span className="tabular block text-sm text-ink-muted">{describe(v)}</span>
+                  </span>
+                  <span className="text-sm">
+                    <span className="mb-1 block text-xs font-medium text-ink-muted">Ship date</span>
+                    <DatePicker value={a.ship_date} invalid={!a.ship_date} aria-label={`Ship date for ${v.vendor_name}`} className="w-44"
+                                onChange={(day) => setAlloc((current) => ({ ...current, [v.vendor_id]: { ...current[v.vendor_id]!, ship_date: day } }))} />
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="text-sm text-ink-muted">
+            Order ship date: <span className="font-medium text-ink">{formatDate(state.order.ship_date)}</span>. Change a vendor&apos;s date to ask
+            for a different shipment date; the vendor&apos;s email shows its date.
+          </p>
+          {!datesSet && <p className="text-sm text-dec">Choose a ship date for each vendor.</p>}
+          {belowMoq.length > 0 && (
+            <p className="flex items-start gap-2 rounded-md bg-age-yellow px-3 py-2 text-sm text-age-yellow-ink">
+              <AlertIcon size={14} className="mt-0.5 shrink-0" />
+              {belowMoq.length} allocation{belowMoq.length === 1 ? " is" : "s are"} below the MOQ. You can still place the order.
+            </p>
+          )}
+          <p className="text-sm text-ink-muted">Each vendor is emailed its own order. After placing, the allocation and dates are locked.</p>
+        </div>
+        <div className="flex justify-end gap-2 border-t border-neutral-100 bg-neutral-50 px-5 py-3">
+          <Button size="sm" variant="ghost" onClick={() => setConfirming(false)} disabled={busy}>Back</Button>
+          <Button size="sm" variant="primary" onClick={place} disabled={busy || !datesSet}>{busy ? "Placing…" : "Place orders"}</Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -239,55 +272,6 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
         </div>
       </div>
 
-      {confirming && (
-        <Sheet
-          open
-          onClose={() => { if (!busy) setConfirming(false); }}
-          title={`Place ${selected.length} vendor order${selected.length === 1 ? "" : "s"}`}
-          description={<>PO <span className="font-medium text-ink">{state.order.po_number}</span> · {state.order.part_number} · Qty {formatQty(state.order.qty ?? "0")}</>}
-          icon={<TruckIcon size={18} />}
-          footer={
-            <>
-              <Button variant="ghost" onClick={() => setConfirming(false)} disabled={busy}>Cancel</Button>
-              <Button variant="primary" onClick={place} disabled={busy || !datesSet}>{busy ? "Placing…" : "Place orders"}</Button>
-            </>
-          }
-        >
-          <div className="space-y-4">
-            {error && <Alert>{error}</Alert>}
-            <ul className="divide-y divide-neutral-100 overflow-hidden rounded-lg border border-line bg-white shadow-card">
-              {selected.map((v) => {
-                const a = alloc[v.vendor_id]!;
-                return (
-                  <li key={v.vendor_id} className="grid grid-cols-[1fr_auto] items-center gap-4 px-5 py-4">
-                    <span className="min-w-0">
-                      <span className="block truncate font-medium text-ink">{v.vendor_name}</span>
-                      <span className="tabular block text-sm text-ink-muted">{describe(v)}</span>
-                    </span>
-                    <label className="text-sm">
-                      <span className="mb-1 block text-xs font-medium text-ink-muted">Ship date</span>
-                      <DatePicker value={a.ship_date} invalid={!a.ship_date} aria-label={`Ship date for ${v.vendor_name}`} className="w-44"
-                                  onChange={(day) => setAlloc((current) => ({ ...current, [v.vendor_id]: { ...current[v.vendor_id]!, ship_date: day } }))} />
-                    </label>
-                  </li>
-                );
-              })}
-            </ul>
-            <p className="text-sm text-ink-muted">
-              Order ship date: <span className="font-medium text-ink">{formatDate(state.order.ship_date)}</span>. Change a vendor&apos;s date to ask
-              for a different shipment date; the vendor&apos;s email shows its date.
-            </p>
-            {!datesSet && <p className="text-sm text-dec">Choose a ship date for each vendor.</p>}
-            {belowMoq.length > 0 && (
-              <p className="flex items-start gap-2 rounded-md bg-age-yellow px-3 py-2 text-sm text-age-yellow-ink">
-                <AlertIcon size={14} className="mt-0.5 shrink-0" />
-                {belowMoq.length} allocation{belowMoq.length === 1 ? " is" : "s are"} below the MOQ. You can still place the order.
-              </p>
-            )}
-            <p className="text-sm text-ink-muted">Each vendor is emailed its own order. After placing, the allocation and dates are locked.</p>
-          </div>
-        </Sheet>
-      )}
     </div>
   );
 }

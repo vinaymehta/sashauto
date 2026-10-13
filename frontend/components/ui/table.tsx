@@ -3,12 +3,15 @@ import type { PageMeta } from "@/lib/types";
 import { formatCount } from "@/lib/format";
 import { ChevronLeftIcon, ChevronRightIcon } from "../icons";
 
-// `dense` tightens horizontal cell padding for wide data grids. `fixed` makes a <colgroup> set exact
-// column proportions instead of letting content decide.
-export function Table({ children, dense = false, fixed = false }: { children: ReactNode; dense?: boolean; fixed?: boolean }) {
+// `dense` tightens horizontal cell padding for wide data grids. `fixed`: column widths come from <col> elements;
+// `minWidth` (a min-w-… class) keeps the columns readable on small screens, where the table then scrolls sideways
+// inside its card instead of squeezing.
+export function Table({ children, dense = false, fixed = false, minWidth = "min-w-[720px]" }: {
+  children: ReactNode; dense?: boolean; fixed?: boolean; minWidth?: string;
+}) {
   return (
     <div className="animate-fade-in overflow-x-auto">
-      <table className={`w-full border-collapse text-base ${fixed ? "min-w-[720px] table-fixed" : ""} ${dense ? "[&_td]:px-3 [&_th]:px-3 [&_td:first-child]:pl-6 [&_th:first-child]:pl-6 [&_td:last-child]:pr-6 [&_th:last-child]:pr-6" : ""}`}>{children}</table>
+      <table className={`w-full border-collapse text-base ${fixed ? `${minWidth} table-fixed` : ""} ${dense ? "[&_td]:px-3 [&_th]:px-3 [&_td:first-child]:pl-6 [&_th:first-child]:pl-6 [&_td:last-child]:pr-6 [&_th:last-child]:pr-6" : ""}`}>{children}</table>
     </div>
   );
 }
@@ -19,7 +22,7 @@ const ALIGN: Record<Align, string> = { left: "text-left", center: "text-center",
 export function Th({ align = "left", className = "", ...props }: ThHTMLAttributes<HTMLTableCellElement> & { align?: Align }) {
   return (
     <th
-      className={`h-10 whitespace-nowrap border-b border-neutral-200 bg-neutral-50 px-6 text-xs font-bold uppercase tracking-wider text-neutral-800 ${ALIGN[align]} ${className}`}
+      className={`h-10 whitespace-nowrap border-b border-neutral-200 bg-neutral-50 px-4 text-xs font-bold uppercase sm:px-6 tracking-wider text-neutral-800 ${ALIGN[align]} ${className}`}
       {...props}
     />
   );
@@ -28,7 +31,7 @@ export function Th({ align = "left", className = "", ...props }: ThHTMLAttribute
 export function Td({ align = "left", className = "", ...props }: TdHTMLAttributes<HTMLTableCellElement> & { align?: Align }) {
   return (
     <td
-      className={`h-12 whitespace-nowrap border-b border-neutral-100 px-6 text-ink transition-colors ${align === "right" ? "tabular text-right" : align === "center" ? "text-center" : ""} ${className}`}
+      className={`h-12 whitespace-nowrap border-b border-neutral-100 px-4 text-ink sm:px-6 transition-colors ${align === "right" ? "tabular text-right" : align === "center" ? "text-center" : ""} ${className}`}
       {...props}
     />
   );
@@ -61,7 +64,7 @@ export function Pagination({ meta, onPage, onPerPage, noun = "rows" }: {
   const pageButton = "flex h-8 min-w-8 items-center justify-center rounded-md px-2 text-sm tabular transition-colors duration-150";
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-6 py-4 text-sm text-ink-muted">
+    <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-4 text-sm text-ink-muted sm:px-6">
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
         <span className="tabular">
           Showing <span className="font-medium text-ink">{formatCount(meta.from)}–{formatCount(meta.to)}</span> of{" "}

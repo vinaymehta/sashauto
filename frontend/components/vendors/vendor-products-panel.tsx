@@ -27,8 +27,14 @@ type PricedItem = Pick<VendorProduct, "price_amount" | "price_currency" | "price
 
 // The price as written in the vendor file; otherwise "₹12 / pc · ₹60 / set of 5" for a pack part, "₹12" for a part
 // sold singly, with the note after.
+const CURRENCY_SIGN: Record<string, string> = { INR: "₹", USD: "$", EUR: "€", GBP: "£", CNY: "¥" };
+const HAS_CURRENCY = /[₹$€£¥]|\b(INR|USD|EUR|GBP|CNY|RMB|RS)\b/i;
+
 export function formatPrice(item: PricedItem) {
-  if (item.price_text) return item.price_text;
+  // The file's text, with the currency sign added when the file wrote only the amount ("4.25" → "₹ 4.25").
+  if (item.price_text) {
+    return HAS_CURRENCY.test(item.price_text) ? item.price_text : `${CURRENCY_SIGN[item.price_currency] ?? item.price_currency} ${item.price_text}`;
+  }
   const pack = item.pack_size ?? 1;
   const pc = formatAmount(item.price_amount, item.price_currency);
   const set = formatAmount(item.set_price_amount ?? null, item.price_currency);
