@@ -4,7 +4,7 @@ import { createContext, useContext, type ReactNode } from "react";
 import type { OrderRow } from "@/lib/types";
 import { formatDate, formatQty } from "@/lib/format";
 import { ageGroup } from "../age";
-import { BoxIcon, CalendarIcon, FileIcon, MapPinIcon, TruckIcon } from "../icons";
+import { BoxIcon, MapPinIcon } from "../icons";
 
 type Source = OrderRow["source_data"];
 
@@ -72,29 +72,13 @@ export function OrderDetailsBody({ row, rows, description }: { row: OrderRow; ro
   ] as [string, string | null][]).filter(([, value]) => value);
   // Every column of the supplier-portal order view, also when the file has no value for it.
   const columns = COLUMNS;
-  const totalQty = rows.reduce((sum, r) => sum + (r.qty === null ? 0 : Number(r.qty)), 0);
   const today = new Date();
-  const todayIso = today.toLocaleDateString("en-CA");
-  const next = rows.map((r) => r.ship_date).filter((d) => d >= todayIso).sort()[0] ?? null;
-  const unitPrice = src(row.source_data, "Unit Price");
-  const value = unitPrice && !Number.isNaN(Number(unitPrice)) ? totalQty * Number(unitPrice) : null;
-  const money = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-  const tiles: { label: string; value: string; hint?: string; tint: string; icon: ReactNode }[] = [
-    { label: "Total Qty", value: formatQty(String(totalQty)), hint: `${rows.length} ship date${rows.length === 1 ? "" : "s"}`,
-      tint: "bg-tint-violet text-tint-violet-ink", icon: <BoxIcon size={16} /> },
-    { label: "Next ship date", value: next ? formatDate(next) : "—", hint: next ? undefined : "All ship dates have passed",
-      tint: "bg-tint-amber text-tint-amber-ink", icon: <CalendarIcon size={16} /> },
-    { label: "Unit price", value: unitPrice ? price(unitPrice)! : "—", tint: "bg-tint-aqua text-tint-aqua-ink", icon: <FileIcon size={16} /> },
-    { label: "Order value", value: value === null ? "—" : money(value), hint: value === null ? undefined : "Total Qty × unit price",
-      tint: "bg-tint-aqua text-tint-aqua-ink", icon: <TruckIcon size={16} /> },
-  ];
 
   return (
     <div className="space-y-4">
-      {/* Header */}
+      {/* Order: part details, with Ship To below them in the same card */}
       <section className="overflow-hidden rounded-lg border border-line bg-gradient-to-br from-tint-violet/70 via-white to-white shadow-card">
-        <div className="flex flex-wrap items-start gap-4 px-5 py-5">
+        <div className="flex min-w-0 items-start gap-4 px-5 py-5">
           <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white text-tint-violet-ink shadow-card ring-1 ring-tint-violet-ink/15">
             <BoxIcon size={22} />
           </span>
@@ -114,35 +98,20 @@ export function OrderDetailsBody({ row, rows, description }: { row: OrderRow; ro
             </div>
           </div>
         </div>
-      </section>
-
-      {/* Key figures */}
-      <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {tiles.map((t) => (
-          <div key={t.label} className="rounded-lg border border-line bg-white px-4 py-3 shadow-card">
-            <dt className="flex items-center gap-2 text-xs font-medium text-ink-muted">
-              <span className={`flex h-7 w-7 items-center justify-center rounded-md ${t.tint}`}>{t.icon}</span>
-              {t.label}
-            </dt>
-            <dd className="tabular mt-2 text-lg font-semibold text-ink">{t.value}</dd>
-            {t.hint && <dd className="text-xs text-ink-muted">{t.hint}</dd>}
-          </div>
-        ))}
-      </dl>
-
-      {/* Ship To */}
-      <section className="flex flex-wrap items-start gap-x-6 gap-y-2 rounded-lg border border-line bg-white px-5 py-4 shadow-card">
-        <h3 className="flex items-center gap-2 text-sm font-semibold text-ink">
-          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-tint-violet text-tint-violet-ink"><MapPinIcon size={15} /></span>
-          Ship To
-        </h3>
-        {address.length ? (
-          <address className="text-sm not-italic leading-relaxed text-ink">
-            {address.map((line, i) => <span key={i} className={`block ${i === 0 ? "font-semibold" : "text-ink-muted"}`}>{line}</span>)}
-          </address>
-        ) : (
-          <p className="text-sm text-ink-faint">Not in the file</p>
-        )}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line/70 bg-white/60 px-5 py-3 text-sm">
+          <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-ink-muted">
+            <MapPinIcon size={13} className="text-tint-violet-ink" />
+            Ship To
+          </span>
+          {address.length ? (
+            <address className="min-w-0 not-italic text-ink">
+              <span className="font-semibold">{address[0]}</span>
+              {address.length > 1 && <span className="text-ink-muted">, {address.slice(1).join(", ")}</span>}
+            </address>
+          ) : (
+            <span className="text-ink-faint">Not in the file</span>
+          )}
+        </div>
       </section>
 
       {/* Schedule, full width */}
@@ -183,16 +152,6 @@ export function OrderDetailsBody({ row, rows, description }: { row: OrderRow; ro
                 );
               })}
             </tbody>
-            <tfoot>
-              <tr className="bg-neutral-50">
-                <td className="h-10 pl-5" />
-                {columns.map((c, i) => (
-                  <td key={c.label} className={`h-10 whitespace-nowrap px-3 text-xs font-semibold text-ink last:pr-5 ${c.align === "right" ? "tabular text-right" : ""}`}>
-                    {c.label === "Quantity" ? formatQty(String(totalQty)) : i === 0 ? "Total" : ""}
-                  </td>
-                ))}
-              </tr>
-            </tfoot>
           </table>
         </div>
       </section>
