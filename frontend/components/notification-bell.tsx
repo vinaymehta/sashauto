@@ -73,9 +73,9 @@ export function NotificationBell() {
         aria-expanded={open}
         className={`relative flex h-9 w-9 items-center justify-center rounded-md text-neutral-300 transition-colors hover:bg-white/10 hover:text-white ${open ? "bg-white/10 text-white" : ""}`}
       >
-        <BellIcon />
+        <BellIcon size={21} />
         {unread > 0 && (
-          <span className="absolute right-1 top-1 flex animate-pop-in h-4 min-w-4 items-center justify-center rounded-full bg-white px-1 text-2xs font-semibold leading-none text-neutral-900 ring-2 ring-nav">
+          <span className="absolute right-1 -top-0.5 flex animate-pop-in h-3.5 min-w-3.5 items-center justify-center rounded-full bg-white px-0.5 text-[9px] font-semibold leading-none text-neutral-900 ring-[1.5px] ring-nav">
             {unread > 9 ? "9+" : unread}
           </span>
         )}

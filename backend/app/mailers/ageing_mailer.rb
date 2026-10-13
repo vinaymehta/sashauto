@@ -1,8 +1,8 @@
 class AgeingMailer < ApplicationMailer
   MAX_ROWS_PER_BAND = 300
   BAND_TITLES = {
-    "red" => "Red: under 15 days to ship date, or overdue", "yellow" => "Yellow: 15–44 days to ship date",
-    "green" => "Green: 45+ days to ship date"
+    "red" => "Red: under 15 days to ship date, or overdue", "yellow" => "Yellow: 15–29 days to ship date",
+    "green" => "Green: 30–45 days to ship date"
   }.freeze
   BAND_COLORS = { "red" => [ "#fbe9e6", "#a8321f" ], "yellow" => [ "#fdf5d8", "#8a5a00" ], "green" => [ "#eaf6ee", "#17693f" ] }.freeze
   helper QuantityFormatHelper

@@ -1,7 +1,7 @@
 import type { FilterGroup } from "./ui/filter-menu";
 
 // Age group of an order row = days from today until its ship date:
-// 45+ green, 15-44 yellow, under 15 (or the ship date has passed) red. Every row has a group.
+// 30-45 green, 15-29 yellow, under 15 (or the ship date has passed) red; more than 45 days away is uncoloured.
 // Same rule as the server (Ageing::Rules) and the ageing email.
 // The server filters with the same rule (param `age`), using the browser's date sent as `today`.
 export type AgeGroup = "green" | "yellow" | "red" | null;
@@ -13,8 +13,8 @@ export const AGE_ROW: Record<Exclude<AgeGroup, null>, string> = {
 };
 
 const AGE_TITLE: Record<Exclude<AgeGroup, null>, string> = {
-  green: "Ship date 45 or more days away",
-  yellow: "Ship date 15–44 days away",
+  green: "Ship date 30–45 days away",
+  yellow: "Ship date 15–29 days away",
   red: "Ship date under 15 days away, or overdue",
 };
 
@@ -23,8 +23,8 @@ export const AGE_FILTER: FilterGroup = {
   label: "Age group",
   options: [
     { value: "red", label: "Under 15 days to ship date or overdue" },
-    { value: "yellow", label: "15–44 days to ship date" },
-    { value: "green", label: "45+ days to ship date" },
+    { value: "yellow", label: "15–29 days to ship date" },
+    { value: "green", label: "30–45 days to ship date" },
   ],
 };
 
@@ -39,7 +39,8 @@ export function ageGroup(shipDate: string, today: Date = new Date()): AgeGroup {
   const ship = Date.UTC(y!, m! - 1, d!);
   const now = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
   const daysUntil = Math.round((ship - now) / 86_400_000);
-  if (daysUntil >= 45) return "green";
+  if (daysUntil > 45) return null;
+  if (daysUntil >= 30) return "green";
   if (daysUntil >= 15) return "yellow";
   return "red";
 }
@@ -53,8 +54,9 @@ export function ageRowProps(shipDate: string, today: Date, neutral = "hover:bg-n
 export function AgeLegend() {
   const items: [string, string][] = [
     ["bg-age-red border-age-red-ink/30", "Under 15 days to ship date or overdue"],
-    ["bg-age-yellow border-age-yellow-ink/30", "15–44 days"],
-    ["bg-age-green border-age-green-ink/30", "45+ days"],
+    ["bg-age-yellow border-age-yellow-ink/30", "15–29 days"],
+    ["bg-age-green border-age-green-ink/30", "30–45 days"],
+    ["bg-white border-neutral-300", "More than 45 days"],
   ];
   return (
     <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 border-b border-line bg-white px-6 py-2.5 text-xs text-ink-muted">

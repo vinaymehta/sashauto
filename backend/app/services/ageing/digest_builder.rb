@@ -1,10 +1,10 @@
 module Ageing
   # Builds the ageing email of one upload from its CURRENT rows: one row per PO Number + Part Number + Type
   # (the latest Ship Date), i.e. the rows shown on the Orders page, grouped by age band (Ageing::Rules: red under 15
-  # days to ship date or overdue, yellow 15-44 days, green 45+ days).
+  # days to ship date or overdue, yellow 15-29 days, green 30-45 days; orders more than 45 days away are not listed).
   #
   # Called inside the upload's commit transaction (outbox): the digest commits with the upload, and the
-  # caller hands it to Sidekiq after commit. Returns nil when the upload has no current rows.
+  # caller hands it to Sidekiq after commit. Returns nil when no current row is 45 days or less from its ship date.
   class DigestBuilder
     def self.call(batch:, today:)
       new(batch, today).call
