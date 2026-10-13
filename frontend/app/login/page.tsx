@@ -22,8 +22,9 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // Signed in (now or already): go to the user's start page — Orders for the Warehouse Manager, else the Dashboard.
   useEffect(() => {
-    if (!loading && user) router.replace("/");
+    if (!loading && user) router.replace(user.role === "warehouse_manager" ? "/orders" : "/");
   }, [loading, user, router]);
 
   const emailError = touched.email ? validateEmail(email) : null;
@@ -37,7 +38,6 @@ export default function LoginPage() {
     setSubmitting(true);
     try {
       await signIn(email.trim(), password);
-      router.replace("/");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Sign-in failed. Try again.");
       setPassword("");

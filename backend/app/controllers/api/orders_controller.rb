@@ -51,7 +51,8 @@ module Api
         paginate(scope)
       else
         # Stored rows of the upload (row_count is the number after merging identical rows, not what is listed).
-        total = OrderRow.where(upload_batch_id: batch&.id).count + (current_view? ? ManualOrder.active.count : 0)
+        total = OrderRow.where(upload_batch_id: batch&.id).count +
+                (current_view? ? ManualOrder.active.count + kept_rows(batch).count : 0)
         paginate_with_known_total(scope, total)
       end
 
@@ -168,16 +169,35 @@ module Api
       selected_batch == @latest
     end
 
-    # The upload's rows, plus (current view) the manual orders, as one `order_rows` relation so the
-    # search, filters, sorting and pagination below apply to both. Each row has `manual` (true/false).
+    # The upload's rows, plus (current view) the manual orders and the kept rows (see #kept_rows), as one
+    # `order_rows` relation so the search, filters, sorting and pagination below apply to all. Each row has
+    # `manual` and `kept` (true/false).
     def dataset(batch)
       imported = OrderRow.where(upload_batch_id: batch&.id)
-                         .select(*SHARED_COLUMNS, :upload_batch_id, :source_row_number, :current, :group_row_count, "false AS manual")
+                         .select(*SHARED_COLUMNS, :upload_batch_id, :source_row_number, :current, :group_row_count,
+                                 "false AS manual", "false AS kept")
       return OrderRow.from("(#{imported.to_sql}) AS order_rows") unless current_view?
 
       manual = ManualOrder.active.select(*SHARED_COLUMNS, "NULL::bigint AS upload_batch_id", "NULL::integer AS source_row_number",
-                                         "true AS current", "1 AS group_row_count", "true AS manual")
-      OrderRow.from("(#{imported.to_sql} UNION ALL #{manual.to_sql}) AS order_rows")
+                                         "true AS current", "1 AS group_row_count", "true AS manual", "false AS kept")
+      kept = OrderRow.where(id: kept_rows(batch).select(:id))
+                     .select(*SHARED_COLUMNS, :upload_batch_id, :source_row_number, :current, :group_row_count,
+                             "false AS manual", "true AS kept")
+      OrderRow.from("(#{imported.to_sql} UNION ALL #{manual.to_sql} UNION ALL #{kept.to_sql}) AS order_rows")
+    end
+
+    # Orders with an active delivery mark (inbound / outbound) that are no longer in the latest upload: like manual
+    # orders they stay on the Orders page. One row per order (PO + Part + Type + PO Line + Ship Date), its last version.
+    def kept_rows(batch)
+      OrderRow.from(<<~SQL.squish)
+        (SELECT DISTINCT ON (r.group_key, r.po_line_number, r.ship_date) r.id
+         FROM order_rows r
+         JOIN order_deliveries d ON d.order_row_id = r.id AND d.removed_at IS NULL
+         WHERE r.upload_batch_id <> #{Integer(batch&.id || 0)}
+           AND NOT EXISTS (SELECT 1 FROM order_rows n WHERE n.upload_batch_id = #{Integer(batch&.id || 0)}
+                           AND n.group_key = r.group_key AND n.po_line_number = r.po_line_number AND n.ship_date = r.ship_date)
+         ORDER BY r.group_key, r.po_line_number, r.ship_date, r.upload_batch_id DESC) AS order_rows
+      SQL
     end
 
     # Headers of the upload in file order; the 47 manual order columns when there is no upload yet.

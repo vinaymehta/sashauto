@@ -188,6 +188,7 @@ export interface ActivityItem {
   description: string;
   at: string;
   href: string;
+  unread: boolean; // newer than the user's last "Mark as read"
 }
 
 export interface ActivityFeed {

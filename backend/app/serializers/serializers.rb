@@ -124,6 +124,8 @@ module Serializers
       data[:source_data] = row.source_data if source
       # Rows of the Orders list can be manual orders (see OrdersController#dataset).
       data[:manual] = row.has_attribute?(:manual) && row[:manual] ? true : false
+      # Kept on the Orders page because of a delivery mark, though no longer in the latest upload.
+      data[:kept] = row.has_attribute?(:kept) && row[:kept] ? true : false
     elsif row.is_a?(ManualOrder)
       data.merge!(history_count: 0, source_row_number: nil, manual: true)
       data[:source_data] = row.source_data if source

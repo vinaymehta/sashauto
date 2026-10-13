@@ -15,10 +15,9 @@ import { OrderActions, UploadPicker } from "@/components/orders/orders-menu";
 import { DeliveryCell } from "@/components/orders/delivery-cell";
 import { OpenOrderContext, OrderDetailsLink } from "@/components/orders/order-details-modal";
 import { RelatedLink } from "@/components/orders/related-popover";
-import { EmailStatus } from "@/components/upload-result";
 import { VersionKpis } from "@/components/upload-summary";
 import { useSession } from "@/components/session";
-import { AGE_FILTER, AgeLegend, ageGroup, ageRowProps, todayParam } from "@/components/age";
+import { AGE_FILTER, AgeLegend, ageRowProps, todayParam } from "@/components/age";
 import { useApi, useDebounced } from "@/components/use-api";
 import { useListQuery } from "@/components/use-list-query";
 import { Badge } from "@/components/ui/badge";
@@ -30,7 +29,7 @@ import { SearchInput } from "@/components/ui/search-input";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { FilterChips, FilterMenu, type FilterGroup } from "@/components/ui/filter-menu";
 import { SortTh } from "@/components/ui/sort-header";
-import { Pagination, Table, Td } from "@/components/ui/table";
+import { Pagination, Table, Td, Th } from "@/components/ui/table";
 import { Tabs } from "@/components/ui/tabs";
 
 type Align = "left" | "right";
@@ -52,7 +51,7 @@ const PlaceOrderContext = createContext<((row: OrderRow) => void) | null>(null);
 // Unit, clickable like the PO and Part Numbers: opens Place order. Plain text when placing is not available.
 function UnitLink({ row }: { row: OrderRow }) {
   const place = useContext(PlaceOrderContext);
-  const label = <span className="block max-w-64 truncate group-data-manager:max-w-56" title={row.unit ?? undefined}>{text(row.unit)}</span>;
+  const label = <span className="block max-w-64 truncate" title={row.unit ?? undefined}>{text(row.unit)}</span>;
   if (!place || !row.unit?.trim()) return label;
   return (
     <button type="button" onClick={(e) => { e.stopPropagation(); place(row); }}
@@ -69,7 +68,6 @@ const typedColumns = (uploadId?: number): Record<string, Omit<Column, "key" | "l
   type: { render: (r) => <span className="inline-flex items-center gap-1.5">{r.order_type}{r.manual && <Badge>Manual</Badge>}{r.placed && <Badge tone="up">Order placed</Badge>}</span> },
   due_date: { render: (r) => date(r.due_date) },
   ship_date: { render: (r) => formatDate(r.ship_date) },
-  // Narrower for the Warehouse Manager (table wrapper has data-manager), whose table also has the pinned Action column.
   unit: { render: (r) => <UnitLink row={r} /> },
   po_number: { render: (r) => <OrderDetailsLink row={r} /> },
   part_number: { render: (r) => <RelatedLink kind="part" value={r.part_number} uploadId={uploadId} /> },
@@ -98,30 +96,18 @@ const rowKey = (row: OrderRow) => `${row.manual ? "m" : "r"}${row.id}`;
 
 // One table row. Memoized: the page re-renders when the dashboard, upload list or tabs load or change, and
 // re-rendering every cell of 50 rows × all Excel columns each time blocked the browser for over a second.
-// Solid row tint for the pinned Action cell (the row's own hover tint is semi-transparent).
-const ACTION_BG = { green: "bg-age-green", yellow: "bg-age-yellow", red: "bg-age-red" } as const;
-// Pinned to the right edge of the table while the other columns scroll sideways.
-const ACTION_CELL = "sticky right-0 z-[1] shadow-[inset_1px_0_0_var(--color-line)]";
-
-// One order row. Clicking the row opens Place order (`onSelect`; not for the Warehouse Manager); clicking the PO
-// Number opens its details. The Action column (Inbound / Outbound delivery, Warehouse Manager only) stays at the
-// right edge.
-const OrderTr = memo(function OrderTr({ row, columns, open, today, onSelect, canMark, onChanged }: {
-  row: OrderRow; columns: Column[]; open: boolean; today: Date; onSelect?: (row: OrderRow) => void; canMark: boolean; onChanged: () => void;
+// One order row (not clickable itself): the PO Number opens its details and the Unit opens Place order. The first
+// column is the Delivery status (Inbound / Outbound): the Warehouse Manager (`canMark`) edits it, the admin sees it.
+const OrderTr = memo(function OrderTr({ row, columns, open, today, canMark, onChanged }: {
+  row: OrderRow; columns: Column[]; open: boolean; today: Date; canMark: boolean; onChanged: () => void;
 }) {
   const tint = ageRowProps(row.ship_date, today);
-  const age = ageGroup(row.ship_date, today);
   return (
-    <tr className={`${tint.className} ${onSelect ? "cursor-pointer" : ""} ${open ? "shadow-[inset_3px_0_0_var(--color-accent)]" : ""}`} title={tint.title}
-        onClick={onSelect ? () => onSelect(row) : undefined} aria-haspopup={onSelect ? "dialog" : undefined}>
+    <tr className={`${tint.className} ${open ? "shadow-[inset_3px_0_0_var(--color-accent)]" : ""}`} title={tint.title}>
+      <Td><DeliveryCell row={row} canMark={canMark} onChanged={onChanged} /></Td>
       {columns.map((c) => (
         <Td key={c.key} align={c.align === "right" ? "right" : "left"}>{c.render(row)}</Td>
       ))}
-      {canMark && (
-        <Td className={`${ACTION_CELL} ${age ? ACTION_BG[age] : "bg-white"}`}>
-          <DeliveryCell row={row} canMark={canMark} onChanged={onChanged} />
-        </Td>
-      )}
     </tr>
   );
 });
@@ -220,6 +206,8 @@ function OrdersView() {
   ];
   type TabKey = (typeof tabs)[number]["key"];
   const [tab, setTab] = useState<TabKey>(params.get("tab") === "changes" ? "changes" : "orders");
+  // Change type the Quantity changes tab starts filtered on (set by clicking a summary card).
+  const [changeFilter, setChangeFilter] = useState<string | undefined>(undefined);
   // Fall back to the order rows when the chosen tab no longer exists (e.g. a new first upload).
   const activeTab: TabKey = tabs.some((t) => t.key === tab) ? tab : "orders";
 
@@ -271,19 +259,20 @@ function OrdersView() {
           </Alert>
         </div>
       )}
-      {shown && <div className="mb-6"><VersionKpis upload={shown} /></div>}
+      {shown && (
+        <div className="mb-6">
+          <VersionKpis upload={shown} onOpen={(target) => { setChangeFilter(target.direction); setTab(target.tab); }} />
+        </div>
+      )}
 
       <div className="flex items-center overflow-x-auto border-b border-line">
-        <Tabs active={activeTab} onChange={setTab} tabs={tabs} />
-        {shown && !(isFirst && shown.emails.length === 0) && (
-          <div className="ml-auto pb-1.5 pl-4"><EmailStatus uploadId={shown.id} emails={shown.emails} onChanged={current ? reloadDashboard : previous.reload} /></div>
-        )}
+        <Tabs active={activeTab} onChange={(t) => { setChangeFilter(undefined); setTab(t); }} tabs={tabs} />
       </div>
       {/* Keyed so a tab fades in when opened; the order rows do not depend on the upload summary, so the
           table is not rebuilt when the dashboard data arrives. */}
       <section key={activeTab === "orders" ? "orders" : `${activeTab}-${shown?.id}`} className="animate-fade-in overflow-hidden rounded-lg border border-line border-t-0 bg-surface shadow-card">
         {activeTab === "changes" && shown ? (
-          <ChangesTable uploadId={shown.id} manual={current}
+          <ChangesTable key={changeFilter ?? "all"} uploadId={shown.id} manual={current} direction={changeFilter}
                         emptyDescription="Every order row present in both the previous and the latest upload has the same quantity." />
         ) : activeTab === "addresses" && shown ? (
           <AddressChangesTable uploadId={shown.id} manual={current} />
@@ -310,27 +299,23 @@ function OrdersView() {
             action={filtered ? <Button size="sm" onClick={clearAll}>Clear search and filters</Button> : undefined}
           />
         ) : data ? (
-          <div data-manager={manager || undefined} className={`group transition-opacity duration-200 ${loading ? "opacity-50" : ""}`}>
+          <div className={`transition-opacity duration-200 ${loading ? "opacity-50" : ""}`}>
             <OpenOrderContext.Provider value={setSelected}>
             <PlaceOrderContext.Provider value={manager ? null : setPlacing}>
             <Table dense>
               <thead>
                 <tr>
+                  <Th>{manager ? "Action" : "Delivery"}</Th>
                   {COLUMNS.map((c) => (
                     <SortTh key={c.key} label={c.label} sortKey={c.key} align={c.align ?? "left"}
                             sort={list.sort} direction={list.direction} onSort={list.toggleSort} />
                   ))}
-                  {manager && (
-                    <th className={`${ACTION_CELL} h-10 whitespace-nowrap border-b border-neutral-200 bg-neutral-50 px-3 text-left text-xs font-semibold uppercase tracking-wider text-ink-muted`}>
-                      Action
-                    </th>
-                  )}
                 </tr>
               </thead>
               <tbody>
                 {data.data.map((row) => (
                   <OrderTr key={rowKey(row)} row={row} columns={COLUMNS} open={selectedKey === rowKey(row)} today={today}
-                           onSelect={manager ? undefined : setPlacing} canMark={manager} onChanged={reload} />
+                           canMark={manager} onChanged={reload} />
                 ))}
               </tbody>
             </Table>

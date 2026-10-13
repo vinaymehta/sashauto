@@ -31,8 +31,11 @@ const FILTERS: FilterGroup[] = [
 ];
 
 // `manual`: also list quantity changes from manual order edits since this (latest) upload.
-export function ChangesTable({ uploadId, emptyDescription, manual = false }: { uploadId: number; emptyDescription?: string; manual?: boolean }) {
-  const list = useListQuery();
+// `direction`: start filtered on one change type (e.g. from a summary card).
+export function ChangesTable({ uploadId, emptyDescription, manual = false, direction }: {
+  uploadId: number; emptyDescription?: string; manual?: boolean; direction?: string;
+}) {
+  const list = useListQuery(direction ? { direction } : {});
   const [search, setSearch] = useState("");
   const q = useDebounced(search.trim());
 

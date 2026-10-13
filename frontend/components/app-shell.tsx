@@ -43,7 +43,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (ready && blocked) router.replace(MANAGER_PATH);
   }, [ready, blocked, router]);
-  const items = manager ? NAV.filter((item) => item.href === MANAGER_PATH) : NAV.filter((item) => !item.adminOnly || user?.role === "admin");
+  // No menu until the session is known, so a signed-out visitor or the Warehouse Manager never sees other pages' links.
+  const items = !ready ? [] : manager ? NAV.filter((item) => item.href === MANAGER_PATH)
+    : NAV.filter((item) => !item.adminOnly || user?.role === "admin");
   const current = items.find((item) => item.match(pathname));
 
   // An account created or reset by an admin chooses its own password before anything else.

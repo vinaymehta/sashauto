@@ -1,19 +1,23 @@
 import type { ReactNode } from "react";
 import type { UploadDetail } from "@/lib/types";
 import { formatCount, formatDateTime } from "@/lib/format";
-import { AlertIcon, ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon, CheckIcon, FileIcon, HistoryIcon } from "./icons";
+import { AlertIcon, ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon, CalendarIcon, CheckIcon, FileIcon, HistoryIcon, PlusIcon } from "./icons";
 import { Badge } from "./ui/badge";
 import { TINTS, type Tint } from "./ui/tint";
 
 // ─── Shared KPI building block ───────────────────────────────────────────────
 
-function Kpi({ label, value, tone, hint, icon, tint = "neutral" }: {
-  label: string; value: ReactNode; tone?: "up" | "down"; hint?: string; icon: ReactNode; tint?: Tint;
+// `onClick`: the card opens the related tab (shown as a clickable card).
+function Kpi({ label, value, tone, hint, icon, tint = "neutral", onClick }: {
+  label: string; value: ReactNode; tone?: "up" | "down"; hint?: string; icon: ReactNode; tint?: Tint; onClick?: () => void;
 }) {
   const color = tone === "up" ? "text-inc" : tone === "down" ? "text-dec" : "text-neutral-900";
   const t = TINTS[tint];
   return (
-    <div className={`bg-white bg-gradient-to-b ${t.wash} via-white to-white rounded-xl border border-neutral-200 px-4 py-4`}>
+    <div role={onClick ? "button" : undefined} tabIndex={onClick ? 0 : undefined} onClick={onClick}
+         onKeyDown={onClick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } } : undefined}
+         className={`bg-white bg-gradient-to-b ${t.wash} via-white to-white rounded-xl border border-neutral-200 px-4 py-4 ${
+           onClick ? "cursor-pointer transition-all duration-150 hover:-translate-y-0.5 hover:border-neutral-300 hover:shadow-card focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40" : ""}`}>
       <div className="flex items-start justify-between gap-2">
         <dt className="mb-1.5 truncate text-xs font-medium leading-tight text-neutral-400">{label}</dt>
         <span aria-hidden className={`-mr-0.5 -mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${t.chip} text-neutral-400`}>{icon}</span>
@@ -83,7 +87,12 @@ export function VersionKpisStrip({ upload }: { upload: UploadDetail }) {
 
 // ─── Split individual KPI cards grid ─────────────────────────────────────────
 
-export function VersionKpis({ upload }: { upload: UploadDetail }) {
+// Where a card leads: a tab of the upload (and, for Quantity changes, the change type to filter on).
+export type KpiTarget = { tab: "orders" | "changes"; direction?: "increase" | "decrease" | "added" | "rescheduled" };
+
+// `onOpen`: makes the cards clickable, each opening its related tab.
+export function VersionKpis({ upload, onOpen }: { upload: UploadDetail; onOpen?: (target: KpiTarget) => void }) {
+  const open = (target: KpiTarget) => (onOpen ? () => onOpen(target) : undefined);
   const s = upload.stats;
   const baseline = upload.previous_version === null;
 
@@ -95,15 +104,20 @@ export function VersionKpis({ upload }: { upload: UploadDetail }) {
         <Kpi key="known" label="Comparable rows" value={formatCount((s.row_count ?? 0) - (s.unknown_quantity_count ?? 0))} icon={<CheckIcon size={16} />} tint="aqua" />,
       ]
     : [
-        <Kpi key="rows" label="Rows processed" value={formatCount(s.row_count)} hint={`from ${formatCount(s.source_row_count)} Excel rows`} icon={<FileIcon size={16} />} tint="neutral" />,
-        <Kpi key="compared" label="Rows compared" value={formatCount(s.compared_count)} hint="with the previous upload" icon={<ArrowUpDownIcon size={16} />} tint="violet" />,
-        <Kpi key="up" label="↑ Quantity up" value={formatCount(s.increase_count)} hint={s.new_row_count ? `+ ${formatCount(s.new_row_count)} row${s.new_row_count === 1 ? "" : "s"} added` : undefined} tone={s.increase_count ? "up" : undefined} icon={<ArrowUpIcon size={16} />} tint="inc" />,
-        <Kpi key="down" label="↓ Quantity down" value={formatCount(s.decrease_count)} hint={s.missing_row_count ? `+ ${formatCount(s.missing_row_count)} row${s.missing_row_count === 1 ? "" : "s"} removed` : undefined} tone={s.decrease_count ? "down" : undefined} icon={<ArrowDownIcon size={16} />} tint="dec" />,
-        <Kpi key="same" label="No change" value={formatCount(s.unchanged_count)} hint={s.rescheduled_count ? `${formatCount(s.rescheduled_count)} rescheduled (date moved)` : undefined} icon={<CheckIcon size={16} />} tint="aqua" />,
+        <Kpi key="rows" label="Rows processed" value={formatCount(s.row_count)} hint={`from ${formatCount(s.source_row_count)} Excel rows`} icon={<FileIcon size={16} />} tint="neutral"
+             onClick={open({ tab: "orders" })} />,
+        <Kpi key="up" label="↑ Quantity up" value={formatCount(s.increase_count)} tone={s.increase_count ? "up" : undefined} icon={<ArrowUpIcon size={16} />} tint="inc"
+             onClick={open({ tab: "changes", direction: "increase" })} />,
+        <Kpi key="down" label="↓ Quantity down" value={formatCount(s.decrease_count)} tone={s.decrease_count ? "down" : undefined} icon={<ArrowDownIcon size={16} />} tint="dec"
+             onClick={open({ tab: "changes", direction: "decrease" })} />,
+        <Kpi key="added" label="Rows added" value={formatCount(s.new_row_count)} hint="new ship dates" tone={s.new_row_count ? "up" : undefined} icon={<PlusIcon size={16} />} tint="inc"
+             onClick={open({ tab: "changes", direction: "added" })} />,
+        <Kpi key="rescheduled" label="Rescheduled" value={formatCount(s.rescheduled_count ?? 0)} hint="same Qty, date moved" icon={<CalendarIcon size={16} />} tint="violet"
+             onClick={open({ tab: "changes", direction: "rescheduled" })} />,
       ];
 
   return (
-    <dl className={`grid gap-4 ${baseline ? "grid-cols-2 md:grid-cols-4" : "grid-cols-2 md:grid-cols-4 lg:grid-cols-5"}`}>
+    <dl className={`grid gap-4 ${baseline ? "grid-cols-2 md:grid-cols-4" : "grid-cols-2 md:grid-cols-3 xl:grid-cols-5"}`}>
       {kpis}
     </dl>
   );

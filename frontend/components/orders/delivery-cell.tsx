@@ -21,26 +21,30 @@ const KINDS: { kind: DeliveryKind; name: string; title: string; hint: string }[]
 
 const today = () => new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in local time
 
-// Action column of the Orders table: a tag per marked delivery and, for the Warehouse Manager (`canMark`), an
-// edit icon that opens the Delivery panel. Admins only see the tags (they remove a wrong mark in the order details).
+// Delivery column of the Orders table: only the current status — Outbound (solid green) when delivered to Deere,
+// else Inbound (solid blue) when received at SASH US, else empty; solid so it reads on any row tint — and, for the Warehouse Manager (`canMark`), an edit icon that opens the
+// Delivery panel. Admins see the status read-only.
 export function DeliveryCell({ row, canMark, onChanged }: { row: OrderRow; canMark: boolean; onChanged: () => void }) {
   const [open, setOpen] = useState(false);
+  const current = [...KINDS].reverse().find((k) => row.deliveries?.[k.kind]);
+  const done = current && row.deliveries?.[current.kind];
   return (
-    <span className="inline-flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-      {KINDS.map((k) => {
-        const done = row.deliveries?.[k.kind];
-        return done ? (
-          <span key={k.kind} title={`${k.title} on ${formatDate(done.delivered_on)}${done.marked_by ? ` · ${done.marked_by}` : ""}`}>
-            <Badge tone="up">{k.name} ✓</Badge>
-          </span>
-        ) : null;
-      })}
-      {canMark && (
-        <Button size="sm" onClick={() => setOpen(true)} aria-label={`Delivery for PO ${row.po_number}`} title="Inbound / Outbound" className="w-8 px-0!">
-          <PencilIcon size={14} className="text-ink-muted" />
-        </Button>
+    <span className="inline-flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+      {current && done && (
+        <span title={`${current.title} on ${formatDate(done.delivered_on)}${done.marked_by ? ` · ${done.marked_by}` : ""}`}
+              className={`inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-xs font-semibold text-white shadow-sm ${
+                current.kind === "outbound" ? "bg-inc" : "bg-accent"}`}>
+          <CheckIcon size={12} strokeWidth={2.5} />
+          {current.name}
+        </span>
       )}
-      {/* Rendered on <body>: the pinned (sticky) cell would otherwise keep the panel below the rows after it. */}
+      {canMark && (
+        <button type="button" onClick={() => setOpen(true)} aria-label={`Delivery for PO ${row.po_number}`} title="Record inbound / outbound"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-subtle hover:text-ink">
+          <PencilIcon size={14} />
+        </button>
+      )}
+      {/* Rendered on <body>, outside the table row (whose click would open Place order). */}
       {open && createPortal(
         <div onClick={(e) => e.stopPropagation()}>
           <DeliveryPanel row={row} onClose={() => setOpen(false)} onChanged={onChanged} />

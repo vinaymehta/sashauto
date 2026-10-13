@@ -39,7 +39,24 @@ class ApplicationController < ActionController::API
   end
 
   def require_login
-    render_error "Please sign in.", :unauthorized, code: "unauthenticated" unless current_user
+    return if current_user
+    forget_signed_in
+    render_error "Please sign in.", :unauthorized, code: "unauthenticated"
+  end
+
+  # Marker cookie read by the frontend's proxy.ts: pages redirect to /login before rendering when it is missing.
+  # It carries no identity (the session cookie does); it only says "a sign-in happened in this browser".
+  SIGNED_IN_COOKIE = :sash_signed_in
+
+  # Expires with the session (absolute lifetime from sign-in).
+  def remember_signed_in
+    expires = Time.zone.at(session[:authenticated_at].to_i) + SESSION_LIFETIME
+    cookies[SIGNED_IN_COOKIE] = { value: "1", expires: expires, httponly: true, same_site: :lax,
+                                  secure: Rails.env.production? && AppConfig.https? }
+  end
+
+  def forget_signed_in
+    cookies.delete(SIGNED_IN_COOKIE)
   end
 
   # An account created or reset by an admin signs in with an emailed password and must choose its own before

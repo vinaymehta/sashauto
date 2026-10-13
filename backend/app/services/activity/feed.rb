@@ -18,7 +18,8 @@ module Activity
     def call
       items = (upload_items + conflict_items + delivery_items).sort_by { |item| -item.at.to_f }.first(LIMIT)
       seen = @user.notifications_seen_at
-      { items: items.map(&:to_h), unread_count: items.count { |item| seen.nil? || item.at > seen } }
+      unread = ->(item) { seen.nil? || item.at > seen }
+      { items: items.map { |item| item.to_h.merge(unread: unread.(item)) }, unread_count: items.count(&unread) }
     end
 
     EMAIL_TITLES = {

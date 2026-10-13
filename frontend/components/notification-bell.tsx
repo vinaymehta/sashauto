@@ -59,7 +59,7 @@ export function NotificationBell() {
   // Notifications stay unread until "Mark as read" is clicked.
   function markRead() {
     if (!feed || feed.unread_count === 0) return;
-    setFeed({ ...feed, unread_count: 0 });
+    setFeed({ ...feed, unread_count: 0, items: feed.items.map((item) => ({ ...item, unread: false })) });
     api.post("/api/activity/read").catch(() => undefined);
   }
 
@@ -108,16 +108,22 @@ export function NotificationBell() {
                     <li key={item.id}>
                       <button
                         onClick={() => { close(); router.push(item.href); }}
-                        className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-canvas"
+                        className={`relative flex w-full items-start gap-3 px-4 py-3 text-left transition-colors ${
+                          item.unread ? "bg-accent/5 hover:bg-accent/10" : "hover:bg-canvas"}`}
                       >
+                        {/* Unread: blue bar on the left and a dot; read items are plain. */}
+                        {item.unread && <span aria-hidden className="absolute inset-y-0 left-0 w-0.5 bg-accent" />}
                         <span className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${className}`}>
                           <Icon size={14} />
                         </span>
                         <span className="min-w-0 flex-1">
-                          <span className="block text-sm font-medium text-ink">{item.title}</span>
+                          <span className={`block text-sm text-ink ${item.unread ? "font-semibold" : "font-normal"}`}>{item.title}</span>
                           <span className="block truncate text-xs text-ink-muted">{item.description}</span>
                         </span>
-                        <span className="shrink-0 text-2xs text-ink-faint">{formatRelative(item.at)}</span>
+                        <span className="flex shrink-0 flex-col items-end gap-1.5">
+                          <span className={`text-2xs ${item.unread ? "font-medium text-accent" : "text-ink-faint"}`}>{formatRelative(item.at)}</span>
+                          {item.unread && <span aria-label="Unread" className="h-2 w-2 rounded-full bg-accent" />}
+                        </span>
                       </button>
                     </li>
                   );

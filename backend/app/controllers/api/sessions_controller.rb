@@ -12,6 +12,7 @@ module Api
 
     # Returns the signed-in user (or null) and a CSRF token for subsequent mutating requests.
     def show
+      current_user ? remember_signed_in : forget_signed_in
       render json: { user: current_user && Serializers.user(current_user), csrf_token: form_authenticity_token }
     end
 
@@ -29,6 +30,7 @@ module Api
       user.update_column(:last_login_at, Time.current)
       @current_user = user
       audit("session.login")
+      remember_signed_in
       render json: { user: Serializers.user(user), csrf_token: form_authenticity_token }
     end
 
@@ -60,6 +62,7 @@ module Api
     def destroy
       audit("session.logout")
       reset_session
+      forget_signed_in
       head :no_content
     end
   end
