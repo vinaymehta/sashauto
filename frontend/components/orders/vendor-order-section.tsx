@@ -16,6 +16,16 @@ import { DatePicker } from "../ui/date-picker";
 import { formatAmount, formatPrice } from "../vendors/vendor-products-panel";
 
 const QTY = /^\d+(\.\d{1,3})?$/;
+// A vendor's ship date defaults to this many days before the order's ship date (time to ship to the customer);
+// never before today. It can be changed per vendor.
+const VENDOR_LEAD_DAYS = 60;
+function defaultVendorShipDate(orderShipDate: string) {
+  const [y, m, d] = orderShipDate.split("-").map(Number);
+  const date = new Date(y!, m! - 1, d! - VENDOR_LEAD_DAYS);
+  const today = new Date();
+  const pick = date < new Date(today.getFullYear(), today.getMonth(), today.getDate()) ? today : date;
+  return pick.toLocaleDateString("en-CA");
+}
 // Quantities are compared in thousandths so decimal totals add up exactly (Qty has 3 decimals).
 const milli = (value: string) => Math.round(Number(value) * 1000);
 const fromMilli = (value: number) => formatQty(String(value / 1000));
@@ -115,7 +125,7 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
     setAlloc((current) => {
       const next = { ...current };
       if (next[vendorId] !== undefined) delete next[vendorId];
-      else next[vendorId] = { qty: remaining > 0 ? String(remaining / 1000) : "", unit: "sets", ship_date: state.order.ship_date };
+      else next[vendorId] = { qty: remaining > 0 ? String(remaining / 1000) : "", unit: "sets", ship_date: defaultVendorShipDate(state.order.ship_date) };
       return next;
     });
   }
@@ -206,8 +216,8 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
             })}
           </ul>
           <p className="text-sm text-ink-muted">
-            Order ship date: <span className="font-medium text-ink">{formatDate(state.order.ship_date)}</span>. Change a vendor&apos;s date to ask
-            for a different shipment date; the vendor&apos;s email shows its date.
+            Order ship date: <span className="font-medium text-ink">{formatDate(state.order.ship_date)}</span>. Each vendor&apos;s ship date is set
+            {` ${VENDOR_LEAD_DAYS}`} days earlier by default (not before today); change it if needed. The purchase order shows it as Required By.
           </p>
           {!datesSet && <p className="text-sm text-dec">Choose a ship date for each vendor.</p>}
           {belowMoq.length > 0 && (

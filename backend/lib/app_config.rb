@@ -32,7 +32,8 @@ module AppConfig
       address: env("COMPANY_ADDRESS", ""),
       gst: env("COMPANY_GST", ""),
       phone: env("COMPANY_PHONE", ""),
-      email: env("COMPANY_EMAIL", "")
+      email: env("COMPANY_EMAIL", ""),
+      terms_url: env("COMPANY_TERMS_URL", "")
     }
   end
 

@@ -192,7 +192,7 @@ module VendorOrders
         x += widths[i]
       end
       row_top = top - 18
-      body_height = 300
+      body_height = 230
       @po.lines.each do |line|
         values = [ line.our_article, line.vendor_article, line.description, qty(line.qty), line.uom, unit_cost(line.unit_cost), money(line.total) ]
         x = 0
@@ -239,14 +239,48 @@ module VendorOrders
       pdf.move_cursor_to top - (rows.size * 18) - 14
     end
 
+    # Supply instructions and the terms the order is issued under (SASH's own wording; the terms address comes from
+    # COMPANY_TERMS_URL in .env when set), in a box below a separator line.
     def footer(pdf)
+      name = @company[:name]
+      pdf.move_down 2
       pdf.text "Please include the PO number on your invoice.", align: :right, style: :bold
-      pdf.move_down 14
-      pdf.text "PLEASE SUPPLY THE ABOVE GOODS AND QUOTE THIS PURCHASE ORDER NUMBER WITH YOUR DELIVERY. " \
-               "FAILURE TO COMPLY WITH THIS REQUEST COULD RESULT IN A REJECTION OF THE DELIVERY.", style: :bold, size: 8
-      pdf.move_down 4
-      pdf.text t("This order is issued by #{@company[:name]}. Prices, quantities and the required date are as stated above; " \
-                 "please confirm any difference before despatch."), size: 7, color: GREY
+      pdf.move_down 10
+      pdf.stroke_color LINE
+      pdf.stroke_horizontal_rule
+      pdf.move_down 8
+
+      body = { size: 7.5, leading: 1.5, align: :justify, color: "374151" }
+      pdf.fill_color "111827"
+      pdf.text "PLEASE SUPPLY THE ABOVE GOODS AND QUOTE THIS PURCHASE ORDER NUMBER WITH YOUR DELIVERY AND INVOICE. " \
+               "DELIVERIES WITHOUT THIS NUMBER MAY BE REFUSED.", style: :bold, size: 8, leading: 1.5
+      pdf.move_down 6
+      pdf.text t("Subject to #{name}'s Terms and Conditions of Purchase"), style: :bold, size: 8.5
+      pdf.move_down 3
+      pdf.text "This order is issued under, and governed by:", **body
+      pdf.move_down 2
+      [
+        [ "(a)", "the terms of any written supply agreement in force between #{name} and the Supplier for the goods or services on this order; or" ],
+        [ "(b)", "where there is no such agreement, #{name}'s Terms and Conditions of Purchase in effect on the date of this order, together " \
+                 "with any special conditions or attachments referred to in this order." ]
+      ].each do |label, text|
+        top = pdf.cursor
+        pdf.text_box label, at: [ 8, top ], width: 18, size: 7.5, color: "374151"
+        pdf.bounding_box([ 26, top ], width: pdf.bounds.width - 26) { pdf.text t(text), **body }
+        pdf.move_down 2
+      end
+      pdf.move_down 3
+      paragraphs = [
+        (@company[:terms_url].present? ? "The Terms and Conditions of Purchase are available at #{@company[:terms_url]}." : nil),
+        "By supplying the goods or services on this order, the Supplier accepts the terms that apply to it.",
+        "Terms printed on the Supplier's quotation, invoice, delivery note or other documents do not apply unless #{name} agrees " \
+        "to them in writing."
+      ].compact
+      paragraphs.each do |text|
+        pdf.text t(text), **body
+        pdf.move_down 2
+      end
+      pdf.fill_color "000000"
     end
 
     def watermark(pdf)

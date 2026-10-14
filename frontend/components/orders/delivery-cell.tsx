@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, ApiError } from "@/lib/api";
 import type { DeliveryKind, OrderDeliveryInfo, OrderRow, Role } from "@/lib/types";
@@ -71,7 +71,27 @@ export function DeliveryCell({ row, role, onChanged }: { row: OrderRow; role: Ro
   const [panel, setPanel] = useState<DeliveryKind | null>(null);
   const [busy, setBusy] = useState(false);
   const menuRef = useRef<HTMLSpanElement>(null);
+  // The dropdown opens on <body> (fixed, under the pill) so the table's scroll area does not cut it off.
+  const [menuAt, setMenuAt] = useState<{ top: number; left: number } | null>(null);
   useDismiss(menuRef, menu, () => setMenu(false));
+  // A fixed dropdown would drift from its pill when the page or table scrolls, so it closes instead.
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(false);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => { window.removeEventListener("scroll", close, true); window.removeEventListener("resize", close); };
+  }, [menu]);
+
+  function toggleMenu() {
+    if (!menu && menuRef.current) {
+      const r = menuRef.current.getBoundingClientRect();
+      const height = 44 * 2 + 60;
+      const top = r.bottom + 6 + height > window.innerHeight ? Math.max(8, r.top - 6 - height) : r.bottom + 6;
+      setMenuAt({ top, left: Math.min(r.left, window.innerWidth - 232) });
+    }
+    setMenu(!menu);
+  }
   const current = currentStep(row);
   const done = current && row.deliveries?.[current.kind];
   const mine = STATUS_STEPS.filter((s) => s.role === role);
@@ -99,13 +119,14 @@ export function DeliveryCell({ row, role, onChanged }: { row: OrderRow; role: Ro
   return (
     <span ref={menuRef} className="relative inline-flex" onClick={(e) => e.stopPropagation()}>
       {mine.length === 0 ? <span title={title}>{pill}</span> : (
-        <button type="button" onClick={() => setMenu(!menu)} disabled={busy} aria-haspopup="menu" aria-expanded={menu} title={title}
+        <button type="button" onClick={toggleMenu} disabled={busy} aria-haspopup="menu" aria-expanded={menu} title={title}
                 className="rounded-full transition-opacity hover:opacity-80 disabled:opacity-50">
           {pill}
         </button>
       )}
-      {menu && (
-        <span role="menu" className="absolute left-0 top-9 z-30 w-56 overflow-hidden rounded-lg border border-line bg-white py-1.5 shadow-pop">
+      {menu && menuAt && createPortal(
+        <span role="menu" data-floating style={{ top: menuAt.top, left: menuAt.left }} onClick={(e) => e.stopPropagation()}
+              className="fixed z-[70] block w-56 overflow-hidden rounded-lg border border-line bg-white py-1.5 shadow-pop">
           {mine.map((s) => {
             const set = !!row.deliveries?.[s.kind];
             const before = previousStep(s.kind);
@@ -125,7 +146,8 @@ export function DeliveryCell({ row, role, onChanged }: { row: OrderRow; role: Ro
                   className="block w-full px-3 py-1.5 text-left text-sm text-ink-muted hover:bg-subtle hover:text-ink">
             Details &amp; history
           </button>
-        </span>
+        </span>,
+        document.body,
       )}
       {/* Rendered on <body>, outside the table row. */}
       {panel && createPortal(

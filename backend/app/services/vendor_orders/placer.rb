@@ -59,7 +59,7 @@ module VendorOrders
         lines.each do |line|
           link = links.fetch(line[:vendor_id])
           VendorOrder.create!(vendor_order_placement: placement, vendor: link.vendor, number: VendorOrder.next_number,
-                              qty: line[:qty], unit: line[:unit], ship_date: line[:ship_date] || @row.ship_date,
+                              qty: line[:qty], unit: line[:unit], ship_date: line[:ship_date] || default_ship_date,
                               unit_price: line[:unit] == "pcs" ? link.price_amount : link.set_price_amount,
                               price_currency: link.price_currency, price_note: link.price_note, email_status: "not_sent")
         end
@@ -85,7 +85,14 @@ module VendorOrders
       link = links.fetch(vendor_id)
       PdfBuilder.preview(vendor: link.vendor, product: product, link: link, qty: line[:qty], unit: line[:unit],
                          unit_price: line[:unit] == "pcs" ? link.price_amount : link.set_price_amount,
-                         required_by: line[:ship_date] || @row.ship_date, prepared_by: @user.name)
+                         required_by: line[:ship_date] || default_ship_date, prepared_by: @user.name)
+    end
+
+    # Vendors ship this many days before the order's ship date, unless a date is chosen (not before today).
+    VENDOR_LEAD_DAYS = 60
+
+    def default_ship_date
+      [ @row.ship_date - VENDOR_LEAD_DAYS, Date.current ].max
     end
 
     # The placed order: an imported order row (with its upload) or a manual order.
