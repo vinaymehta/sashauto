@@ -9,6 +9,8 @@ module VendorOrders
     Line = Data.define(:our_article, :vendor_article, :description, :qty, :uom, :unit_cost, :total, :note)
     Po = Data.define(:number, :date, :vendor, :required_by, :currency, :prepared_by, :lines, :draft)
 
+    # The SASH logo, as in the email header.
+    LOGO = Rails.root.join("app/assets/images/sash-logo-email.png")
     NAVY = "1d2636"
     ACCENT = "b42318"
     GREY = "6b7280"
@@ -92,8 +94,10 @@ module VendorOrders
     def header(pdf)
       top = pdf.cursor
       pdf.bounding_box([ 0, top ], width: 300) do
+        pdf.image LOGO.to_s, height: 28 if LOGO.exist?
+        pdf.move_down 8
         pdf.fill_color NAVY
-        pdf.text t(@company[:name]), size: 16, style: :bold
+        pdf.text t(@company[:name]), size: 14, style: :bold
         pdf.fill_color "333333"
         pdf.move_down 4
         lines_of(@company[:address]).each { |l| pdf.text t(l) }
