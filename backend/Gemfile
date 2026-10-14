@@ -24,6 +24,9 @@ gem "roo", "~> 3.0"
 gem "tzinfo-data", platforms: %i[ windows jruby ]
 gem "bootsnap", require: false
 
+# Vendor purchase order PDFs (pure Ruby, no system packages)
+gem "prawn", "~> 2.5"
+
 # Loads backend/.env into ENV (all environments). Real environment variables always win over .env.
 gem "dotenv", "~> 3.1"
 

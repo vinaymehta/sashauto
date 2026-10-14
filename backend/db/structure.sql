@@ -1091,7 +1091,7 @@ CREATE TABLE public.vendor_orders (
     unit_price numeric(15,4),
     price_currency character varying(3),
     price_note character varying,
-    email_status character varying DEFAULT 'pending'::character varying NOT NULL,
+    email_status character varying DEFAULT 'not_sent'::character varying NOT NULL,
     email_recipient character varying,
     email_attempts integer DEFAULT 0 NOT NULL,
     email_last_error text,
@@ -1102,7 +1102,7 @@ CREATE TABLE public.vendor_orders (
     updated_at timestamp(6) without time zone NOT NULL,
     unit character varying DEFAULT 'sets'::character varying NOT NULL,
     ship_date date,
-    CONSTRAINT vendor_orders_email_status_valid CHECK (((email_status)::text = ANY ((ARRAY['pending'::character varying, 'sent'::character varying, 'failed'::character varying, 'no_email'::character varying])::text[]))),
+    CONSTRAINT vendor_orders_email_status_valid CHECK (((email_status)::text = ANY ((ARRAY['not_sent'::character varying, 'pending'::character varying, 'sent'::character varying, 'failed'::character varying, 'no_email'::character varying])::text[]))),
     CONSTRAINT vendor_orders_qty_positive CHECK ((qty > (0)::numeric)),
     CONSTRAINT vendor_orders_unit_valid CHECK (((unit)::text = ANY ((ARRAY['sets'::character varying, 'pcs'::character varying])::text[])))
 );
@@ -2768,6 +2768,7 @@ ALTER TABLE ONLY public.address_changes
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261014120001'),
 ('20261014090001'),
 ('20261013130001'),
 ('20261013120001'),

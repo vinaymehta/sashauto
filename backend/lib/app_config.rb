@@ -25,6 +25,17 @@ module AppConfig
   end
 
   # Comma-separated. When blank, notifications go to every active Admin user.
+  # SASH (the buyer) on vendor purchase order PDFs: header, delivery and invoice address.
+  def company
+    {
+      name: env("COMPANY_NAME", "SASH Autotech Pvt. Ltd."),
+      address: env("COMPANY_ADDRESS", ""),
+      gst: env("COMPANY_GST", ""),
+      phone: env("COMPANY_PHONE", ""),
+      email: env("COMPANY_EMAIL", "")
+    }
+  end
+
   # Where orders are normally shipped; rows with any other Ship To are flagged and emailed (Orders::ShipTo).
   def default_ship_to
     env("DEFAULT_SHIP_TO", "XPAC, 824 E 8TH ST, MILAN, IL 612643110")

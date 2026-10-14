@@ -2,7 +2,7 @@ module Api
   # Vendor orders of one order row (the Orders page detail). Reading is open to signed-in users;
   # placing and retrying emails is admin-only.
   class VendorOrdersController < ApplicationController
-    before_action -> { require_role(:admin) }, only: %i[create retry_email]
+    before_action -> { require_role(:admin) }, only: %i[create preview retry_email]
     rate_limit to: 60, within: 1.hour, only: :create, store: RATE_LIMIT_STORE, by: -> { current_user&.id || request.remote_ip },
                with: -> { render_error "Too many placements in a short time. Try again later.", :too_many_requests }
 
@@ -35,16 +35,33 @@ module Api
       placement = result.placement
       audit("vendor_order.placed", subject: placement, po_number: placement.po_number, part_number: placement.part_number,
             vendor_orders: placement.vendor_orders.map { |vo| { number: vo.number, vendor_id: vo.vendor_id, qty: vo.qty.to_s } })
-      placement.vendor_orders.each { |vo| VendorOrders::DeliverJob.dispatch(vo) }
       render json: { data: Serializers.vendor_order_placement(placement.reload), warnings: result.warnings }, status: :created
     rescue VendorOrders::Placer::Invalid => e
       render_error e.message, :unprocessable_content, details: e.details.presence
     end
 
     # Sends a failed / not-sent vendor email again (e.g. after the vendor's email address was added).
+    # The PDF a placement would create for one vendor (DRAFT, not saved): POST with the allocations and vendor_id.
+    def preview
+      row = order
+      pdf = VendorOrders::Placer.preview(row: row, allocations: params.permit(allocations: %i[vendor_id qty unit ship_date]).fetch(:allocations, []),
+                                         user: current_user, vendor_id: params.require(:vendor_id), order_qty: order_qty(row))
+      send_data pdf, filename: "purchase-order-draft.pdf", type: "application/pdf", disposition: "inline"
+    rescue VendorOrders::Placer::Invalid => e
+      render_error e.message, :unprocessable_content
+    end
+
+    # The saved purchase order PDF of a vendor order.
+    def pdf
+      vendor_order = VendorOrder.find(params[:id])
+      send_data vendor_order.pdf_document, filename: "#{vendor_order.number}.pdf", type: "application/pdf",
+                                           disposition: params[:download] == "1" ? "attachment" : "inline"
+    end
+
+    # Emails the purchase order PDF to the vendor (only when an admin asks).
     def retry_email
       order = VendorOrder.find(params[:id])
-      return render_error("This email was already sent.", :conflict) if order.email_sent?
+      return render_error("This purchase order was already emailed.", :conflict) if order.email_sent?
 
       order.update!(email_status: "pending", email_last_error: nil)
       VendorOrders::DeliverJob.dispatch(order)

@@ -25,6 +25,12 @@ class OrderDelivery < ApplicationRecord
 
   scope :active, -> { where(removed_at: nil) }
 
+  # The step that must be recorded before this one (statuses go in route order), or nil for the first.
+  def self.previous_kind(kind)
+    index = KINDS.index(kind)
+    index&.positive? ? KINDS[index - 1] : nil
+  end
+
   def label
     LABELS.fetch(kind)
   end

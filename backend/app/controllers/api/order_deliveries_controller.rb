@@ -19,7 +19,13 @@ module Api
 
       delivered_on = params[:delivered_on].present? ? (Date.iso8601(params[:delivered_on].to_s) rescue nil) : Time.zone.today
       return render_error("Enter a valid delivery date.", :unprocessable_content, details: { delivered_on: [ "is invalid" ] }) unless delivered_on
-      return already_marked(kind) if OrderDelivery.active.exists?(order_key: VendorOrderPlacement.order_key(row), kind: kind)
+      key = VendorOrderPlacement.order_key(row)
+      return already_marked(kind) if OrderDelivery.active.exists?(order_key: key, kind: kind)
+      # Statuses go in route order: received → dispatched → inbound → outbound.
+      previous = OrderDelivery.previous_kind(kind)
+      if previous && !OrderDelivery.active.exists?(order_key: key, kind: previous)
+        return render_error("Set \"#{OrderDelivery::LABELS.fetch(previous)}\" first.", :unprocessable_content)
+      end
 
       delivery = OrderDelivery.create!(
         order_key: VendorOrderPlacement.order_key(row), kind: kind,
@@ -40,6 +46,10 @@ module Api
 
     def destroy
       delivery = OrderDelivery.active.find(params[:id])
+      later = OrderDelivery::KINDS.drop(OrderDelivery::KINDS.index(delivery.kind) + 1)
+      if OrderDelivery.active.exists?(order_key: delivery.order_key, kind: later)
+        return render_error("Remove the later status first.", :unprocessable_content)
+      end
       delivery.update!(removed_at: Time.current, removed_by: current_user)
       audit("order.delivery_removed", subject: delivery, kind: delivery.kind, po_number: delivery.po_number, part_number: delivery.part_number)
       head :no_content

@@ -201,9 +201,8 @@ function OrdersView() {
     AGE_FILTER,
     // Fulfilled orders (delivered to Deere) are hidden unless chosen here.
     { key: "status", label: "Status", options: [
-      { value: "none", label: "No status" }, { value: "received", label: "Received at SASH Faridabad" },
-      { value: "dispatched", label: "Dispatched from SASH Faridabad" }, { value: "inbound", label: "Delivered to SASH US" },
-      { value: "outbound", label: "Fulfilled (delivered to Deere)" },
+      { value: "none", label: "No status" }, { value: "received", label: "Received" }, { value: "dispatched", label: "Dispatched" },
+      { value: "inbound", label: "Inbound" }, { value: "outbound", label: "Outbound (fulfilled)" },
     ] },
   ];
   const filtered = term !== "" || Object.values(list.filters).some(Boolean);

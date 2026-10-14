@@ -1,5 +1,5 @@
-# One Vendor Order sent to its vendor: only that vendor's order, with its unit price and line total (the vendor's
-# price for the unit ordered). When the vendor has no email address it goes to the default recipients instead
+# One Vendor Order sent to its vendor (when an admin emails it): that vendor's order with its unit price and line
+# total, and the purchase order PDF attached. When the vendor has no email address it goes to the default recipients instead
 # (`fallback`), with a note to forward it to the vendor.
 class VendorOrderMailer < ApplicationMailer
   def placed
@@ -14,6 +14,8 @@ class VendorOrderMailer < ApplicationMailer
       @unit_price = "#{@order.price_currency} #{format_amount(@order.unit_price)} per #{per}"
       @total = "#{@order.price_currency} #{ActiveSupport::NumberHelper.number_to_delimited(format('%.2f', @order.unit_price * @order.qty))}"
     end
+    # The saved purchase order PDF goes with the email.
+    attachments["#{@order.number}.pdf"] = { mime_type: "application/pdf", content: @order.pdf_document }
     subject = "Purchase order #{@order.number} from SASH"
     subject = "[Forward to #{@order.vendor.name}] #{subject}" if @fallback
     mail(to: params.fetch(:recipients), subject: subject, options: { idempotency_key: "vendor-order-#{@order.id}-#{@order.created_at.to_i}" })

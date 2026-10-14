@@ -399,7 +399,8 @@ export interface ProductVendor {
   price_text: string | null;
 }
 
-export type VendorEmailStatus = "pending" | "sent" | "failed" | "no_email";
+// not_sent: the purchase order PDF is saved but has not been emailed (vendor orders are no longer emailed automatically).
+export type VendorEmailStatus = "not_sent" | "pending" | "sent" | "failed" | "no_email";
 
 // A vendor order is placed in sets or in pieces; order Qty always counts sets.
 export type OrderUnit = "sets" | "pcs";

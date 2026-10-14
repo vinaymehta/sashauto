@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { api, ApiError } from "@/lib/api";
 import type { DeliveryKind, OrderDeliveryInfo, OrderRow, Role } from "@/lib/types";
 import { formatDate, formatDateTime, formatQty } from "@/lib/format";
-import { CheckIcon, ChevronDownIcon, TrashIcon, TruckIcon } from "../icons";
+import { BoxIcon, CheckIcon, HistoryIcon, MapPinIcon, TrashIcon, TruckIcon } from "../icons";
 import { useToast } from "../toast";
 import { useDismiss } from "../use-dismiss";
 import { Badge } from "../ui/badge";
@@ -18,74 +18,119 @@ import { Sheet } from "../ui/sheet";
 // The status steps of an order, in route order. SASH India (admin) sets the first two, the Warehouse Manager the
 // last two. Dispatch from Faridabad carries the SASH India invoice number.
 export const STATUS_STEPS: { kind: DeliveryKind; name: string; title: string; hint: string; role: Role; pill: string }[] = [
-  { kind: "received", name: "Received", title: "Received at SASH Faridabad", hint: "The order was received at SASH Faridabad.",
+  { kind: "received", name: "Received", title: "Received", hint: "The order was received at SASH Faridabad.",
     role: "admin", pill: "bg-amber-600" },
-  { kind: "dispatched", name: "Dispatched", title: "Dispatched from SASH Faridabad", hint: "The order left SASH Faridabad.",
+  { kind: "dispatched", name: "Dispatched", title: "Dispatched", hint: "The order left SASH Faridabad.",
     role: "admin", pill: "bg-violet-600" },
-  { kind: "inbound", name: "Inbound", title: "Delivered to SASH US", hint: "The shipment was received at SASH US.",
+  { kind: "inbound", name: "Inbound", title: "Inbound", hint: "The shipment was received at SASH US.",
     role: "warehouse_manager", pill: "bg-accent" },
-  { kind: "outbound", name: "Outbound", title: "Delivered to Deere", hint: "The shipment was delivered to Deere (fulfilled).",
+  { kind: "outbound", name: "Outbound", title: "Outbound", hint: "The shipment was delivered to Deere (fulfilled).",
     role: "warehouse_manager", pill: "bg-inc" },
 ];
 type Step = (typeof STATUS_STEPS)[number];
 
+// Soft status pills (tinted background, border, icon), like the CRM status chips.
+const PILL: Record<DeliveryKind | "none", { label: string; cls: string; Icon: typeof CheckIcon }> = {
+  none: { label: "No status", cls: "border-neutral-300 bg-white text-ink-muted", Icon: HistoryIcon },
+  received: { label: "Received", cls: "border-amber-300 bg-amber-50 text-amber-800", Icon: BoxIcon },
+  dispatched: { label: "Dispatched", cls: "border-violet-300 bg-violet-50 text-violet-800", Icon: TruckIcon },
+  inbound: { label: "Inbound", cls: "border-blue-300 bg-blue-50 text-blue-800", Icon: MapPinIcon },
+  outbound: { label: "Outbound", cls: "border-green-300 bg-green-50 text-green-800", Icon: CheckIcon },
+};
+
+function StatusPill({ kind }: { kind: DeliveryKind | "none" }) {
+  const { label, cls, Icon } = PILL[kind];
+  return (
+    <span className={`inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 text-sm font-semibold ${cls}`}>
+      <Icon size={14} strokeWidth={2.25} />
+      {label}
+    </span>
+  );
+}
+
 const today = () => new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in local time
+
+// The step before this one (statuses go in route order), or undefined for the first.
+function previousStep(kind: DeliveryKind) {
+  const i = STATUS_STEPS.findIndex((s) => s.kind === kind);
+  return i > 0 ? STATUS_STEPS[i - 1] : undefined;
+}
 
 // The furthest status reached by an order, or undefined.
 function currentStep(row: OrderRow) {
   return [...STATUS_STEPS].reverse().find((s) => row.deliveries?.[s.kind]);
 }
 
-// Status column of the Orders table: the order's current status (a solid pill, readable on any row tint, empty when
-// none) and a "Set status" dropdown with the statuses the user's role sets (admin: received / dispatched; Warehouse
-// Manager: inbound / outbound). Choosing one opens the Status panel to record it.
+// Status column of the Orders table: the order's current status as a pill. Clicking it opens a dropdown with the
+// statuses the user's role sets (admin: Received / Dispatched; Warehouse Manager: Inbound / Outbound). Received,
+// Inbound and Outbound are recorded at once (dated today); Dispatched opens the panel for the SASH India invoice
+// number. "Details & history" opens the panel with every step (an admin can remove a wrong status there).
 export function DeliveryCell({ row, role, onChanged }: { row: OrderRow; role: Role | undefined; onChanged: () => void }) {
+  const notify = useToast();
   const [menu, setMenu] = useState(false);
-  const [recording, setRecording] = useState<DeliveryKind | null>(null);
+  const [panel, setPanel] = useState<DeliveryKind | null>(null);
+  const [busy, setBusy] = useState(false);
   const menuRef = useRef<HTMLSpanElement>(null);
   useDismiss(menuRef, menu, () => setMenu(false));
   const current = currentStep(row);
   const done = current && row.deliveries?.[current.kind];
   const mine = STATUS_STEPS.filter((s) => s.role === role);
 
+  async function choose(step: Step) {
+    setMenu(false);
+    if (step.kind === "dispatched") return setPanel("dispatched");
+    setBusy(true);
+    try {
+      await api.post(`/api/orders/${row.id}/deliveries${row.manual ? "?manual=1" : ""}`, { kind: step.kind, delivered_on: today() });
+      notify(`PO ${row.po_number}: ${step.name}.`);
+      onChanged();
+    } catch (err) {
+      notify(err instanceof ApiError ? err.message : "Could not save the status.", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const pill = <StatusPill kind={current?.kind ?? "none"} />;
+  const title = current && done
+    ? `${current.title} on ${formatDate(done.delivered_on)}${done.invoice_number ? ` · Invoice ${done.invoice_number}` : ""}${done.marked_by ? ` · ${done.marked_by}` : ""}`
+    : "No status yet";
+
   return (
-    <span className="inline-flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-      {current && done && (
-        <span title={`${current.title} on ${formatDate(done.delivered_on)}${done.invoice_number ? ` · Invoice ${done.invoice_number}` : ""}${done.marked_by ? ` · ${done.marked_by}` : ""}`}
-              className={`inline-flex h-6 items-center gap-1 whitespace-nowrap rounded-full px-2.5 text-xs font-semibold text-white shadow-sm ${current.pill}`}>
-          <CheckIcon size={12} strokeWidth={2.5} />
-          {current.name}
-        </span>
+    <span ref={menuRef} className="relative inline-flex" onClick={(e) => e.stopPropagation()}>
+      {mine.length === 0 ? <span title={title}>{pill}</span> : (
+        <button type="button" onClick={() => setMenu(!menu)} disabled={busy} aria-haspopup="menu" aria-expanded={menu} title={title}
+                className="rounded-full transition-opacity hover:opacity-80 disabled:opacity-50">
+          {pill}
+        </button>
       )}
-      {mine.length > 0 && (
-        <span ref={menuRef} className="relative">
-          <button type="button" onClick={() => setMenu(!menu)} aria-haspopup="menu" aria-expanded={menu}
-                  className="inline-flex h-7 items-center gap-1 whitespace-nowrap rounded-md border border-neutral-300 bg-white px-2 text-xs font-medium text-ink transition-colors hover:border-neutral-400">
-            Set status
-            <ChevronDownIcon size={12} className="text-ink-muted" />
+      {menu && (
+        <span role="menu" className="absolute left-0 top-9 z-30 w-56 overflow-hidden rounded-lg border border-line bg-white py-1.5 shadow-pop">
+          {mine.map((s) => {
+            const set = !!row.deliveries?.[s.kind];
+            const before = previousStep(s.kind);
+            const waiting = !set && before && !row.deliveries?.[before.kind];
+            return (
+              <button key={s.kind} type="button" role="menuitem" disabled={set || !!waiting} onClick={() => choose(s)}
+                      title={waiting ? `Waiting for ${before!.name}` : undefined}
+                      className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left hover:bg-tint-violet/60 disabled:cursor-default disabled:hover:bg-transparent">
+                <span className={set || waiting ? "opacity-50" : ""}><StatusPill kind={s.kind} /></span>
+                {set && <CheckIcon size={14} className="text-inc" />}
+                {waiting && <span className="text-xs text-ink-faint">Waiting for {before!.name}</span>}
+              </button>
+            );
+          })}
+          <span className="my-1 block border-t border-neutral-100" />
+          <button type="button" role="menuitem" onClick={() => { setMenu(false); setPanel(mine.find((s) => !row.deliveries?.[s.kind])?.kind ?? mine[0]!.kind); }}
+                  className="block w-full px-3 py-1.5 text-left text-sm text-ink-muted hover:bg-subtle hover:text-ink">
+            Details &amp; history
           </button>
-          {menu && (
-            <span role="menu" className="absolute left-0 top-8 z-30 w-60 overflow-hidden rounded-lg border border-line bg-white py-1 shadow-pop">
-              {mine.map((s) => {
-                const set = !!row.deliveries?.[s.kind];
-                return (
-                  <button key={s.kind} type="button" role="menuitem" disabled={set}
-                          onClick={() => { setMenu(false); setRecording(s.kind); }}
-                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-ink hover:bg-subtle disabled:cursor-default disabled:text-ink-faint disabled:hover:bg-transparent">
-                    <span className={`h-2 w-2 shrink-0 rounded-full ${s.pill}`} />
-                    <span className="min-w-0 flex-1 truncate">{s.title}</span>
-                    {set && <CheckIcon size={13} className="text-inc" />}
-                  </button>
-                );
-              })}
-            </span>
-          )}
         </span>
       )}
       {/* Rendered on <body>, outside the table row. */}
-      {recording && createPortal(
+      {panel && createPortal(
         <div onClick={(e) => e.stopPropagation()}>
-          <StatusPanel row={row} role={role} initial={recording} onClose={() => setRecording(null)} onChanged={onChanged} />
+          <StatusPanel row={row} role={role} initial={panel} onClose={() => setPanel(null)} onChanged={onChanged} />
         </div>,
         document.body,
       )}
@@ -102,6 +147,7 @@ function StatusPanel({ row, role, initial, onClose, onChanged }: {
   const notify = useToast();
   const [marks, setMarks] = useState<Partial<Record<DeliveryKind, OrderDeliveryInfo>>>(row.deliveries ?? {});
   const mine = STATUS_STEPS.filter((s) => s.role === role);
+  const ready = (s: Step) => { const before = previousStep(s.kind); return !before || !!marks[before.kind]; };
   const pending = mine.filter((s) => !marks[s.kind]);
   const [kind, setKind] = useState<DeliveryKind>(initial);
   const [date, setDate] = useState(today);
@@ -110,7 +156,8 @@ function StatusPanel({ row, role, initial, onClose, onChanged }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const selected = STATUS_STEPS.find((s) => s.kind === kind)!;
-  const canRecord = pending.some((s) => s.kind === kind);
+  const canRecord = pending.some((s) => s.kind === kind) && ready(selected);
+  const lastDone = [...STATUS_STEPS].reverse().find((s) => marks[s.kind])?.kind;
   const needsInvoice = kind === "dispatched";
 
   async function record() {
@@ -202,7 +249,7 @@ function StatusPanel({ row, role, initial, onClose, onChanged }: {
                       <p className="text-xs text-ink-faint">Pending · set by {s.role === "admin" ? "SASH India (Admin)" : "the Warehouse Manager"}</p>
                     )}
                   </div>
-                  {done && role === "admin" && (
+                  {done && role === "admin" && s.kind === lastDone && (
                     <button type="button" disabled={busy} onClick={() => remove(s, done.id)} title="Remove this status"
                             className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-ink-muted hover:bg-subtle hover:text-dec disabled:opacity-50">
                       <TrashIcon size={12} />Remove
@@ -222,13 +269,14 @@ function StatusPanel({ row, role, initial, onClose, onChanged }: {
               <div role="radiogroup" aria-label="Status" className="grid grid-cols-2 gap-2">
                 {mine.map((s) => {
                   const done = !!marks[s.kind];
+                  const waiting = !done && !ready(s);
                   const active = kind === s.kind && !done;
                   return (
-                    <button key={s.kind} type="button" role="radio" aria-checked={active} disabled={done} onClick={() => setKind(s.kind)}
+                    <button key={s.kind} type="button" role="radio" aria-checked={active} disabled={done || waiting} onClick={() => setKind(s.kind)}
                             className={`rounded-md border px-3 py-2.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                               active ? "border-accent bg-accent/5 ring-1 ring-accent" : "border-line hover:border-neutral-300"}`}>
                       <span className="block text-sm font-semibold text-ink">{s.name}{done ? " ✓" : ""}</span>
-                      <span className="block text-xs text-ink-muted">{s.title}</span>
+                      <span className="block text-xs text-ink-muted">{waiting ? `Waiting for ${previousStep(s.kind)!.name}` : s.hint}</span>
                     </button>
                   );
                 })}

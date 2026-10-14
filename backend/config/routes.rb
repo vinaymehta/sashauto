@@ -30,7 +30,9 @@ Rails.application.routes.draw do
 
     resources :orders, only: :index do
       get :history, on: :member
-      resource :vendor_order, only: %i[show create], controller: :vendor_orders
+      resource :vendor_order, only: %i[show create], controller: :vendor_orders do
+        post :preview
+      end
       resources :deliveries, only: :create, controller: :order_deliveries
       collection do
         get :by_po
@@ -42,7 +44,10 @@ Rails.application.routes.draw do
       get :fields, on: :collection
     end
     resources :vendor_orders, only: [] do
-      post :retry_email, on: :member
+      member do
+        post :retry_email
+        get :pdf
+      end
     end
     resources :vendors, only: %i[index show create update destroy] do
       post :import, on: :collection

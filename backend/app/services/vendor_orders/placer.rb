@@ -61,12 +61,31 @@ module VendorOrders
           VendorOrder.create!(vendor_order_placement: placement, vendor: link.vendor, number: VendorOrder.next_number,
                               qty: line[:qty], unit: line[:unit], ship_date: line[:ship_date] || @row.ship_date,
                               unit_price: line[:unit] == "pcs" ? link.price_amount : link.set_price_amount,
-                              price_currency: link.price_currency, price_note: link.price_note, email_status: "pending")
+                              price_currency: link.price_currency, price_note: link.price_note, email_status: "not_sent")
         end
       end
+      # Each vendor's purchase order is saved as a PDF (no email; an admin can email it later).
+      placement.vendor_orders.each(&:attach_pdf)
       Result.new(placement: placement, warnings: moq_warnings(placement))
     rescue ActiveRecord::RecordNotUnique
       raise Invalid, "This order was already placed with vendors."
+    end
+
+    # The PDF that placing would create for one vendor of the allocation (not saved, marked DRAFT).
+    def self.preview(row:, allocations:, user:, vendor_id:, order_qty: nil)
+      new(row, allocations, user, order_qty).preview(Integer(vendor_id, exception: false))
+    end
+
+    def preview(vendor_id)
+      product = Product.find_by(part_number: @row.part_number)
+      links = product ? product.vendor_products.includes(:vendor).index_by(&:vendor_id) : {}
+      line = parse(links).find { |l| l[:vendor_id] == vendor_id }
+      raise Invalid, "Select this vendor and enter its quantity first." unless line
+
+      link = links.fetch(vendor_id)
+      PdfBuilder.preview(vendor: link.vendor, product: product, link: link, qty: line[:qty], unit: line[:unit],
+                         unit_price: line[:unit] == "pcs" ? link.price_amount : link.set_price_amount,
+                         required_by: line[:ship_date] || @row.ship_date, prepared_by: @user.name)
     end
 
     # The placed order: an imported order row (with its upload) or a manual order.

@@ -79,7 +79,21 @@ async function request<T>(method: string, path: string, body?: unknown, retried 
   return data as T;
 }
 
+// POST that returns a file (e.g. a PDF preview) as a Blob; errors are read from the JSON body like `request`.
+async function postForBlob(path: string, body: unknown): Promise<Blob> {
+  const res = await fetch(path, {
+    method: "POST", credentials: "same-origin", cache: "no-store",
+    headers: { "Content-Type": "application/json", "X-CSRF-Token": await ensureCsrfToken() }, body: JSON.stringify(body),
+  }).catch(() => { throw new ApiError("Cannot reach the server. Check your connection and try again.", 0, "network_error"); });
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new ApiError(data?.error?.message ?? `Request failed (${res.status}).`, res.status, data?.error?.code);
+  }
+  return res.blob();
+}
+
 export const api = {
+  postBlob: postForBlob,
   get: <T>(path: string, query?: Query) => request<T>("GET", withQuery(path, query)),
   post: <T>(path: string, body?: unknown) => request<T>("POST", path, body),
   patch: <T>(path: string, body?: unknown) => request<T>("PATCH", path, body),
