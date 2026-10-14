@@ -93,7 +93,8 @@ module Uploads
         # A separate email for each kind with rows: quantity changes, address changes, MOQ alerts, ageing.
         # Reschedules alone also send the quantity email (they are listed there apart from the Qty changes).
         notifications = Notifications::Outbox.enqueue_for_upload(@batch, quantity: change_count, rescheduled: @batch.rescheduled_count.to_i,
-                                                                 address: address_changes.to_i, moq: moq_alerts)
+                                                                 address: address_changes.to_i, moq: moq_alerts,
+                                                                 ship_to: ship_to_alert_count(result.all_rows))
         ageing_digest = Ageing::DigestBuilder.call(batch: @batch, today: Time.find_zone!(AppConfig.ageing_time_zone).today)
         AuditLog.record("upload.completed", user: @batch.uploaded_by, subject: @batch,
                         version: @batch.version_number, rows: result.rows.size, changes: change_count,
@@ -103,6 +104,12 @@ module Uploads
       # After commit: the outbox rows are durable, so a lost enqueue can be redelivered later.
       notifications.each { |notification| Notifications::Outbox.dispatch(notification) }
       Ageing::DigestBuilder.dispatch(ageing_digest) if ageing_digest
+    end
+
+    # Rows of the file shipped to an address other than the default Ship To (Orders::ShipTo).
+    def ship_to_alert_count(rows)
+      default = Orders::ShipTo.default_key
+      rows.count { |row| Orders::ShipTo.other?(row[:source], default) }
     end
 
     def insert_snapshot_rows(rows)

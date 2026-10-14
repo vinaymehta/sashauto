@@ -130,6 +130,25 @@ module Api
 
     # Row-level problems of a rejected upload, paged on the server. Optional `column` filter
     # ("_none" selects problems not tied to one column, such as duplicate rows).
+    # The MOQ alerts as an .xlsx file: for each alert its MOQ and Qty, then the full order row (every column of
+    # the order file, as shown on the Orders page).
+    def moq_alerts_export
+      batch = UploadBatch.find(params[:id])
+      alerts = detections(batch, MoqAlert).order(:po_number, :part_number, :order_type, :id).limit(20_000).to_a
+      imported = OrderRow.where(id: alerts.filter_map(&:order_row_id)).index_by(&:id)
+      manual = ManualOrder.where(id: alerts.filter_map(&:manual_order_id)).index_by(&:id)
+      columns = OrderRow.where(upload_batch_id: batch.id).where.not(source_columns: nil).pick(:source_columns) || ManualOrder::HEADERS
+      rows = alerts.map do |alert|
+        record = alert.order_row_id ? imported[alert.order_row_id] : manual[alert.manual_order_id]
+        data = record&.source_data || {}
+        [ alert.moq&.to_d, alert.qty&.to_d, alert.manual_order_id ? "Manual" : "Upload" ] + columns.map { |c| data[c] }
+      end
+      audit("moq_alerts.exported", subject: batch, rows: rows.size)
+      send_data ExcelExport::XlsxWriter.call([ "MOQ", "Qty", "Source" ] + columns, rows, sheet_name: "MOQ alerts"),
+                filename: "moq-alerts-#{batch.version_label || batch.id}-#{Date.current.iso8601}.xlsx",
+                type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", disposition: "attachment"
+    end
+
     def problems
       errors = UploadBatch.find(params[:id]).validation_errors
       columns = multi_param(:column)

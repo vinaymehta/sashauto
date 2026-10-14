@@ -1,6 +1,9 @@
 module Api
   # Vendors list (search, sort and pagination in PostgreSQL), CRUD and Excel import. Changes are admin-only.
   class VendorsController < ApplicationController
+    # Contact details of a vendor (besides the name).
+    DETAILS = %i[email address gst phone].freeze
+
     SORTS = {
       "name" => "vendors.name", "product_count" => "product_count", "updated_at" => "vendors.updated_at"
     }.freeze
@@ -31,7 +34,7 @@ module Api
     end
 
     def create
-      vendor = Vendor.new(name: params.require(:name), email: params[:email])
+      vendor = Vendor.new(name: params.require(:name), **params.permit(*DETAILS).to_h.symbolize_keys)
       if vendor.save
         audit("vendor.created", subject: vendor, name: vendor.name)
         render json: { data: Serializers.vendor(vendor, product_count: 0) }, status: :created
@@ -45,8 +48,7 @@ module Api
     def update
       vendor = Vendor.find(params[:id])
       before = vendor.name
-      attrs = { name: params.require(:name) }
-      attrs[:email] = params[:email] if params.key?(:email)
+      attrs = { name: params.require(:name), **params.permit(*DETAILS).to_h.symbolize_keys }
       if vendor.update(attrs)
         audit("vendor.updated", subject: vendor, name_before: before, name_after: vendor.name, email: vendor.email)
         render json: { data: Serializers.vendor(vendor) }

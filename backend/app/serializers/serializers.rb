@@ -36,7 +36,7 @@ module Serializers
     )
   end
 
-  EMAIL_ORDER = %w[quantity_changes address_changes moq_alerts ageing].freeze
+  EMAIL_ORDER = %w[quantity_changes address_changes moq_alerts ship_to_alerts ageing].freeze
 
   # Every email sent for an upload: one per alert kind, plus the ageing digest (the silent baseline
   # run is not an email).
@@ -57,8 +57,15 @@ module Serializers
           .merge(old_qty: qty(change.old_qty), new_qty: qty(change.new_qty), difference: qty(change.difference))
   end
 
+  def price_change(change)
+    change.slice(:id, :kind, :vendor_name, :currency, :source, :created_at)
+          .merge(old_amount: qty(change.old_amount), new_amount: qty(change.new_amount),
+                 old_set_amount: qty(change.old_set_amount), new_set_amount: qty(change.new_set_amount),
+                 changed_by: change.changed_by&.name, upload: change.upload_batch&.original_filename)
+  end
+
   def vendor(vendor, product_count: nil)
-    vendor.slice(:id, :name, :email, :created_at, :updated_at)
+    vendor.slice(:id, :name, :email, :address, :gst, :phone, :created_at, :updated_at)
           .merge(product_count: product_count || (vendor.has_attribute?(:product_count) ? vendor[:product_count] : vendor.vendor_products.count))
   end
 
@@ -69,7 +76,7 @@ module Serializers
   end
 
   def order_delivery(delivery)
-    delivery.slice(:id, :kind, :delivered_on, :note, :created_at)
+    delivery.slice(:id, :kind, :delivered_on, :note, :invoice_number, :created_at)
             .merge(label: delivery.label, marked_by: delivery.marked_by&.name)
   end
 
@@ -126,6 +133,8 @@ module Serializers
       data[:manual] = row.has_attribute?(:manual) && row[:manual] ? true : false
       # Kept on the Orders page because of a delivery mark, though no longer in the latest upload.
       data[:kept] = row.has_attribute?(:kept) && row[:kept] ? true : false
+      # Shipped somewhere other than the default Ship To (Orders::ShipTo).
+      data[:other_ship_to] = Orders::ShipTo.other?(row.source_data)
     elsif row.is_a?(ManualOrder)
       data.merge!(history_count: 0, source_row_number: nil, manual: true)
       data[:source_data] = row.source_data if source
@@ -136,7 +145,8 @@ module Serializers
   def product(product, open_conflicts: [])
     product.slice(:id, :part_number, :commodity_type, :source, :sash_part, :vendor_part, :description, :moq_text, :created_at,
                   :updated_at)
-           .merge(pack_size: product.pack_size, moq: qty(product.moq), moq_sets: qty(product.moq_sets), weight_kg: qty(product.weight_kg))
+           .merge(pack_size: product.pack_size, moq: qty(product.moq), moq_sets: qty(product.moq_sets), weight_kg: qty(product.weight_kg),
+                  customer_price: qty(product.customer_price))
            .merge(open_conflicts: open_conflicts.map { |c| product_conflict(c) })
   end
 

@@ -7,7 +7,8 @@
   <table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;font-size:14px;">
     <% [ [ "PO Number", @delivery.po_number ], [ "PO Line Number", @delivery.po_line_number ], [ "Part Number", @delivery.part_number ],
          [ "Type", @delivery.order_type ], [ "Ship Date", @delivery.ship_date.strftime("%-d %b %Y") ],
-         [ "Delivered on", @delivery.delivered_on.strftime("%-d %b %Y") ], [ "Note", @delivery.note ] ].each do |label, value| %>
+         [ "Date", @delivery.delivered_on.strftime("%-d %b %Y") ], [ "Invoice Number", @delivery.invoice_number ],
+         [ "Note", @delivery.note ] ].each do |label, value| %>
       <tr style="border-bottom:1px solid #f0f0f0;">
         <td style="padding:9px 10px;color:#737373;width:160px;"><%= label %></td>
         <td style="padding:9px 10px;color:#171717;"><%= value.presence || "—" %></td>

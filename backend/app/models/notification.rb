@@ -3,7 +3,7 @@
 # email with its own template; an upload has at most one notification per kind.
 class Notification < ApplicationRecord
   STATUSES = %w[pending sent failed].freeze
-  KINDS = %w[quantity_changes address_changes moq_alerts].freeze
+  KINDS = %w[quantity_changes address_changes moq_alerts ship_to_alerts].freeze
 
   belongs_to :upload_batch
 
@@ -21,6 +21,7 @@ class Notification < ApplicationRecord
     case kind
     when "address_changes" then address_change_count
     when "moq_alerts" then moq_alert_count
+    when "ship_to_alerts" then ship_to_alert_count
     else change_count
     end
   end
@@ -29,6 +30,7 @@ class Notification < ApplicationRecord
     case kind
     when "address_changes" then AddressChangeMailer.with(notification: self).changes_detected
     when "moq_alerts" then MoqAlertMailer.with(notification: self).alerts_detected
+    when "ship_to_alerts" then ShipToAlertMailer.with(notification: self).alerts_detected
     else QuantityChangeMailer.with(notification: self).changes_detected
     end
   end

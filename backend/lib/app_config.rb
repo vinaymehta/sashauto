@@ -25,6 +25,11 @@ module AppConfig
   end
 
   # Comma-separated. When blank, notifications go to every active Admin user.
+  # Where orders are normally shipped; rows with any other Ship To are flagged and emailed (Orders::ShipTo).
+  def default_ship_to
+    env("DEFAULT_SHIP_TO", "XPAC, 824 E 8TH ST, MILAN, IL 612643110")
+  end
+
   def admin_notification_emails
     env("ADMIN_NOTIFICATION_EMAILS", "").split(",").map(&:strip).reject(&:empty?)
   end

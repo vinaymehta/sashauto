@@ -6,14 +6,17 @@ import type { Vendor } from "@/lib/types";
 import { TruckIcon } from "../icons";
 import { useToast } from "../toast";
 import { Button } from "../ui/button";
-import { Field, Input } from "../ui/field";
+import { Field, Input, Textarea } from "../ui/field";
 import { Sheet } from "../ui/sheet";
 
-// Side panel to add a vendor, or rename one (`vendor` given).
+// Side panel to add a vendor, or edit one (`vendor` given): name and contact details (email, phone, GST, address).
 export function VendorFormPanel({ vendor, onClose, onSaved }: { vendor?: Vendor; onClose: () => void; onSaved: (vendor: Vendor) => void }) {
   const notify = useToast();
   const [name, setName] = useState(vendor?.name ?? "");
   const [email, setEmail] = useState(vendor?.email ?? "");
+  const [phone, setPhone] = useState(vendor?.phone ?? "");
+  const [gst, setGst] = useState(vendor?.gst ?? "");
+  const [address, setAddress] = useState(vendor?.address ?? "");
   const [emailError, setEmailError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,11 +28,12 @@ export function VendorFormPanel({ vendor, onClose, onSaved }: { vendor?: Vendor;
     setSaving(true);
     setError(null);
     setEmailError(null);
+    const body = { name: name.trim(), email: email.trim(), phone: phone.trim(), gst: gst.trim(), address: address.trim() };
     try {
       const res = vendor
-        ? await api.patch<{ data: Vendor }>(`/api/vendors/${vendor.id}`, { name: name.trim(), email: email.trim() })
-        : await api.post<{ data: Vendor }>("/api/vendors", { name: name.trim(), email: email.trim() });
-      notify(vendor ? `Vendor renamed to ${res.data.name}.` : `Vendor ${res.data.name} added.`);
+        ? await api.patch<{ data: Vendor }>(`/api/vendors/${vendor.id}`, body)
+        : await api.post<{ data: Vendor }>("/api/vendors", body);
+      notify(vendor ? `Vendor ${res.data.name} saved.` : `Vendor ${res.data.name} added.`);
       onSaved(res.data);
       onClose();
     } catch (err) {
@@ -43,7 +47,7 @@ export function VendorFormPanel({ vendor, onClose, onSaved }: { vendor?: Vendor;
       open
       onClose={onClose}
       title={vendor ? "Edit vendor" : "Add vendor"}
-      description={vendor ? "Edit the vendor name or email. Its parts stay as they are." : "Add the vendor, then add its parts from the vendor's panel."}
+      description={vendor ? "Edit the vendor's name and contact details. Its parts stay as they are." : "Add the vendor, then add its parts from the vendor's panel."}
       icon={<TruckIcon size={18} />}
       footer={
         <>
@@ -60,6 +64,19 @@ export function VendorFormPanel({ vendor, onClose, onSaved }: { vendor?: Vendor;
         <Field label="Email" htmlFor="vendor-email" hint="Vendor orders placed from the Orders page are emailed here." error={emailError} optional>
           <Input id="vendor-email" type="email" value={email} maxLength={254} invalid={!!emailError} className="w-full" placeholder="orders@vendor.com"
                  aria-describedby={emailError ? "vendor-email-error" : undefined} onChange={(e) => setEmail(e.target.value)} />
+        </Field>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Phone Number" htmlFor="vendor-phone" optional>
+            <Input id="vendor-phone" type="tel" value={phone} maxLength={40} className="w-full" placeholder="+91 98765 43210"
+                   onChange={(e) => setPhone(e.target.value)} />
+          </Field>
+          <Field label="GST" htmlFor="vendor-gst" hint="GSTIN for Indian vendors." optional>
+            <Input id="vendor-gst" value={gst} maxLength={32} className="w-full uppercase" placeholder="06AABCS1234F1Z5"
+                   onChange={(e) => setGst(e.target.value)} />
+          </Field>
+        </div>
+        <Field label="Address" htmlFor="vendor-address" optional>
+          <Textarea id="vendor-address" value={address} maxLength={1000} rows={3} className="w-full" onChange={(e) => setAddress(e.target.value)} />
         </Field>
         <button type="submit" hidden />
       </form>

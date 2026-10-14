@@ -24,7 +24,7 @@ module Activity
 
     EMAIL_TITLES = {
       "quantity_changes" => "Quantity change", "address_changes" => "Address change",
-      "moq_alerts" => "MOQ alert", "ageing" => "Ageing"
+      "moq_alerts" => "MOQ alert", "ship_to_alerts" => "Ship To alert", "ageing" => "Ageing"
     }.freeze
 
     private
@@ -68,7 +68,7 @@ module Activity
     # Inbound / outbound deliveries marked by the Warehouse Manager.
     def delivery_items
       OrderDelivery.active.includes(:marked_by).order(created_at: :desc).limit(LIMIT).map do |d|
-        Item.new(id: "delivery-#{d.id}", kind: "delivered", title: "#{d.kind == 'inbound' ? 'Inbound' : 'Outbound'}: #{d.label}",
+        Item.new(id: "delivery-#{d.id}", kind: "delivered", title: "#{d.kind.capitalize}: #{d.label}",
                  description: "PO #{d.po_number} · #{d.part_number} · #{d.marked_by.name}", at: d.created_at, href: "/orders")
       end
     end

@@ -18,4 +18,19 @@ class VendorProduct < ApplicationRecord
   validates :weight_kg, numericality: { greater_than_or_equal_to: 0, less_than: 100_000_000 }, allow_nil: true
   validates :price_amount, :set_price_amount, numericality: { greater_than_or_equal_to: 0, less_than: 100_000_000_000 }, allow_nil: true
   validates :price_currency, inclusion: { in: CURRENCIES }
+
+  # Price history: every change of the vendor's price is kept as a PriceChange. Callers say where it came from.
+  attr_accessor :price_source, :price_changed_by
+  after_save :record_price_change, if: -> { saved_change_to_price_amount? || saved_change_to_set_price_amount? || saved_change_to_price_currency? }
+
+  private
+
+  def record_price_change
+    PriceChange.create!(
+      product_id: product_id, vendor_product: self, kind: "vendor", vendor_name: vendor.name,
+      old_amount: price_amount_before_last_save, new_amount: price_amount,
+      old_set_amount: set_price_amount_before_last_save, new_set_amount: set_price_amount,
+      currency: price_currency, source: price_source || "manual", changed_by: price_changed_by
+    )
+  end
 end

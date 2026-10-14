@@ -5,20 +5,21 @@ module Notifications
 
     SUBJECTS = {
       "quantity_changes" => "Quantity changes detected", "address_changes" => "Address changes detected",
-      "moq_alerts" => "Below MOQ"
+      "moq_alerts" => "Below MOQ", "ship_to_alerts" => "Different Ship To"
     }.freeze
 
     # Must be called inside the upload's commit transaction. One email per kind that has rows, each with
     # its own template. Returns the created notifications.
-    def enqueue_for_upload(batch, quantity:, address:, moq:, rescheduled: 0)
-      { "quantity_changes" => quantity, "address_changes" => address, "moq_alerts" => moq }.filter_map do |kind, count|
+    def enqueue_for_upload(batch, quantity:, address:, moq:, rescheduled: 0, ship_to: 0)
+      { "quantity_changes" => quantity, "address_changes" => address, "moq_alerts" => moq, "ship_to_alerts" => ship_to }.filter_map do |kind, count|
         next unless count.positive? || (kind == "quantity_changes" && rescheduled.positive?)
 
         Notification.create!(
           upload_batch: batch, kind: kind, status: "pending", recipients: recipients, subject: subject(batch, kind, count),
           change_count: kind == "quantity_changes" ? count : 0,
           address_change_count: kind == "address_changes" ? count : 0,
-          moq_alert_count: kind == "moq_alerts" ? count : 0
+          moq_alert_count: kind == "moq_alerts" ? count : 0,
+          ship_to_alert_count: kind == "ship_to_alerts" ? count : 0
         )
       end
     end

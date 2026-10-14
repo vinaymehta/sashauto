@@ -526,7 +526,8 @@ CREATE TABLE public.notifications (
     provider_message_id character varying,
     address_change_count integer DEFAULT 0 NOT NULL,
     moq_alert_count integer DEFAULT 0 NOT NULL,
-    CONSTRAINT notifications_kind_valid CHECK (((kind)::text = ANY ((ARRAY['quantity_changes'::character varying, 'address_changes'::character varying, 'moq_alerts'::character varying])::text[]))),
+    ship_to_alert_count integer DEFAULT 0 NOT NULL,
+    CONSTRAINT notifications_kind_valid CHECK (((kind)::text = ANY ((ARRAY['quantity_changes'::character varying, 'address_changes'::character varying, 'moq_alerts'::character varying, 'ship_to_alerts'::character varying])::text[]))),
     CONSTRAINT notifications_status_valid CHECK (((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('sent'::character varying)::text, ('failed'::character varying)::text])))
 );
 
@@ -572,7 +573,9 @@ CREATE TABLE public.order_deliveries (
     removed_by_id bigint,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT order_deliveries_kind_valid CHECK (((kind)::text = ANY ((ARRAY['inbound'::character varying, 'outbound'::character varying])::text[]))),
+    invoice_number character varying(64),
+    CONSTRAINT order_deliveries_dispatch_invoice CHECK ((((kind)::text <> 'dispatched'::text) OR (invoice_number IS NOT NULL))),
+    CONSTRAINT order_deliveries_kind_valid CHECK (((kind)::text = ANY ((ARRAY['received'::character varying, 'dispatched'::character varying, 'inbound'::character varying, 'outbound'::character varying])::text[]))),
     CONSTRAINT order_deliveries_one_order CHECK (((order_row_id IS NULL) <> (manual_order_id IS NULL)))
 );
 
@@ -720,6 +723,49 @@ ALTER SEQUENCE public.order_snapshot_rows_id_seq OWNED BY public.order_snapshot_
 
 
 --
+-- Name: price_changes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.price_changes (
+    id bigint NOT NULL,
+    product_id bigint NOT NULL,
+    vendor_product_id bigint,
+    kind character varying NOT NULL,
+    vendor_name character varying,
+    old_amount numeric(15,4),
+    new_amount numeric(15,4),
+    old_set_amount numeric(15,4),
+    new_set_amount numeric(15,4),
+    currency character varying(3),
+    source character varying NOT NULL,
+    upload_batch_id bigint,
+    changed_by_id bigint,
+    created_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT price_changes_kind_valid CHECK (((kind)::text = ANY ((ARRAY['customer'::character varying, 'vendor'::character varying])::text[]))),
+    CONSTRAINT price_changes_source_valid CHECK (((source)::text = ANY ((ARRAY['upload'::character varying, 'manual'::character varying, 'import'::character varying])::text[])))
+);
+
+
+--
+-- Name: price_changes_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.price_changes_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: price_changes_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.price_changes_id_seq OWNED BY public.price_changes.id;
+
+
+--
 -- Name: product_conflicts; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -780,6 +826,8 @@ CREATE TABLE public.products (
     pack_size integer DEFAULT 1 NOT NULL,
     moq_sets numeric(15,3),
     moq_text character varying(200),
+    customer_price numeric(15,4),
+    CONSTRAINT products_customer_price_valid CHECK (((customer_price IS NULL) OR (customer_price >= (0)::numeric))),
     CONSTRAINT products_moq_positive CHECK (((moq IS NULL) OR (moq > (0)::numeric))),
     CONSTRAINT products_moq_sets_positive CHECK (((moq_sets IS NULL) OR (moq_sets > (0)::numeric))),
     CONSTRAINT products_pack_size_positive CHECK ((pack_size >= 1)),
@@ -1140,7 +1188,10 @@ CREATE TABLE public.vendors (
     name character varying NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    email character varying
+    email character varying,
+    address text,
+    gst character varying(32),
+    phone character varying(40)
 );
 
 
@@ -1259,6 +1310,13 @@ ALTER TABLE ONLY public.order_rows ALTER COLUMN id SET DEFAULT nextval('public.o
 --
 
 ALTER TABLE ONLY public.order_snapshot_rows ALTER COLUMN id SET DEFAULT nextval('public.order_snapshot_rows_id_seq'::regclass);
+
+
+--
+-- Name: price_changes id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.price_changes ALTER COLUMN id SET DEFAULT nextval('public.price_changes_id_seq'::regclass);
 
 
 --
@@ -1442,6 +1500,14 @@ ALTER TABLE ONLY public.order_rows
 
 ALTER TABLE ONLY public.order_snapshot_rows
     ADD CONSTRAINT order_snapshot_rows_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: price_changes price_changes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.price_changes
+    ADD CONSTRAINT price_changes_pkey PRIMARY KEY (id);
 
 
 --
@@ -1847,6 +1913,41 @@ CREATE INDEX index_order_snapshot_rows_on_batch_and_key ON public.order_snapshot
 
 
 --
+-- Name: index_price_changes_on_changed_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_price_changes_on_changed_by_id ON public.price_changes USING btree (changed_by_id);
+
+
+--
+-- Name: index_price_changes_on_product_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_price_changes_on_product_id ON public.price_changes USING btree (product_id);
+
+
+--
+-- Name: index_price_changes_on_product_id_and_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_price_changes_on_product_id_and_created_at ON public.price_changes USING btree (product_id, created_at);
+
+
+--
+-- Name: index_price_changes_on_upload_batch_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_price_changes_on_upload_batch_id ON public.price_changes USING btree (upload_batch_id);
+
+
+--
+-- Name: index_price_changes_on_vendor_product_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_price_changes_on_vendor_product_id ON public.price_changes USING btree (vendor_product_id);
+
+
+--
 -- Name: index_product_conflicts_on_product_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2229,6 +2330,22 @@ ALTER TABLE ONLY public.ageing_notifications
 
 
 --
+-- Name: price_changes fk_rails_1051db0858; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.price_changes
+    ADD CONSTRAINT fk_rails_1051db0858 FOREIGN KEY (vendor_product_id) REFERENCES public.vendor_products(id) ON DELETE SET NULL;
+
+
+--
+-- Name: price_changes fk_rails_16c0a4d23e; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.price_changes
+    ADD CONSTRAINT fk_rails_16c0a4d23e FOREIGN KEY (upload_batch_id) REFERENCES public.upload_batches(id);
+
+
+--
 -- Name: moq_alerts fk_rails_1b49354c35; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2258,6 +2375,14 @@ ALTER TABLE ONLY public.product_conflicts
 
 ALTER TABLE ONLY public.vendor_order_placements
     ADD CONSTRAINT fk_rails_23e3d928f2 FOREIGN KEY (manual_order_id) REFERENCES public.manual_orders(id);
+
+
+--
+-- Name: price_changes fk_rails_2d0ae995bb; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.price_changes
+    ADD CONSTRAINT fk_rails_2d0ae995bb FOREIGN KEY (product_id) REFERENCES public.products(id);
 
 
 --
@@ -2453,6 +2578,14 @@ ALTER TABLE ONLY public.products
 
 
 --
+-- Name: price_changes fk_rails_b3d5483fde; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.price_changes
+    ADD CONSTRAINT fk_rails_b3d5483fde FOREIGN KEY (changed_by_id) REFERENCES public.users(id);
+
+
+--
 -- Name: moq_alerts fk_rails_b49d84f22c; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2635,6 +2768,7 @@ ALTER TABLE ONLY public.address_changes
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261014090001'),
 ('20261013130001'),
 ('20261013120001'),
 ('20261013090001'),

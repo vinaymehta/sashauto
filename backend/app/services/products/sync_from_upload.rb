@@ -2,6 +2,8 @@ module Products
   # Checks the Commodity Type of the upload's Part Numbers against existing products (products come from vendor
   # imports and manual entry; an order upload never creates one). An existing product's Commodity Type is never
   # overwritten: a blank one is filled in, a different one becomes an open ProductConflict.
+  # The customer price (the file's Unit Price, per 100 pcs) of each existing product is updated from the upload
+  # (the most common value of its rows); a change is kept in the price history.
   class SyncFromUpload
     def self.call(batch, rows)
       new(batch, rows).call
@@ -9,8 +11,11 @@ module Products
 
     def initialize(batch, rows)
       @batch = batch
-      @incoming = rows.group_by { |row| row[:part_number] }
-                      .transform_values { |group| group.filter_map { |row| row[:commodity_type] }.uniq.sort }
+      groups = rows.group_by { |row| row[:part_number] }
+      @incoming = groups.transform_values { |group| group.filter_map { |row| row[:commodity_type] }.uniq.sort }
+      @prices = groups.transform_values do |group|
+        group.filter_map { |row| unit_price(row) }.tally.max_by { |price, count| [ count, price ] }&.first
+      end
     end
 
     # Returns the number of commodity conflicts opened.
@@ -19,6 +24,7 @@ module Products
       conflicts = []
 
       products.each do |product|
+        sync_customer_price(product)
         values = @incoming.fetch(product.part_number)
         if product.commodity_type.nil?
           if values.size == 1
@@ -39,6 +45,22 @@ module Products
     end
 
     private
+
+    def unit_price(row)
+      value = row[:source]&.[]("Unit Price")
+      return nil if value.nil? || value.to_s.strip.empty?
+      number = BigDecimal(value.to_s.strip.delete(","), exception: false)
+      number if number && !number.negative?
+    end
+
+    def sync_customer_price(product)
+      price = @prices[product.part_number]
+      return if price.nil? || product.customer_price == price
+
+      product.price_source = "upload"
+      product.price_upload_batch = @batch
+      product.update!(customer_price: price)
+    end
 
     def conflict_attrs(product, existing, incoming)
       now = Time.current

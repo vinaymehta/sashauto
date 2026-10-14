@@ -66,7 +66,7 @@ export interface UploadStats {
 }
 
 // One email sent for an upload; each kind has its own template.
-export type EmailKind = "quantity_changes" | "address_changes" | "moq_alerts" | "ageing";
+export type EmailKind = "quantity_changes" | "address_changes" | "moq_alerts" | "ship_to_alerts" | "ageing";
 
 export interface EmailInfo {
   id: number;
@@ -127,6 +127,22 @@ export interface ProductConflict {
   uploaded_at?: string | null;
 }
 
+// One change of a part's customer or vendor price (price history), newest first.
+export interface PriceChange {
+  id: number;
+  kind: "customer" | "vendor";
+  vendor_name: string | null;
+  currency: string | null;
+  source: "upload" | "manual" | "import";
+  created_at: string;
+  old_amount: string | null;
+  new_amount: string | null;
+  old_set_amount: string | null;
+  new_set_amount: string | null;
+  changed_by: string | null;
+  upload: string | null;
+}
+
 export interface Product {
   id: number;
   part_number: string;
@@ -138,6 +154,7 @@ export interface Product {
   moq: string | null; // MOQ in pieces
   moq_sets: string | null; // MOQ in sets — what order Qty is compared with
   moq_text: string | null; // MOQ as written in the vendor file
+  customer_price: string | null; // customer's (Deere) Unit Price per 100 pcs, from the order file or edited
   weight_kg: string | null;
   source: "upload" | "manual";
   created_at: string;
@@ -170,13 +187,15 @@ export interface Dashboard {
 export type ActivityKind = "changes" | "no_changes" | "baseline" | "upload_failed" | "email_failed" | "conflicts" | "delivered";
 
 // Inbound (received at SASH US) / outbound (delivered to Deere) mark on an order, set by the Warehouse Manager.
-export type DeliveryKind = "inbound" | "outbound";
+// Order status steps: received / dispatched (SASH Faridabad, admin) → inbound / outbound (SASH US, Warehouse Manager).
+export type DeliveryKind = "received" | "dispatched" | "inbound" | "outbound";
 export interface OrderDeliveryInfo {
   id: number;
   kind: DeliveryKind;
   label: string;
   delivered_on: string;
   note: string | null;
+  invoice_number: string | null; // SASH India invoice number (dispatched)
   marked_by: string | null;
   created_at: string;
 }
@@ -277,6 +296,12 @@ export interface OrderRow {
   source_data?: Record<string, string | number | null>;
   manual?: boolean; // created by hand (Create order), not imported
   placed?: boolean; // placed with vendors (Orders list only)
+  kept?: boolean; // kept on Orders by a status mark, though no longer in the latest upload
+  other_ship_to?: boolean; // Ship To is not the default address
+  below_moq?: boolean; // the order (single or combined) is still below the part's MOQ
+  moq?: string | null; // the part's MOQ (sets), sent with below_moq
+  // First order of a combined order: the combined Qty and its orders (below-MOQ orders combined until the MOQ).
+  combined?: { total: string; moq: string; members: { id: number; po_line_number: string; ship_date: string; qty: string }[] };
   deliveries?: Partial<Record<DeliveryKind, OrderDeliveryInfo>>; // Orders list only
 }
 
@@ -327,6 +352,9 @@ export interface Vendor {
   id: number;
   name: string;
   email: string | null;
+  address: string | null;
+  gst: string | null;
+  phone: string | null;
   product_count: number;
   created_at: string;
   updated_at: string;
@@ -412,7 +440,8 @@ export interface VendorOrderPlacementInfo {
 export interface VendorOrderWarning { vendor_order_id?: number; vendor_id: number; vendor_name: string; message: string }
 
 export interface VendorOrderState {
-  order: { id: number; po_number: string; po_line_number: string; part_number: string; order_type: OrderType; ship_date: string; qty: string | null };
+  // qty: a combined order's total; combined: how many orders it combines (null when not combined).
+  order: { id: number; po_number: string; po_line_number: string; part_number: string; order_type: OrderType; ship_date: string; qty: string | null; combined?: number | null };
   moq: string | null; // the part's MOQ in sets (order Qty counts sets)
   moq_pcs: string | null;
   pack_size: number;

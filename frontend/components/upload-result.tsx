@@ -161,7 +161,7 @@ function VersionData({ upload, status }: { upload: UploadDetail; status?: ReactN
 
 const EMAIL_POLL_MS = { pending: 3000, failed: 15000 } as const;
 const EMAIL_LABELS: Record<EmailKind, string> = {
-  quantity_changes: "Quantity", address_changes: "Address", moq_alerts: "MOQ", ageing: "Ageing",
+  quantity_changes: "Quantity", address_changes: "Address", moq_alerts: "MOQ", ship_to_alerts: "Ship To", ageing: "Ageing",
 };
 
 // Shows the delivery status of each email sent for this upload (one per kind: quantity changes, address

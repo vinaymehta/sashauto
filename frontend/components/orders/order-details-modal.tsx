@@ -86,6 +86,11 @@ export function OrderDetailsBody({ row, rows, description }: { row: OrderRow; ro
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-xl font-semibold tracking-tight text-ink">{row.part_number}</h3>
               <span className="rounded-full bg-white px-2.5 py-0.5 text-xs font-semibold text-tint-violet-ink ring-1 ring-tint-violet-ink/20">{row.order_type}</span>
+              {row.below_moq && (
+                <span className="rounded-full bg-age-yellow px-2.5 py-0.5 text-xs font-semibold text-age-yellow-ink ring-1 ring-age-yellow-ink/25">
+                  Below MOQ{row.moq ? ` · MOQ ${formatQty(row.moq)}` : ""}
+                </span>
+              )}
             </div>
             {description && <p className="mt-1 text-sm text-ink-muted">{description}</p>}
             <div className="mt-3 flex flex-wrap gap-2 text-xs">
@@ -113,6 +118,41 @@ export function OrderDetailsBody({ row, rows, description }: { row: OrderRow; ro
           )}
         </div>
       </section>
+
+      {/* Combined order: below-MOQ orders combined until they reach the MOQ */}
+      {row.combined && (
+        <section className="overflow-hidden rounded-lg border border-tint-violet-ink/25 bg-white shadow-card">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-100 bg-tint-violet/50 px-5 py-3">
+            <h3 className="text-sm font-semibold text-ink">Combined order · {row.combined.members.length} orders</h3>
+            <span className="text-xs text-ink-muted">
+              Total <span className="tabular font-semibold text-ink">{formatQty(row.combined.total)}</span> · MOQ {formatQty(row.combined.moq)}
+              {Number(row.combined.total) < Number(row.combined.moq) && <span className="ml-1 font-semibold text-age-yellow-ink">(still below MOQ)</span>}
+            </span>
+          </div>
+          <table className="min-w-full border-collapse text-sm">
+            <thead>
+              <tr>
+                {["PO Line", "Ship Date", "Qty"].map((h) => (
+                  <th key={h} className={`h-9 whitespace-nowrap border-b border-neutral-200 bg-neutral-50 px-5 text-xs font-bold uppercase tracking-wider text-neutral-800 ${h === "Qty" ? "text-right" : "text-left"}`}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {row.combined.members.map((m) => (
+                <tr key={m.id} className={m.id === row.id ? "bg-accent/5" : ""}>
+                  <td className="h-10 border-b border-neutral-100 px-5 text-ink">{m.po_line_number}</td>
+                  <td className="h-10 border-b border-neutral-100 px-5 text-ink">{formatDate(m.ship_date)}</td>
+                  <td className="tabular h-10 border-b border-neutral-100 px-5 text-right text-ink">{formatQty(m.qty)}</td>
+                </tr>
+              ))}
+              <tr className="bg-neutral-50">
+                <td colSpan={2} className="h-10 px-5 text-xs font-semibold text-ink">Total</td>
+                <td className="tabular h-10 px-5 text-right font-semibold text-ink">{formatQty(row.combined.total)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+      )}
 
       {/* Schedule, full width */}
       <section className="min-w-0 overflow-hidden rounded-lg border border-line bg-white shadow-card">

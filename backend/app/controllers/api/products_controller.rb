@@ -26,11 +26,15 @@ module Api
       render json: { data: products.map { |p| Serializers.product(p, open_conflicts: conflicts.fetch(p.id, [])) }, meta: meta }
     end
 
-    # Vendors supplying this product, with each vendor's price (from the Vendors list).
+    # Vendors supplying this product, with each vendor's price (from the Vendors list), plus the customer price
+    # and the price history (customer and vendor prices, newest first).
     def vendors
       product = Product.find(params[:id])
       items = product.vendor_products.includes(:vendor).joins(:vendor).order("vendors.name")
-      render json: { data: items.map { |vp| Serializers.product_vendor(vp) } }
+      history = product.price_changes.includes(:changed_by, :upload_batch).order(created_at: :desc, id: :desc).limit(200)
+      render json: { data: items.map { |vp| Serializers.product_vendor(vp) },
+                     customer_price: Serializers.qty(product.customer_price),
+                     history: history.map { |change| Serializers.price_change(change) } }
     end
 
     def create
@@ -49,7 +53,8 @@ module Api
     # Only the MOQ can be edited (admins). Blank clears it. Used for MOQ alerts on the next upload.
     def update
       product = Product.find(params[:id])
-      before = { moq: product.moq&.to_s, moq_sets: product.moq_sets&.to_s, pack_size: product.pack_size }
+      before = { moq: product.moq&.to_s, moq_sets: product.moq_sets&.to_s, pack_size: product.pack_size,
+                 customer_price: product.customer_price&.to_s }
       # MOQ in sets with the pack size (pieces derived), or — from older clients — MOQ in pieces.
       attrs = {}
       attrs[:pack_size] = params[:pack_size] if params.key?(:pack_size)
@@ -58,9 +63,13 @@ module Api
       elsif params.key?(:moq)
         attrs[:moq] = params[:moq].presence
       end
+      # Customer price (Unit Price per 100 pcs), edited by hand; the change goes to the price history.
+      attrs[:customer_price] = params[:customer_price].presence if params.key?(:customer_price)
+      product.price_changed_by = current_user
       if product.update(attrs)
-        audit("product.moq_updated", subject: product, before: before,
-                                     after: { moq: product.moq&.to_s, moq_sets: product.moq_sets&.to_s, pack_size: product.pack_size })
+        audit("product.updated", subject: product, before: before,
+                                 after: { moq: product.moq&.to_s, moq_sets: product.moq_sets&.to_s, pack_size: product.pack_size,
+                                          customer_price: product.customer_price&.to_s })
         render json: { data: Serializers.product(product, open_conflicts: product.product_conflicts.open.includes(:upload_batch)) }
       else
         render_validation_errors(product)

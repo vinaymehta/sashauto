@@ -3,7 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import type { Paginated, Product, ProductConflict, ProductVendor, VendorImportResult } from "@/lib/types";
+import type { Paginated, PriceChange, Product, ProductConflict, ProductVendor, VendorImportResult } from "@/lib/types";
 import { formatCount, formatDateTime, formatQty } from "@/lib/format";
 import { PencilIcon, TruckIcon } from "@/components/icons";
 import { formatMoq, formatPrice } from "@/components/vendors/vendor-products-panel";
@@ -129,7 +129,7 @@ function ProductsView() {
         ) : null}
       </Panel></div>
       )}
-      {viewing && <ProductVendorsPanel key={viewing.id} product={viewing} onClose={() => setViewing(null)} />}
+      {viewing && <ProductVendorsPanel key={viewing.id} product={viewing} canEdit={isAdmin} onClose={() => setViewing(null)} onSaved={reload} />}
     </>
   );
 }
@@ -188,43 +188,189 @@ function ProductRow({ product, canEdit, onSaved, active, onOpen }: {
 }
 
 // Side panel with the vendors of a product and each vendor's price (from the Vendors list).
-function ProductVendorsPanel({ product, onClose }: { product: Product; onClose: () => void }) {
-  const { data, error, loading } = useApi<{ data: ProductVendor[] }>(`/api/products/${product.id}/vendors`);
+type PricesResponse = { data: ProductVendor[]; customer_price: string | null; history: PriceChange[] };
+const AMOUNT = /^\d+(\.\d{1,4})?$/;
+const money = (value: string | null, digits = 2) =>
+  value === null ? null : Number(value).toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: 4 });
+
+// Side panel of one part: the customer price (the order file's Unit Price, per 100 pcs — updated by each upload,
+// editable by an admin), the vendors' prices (editable by an admin), and the price history of both.
+function ProductVendorsPanel({ product, canEdit, onClose, onSaved }: {
+  product: Product; canEdit: boolean; onClose: () => void; onSaved: () => void;
+}) {
+  const notify = useToast();
+  const { data, error, loading, reload } = useApi<PricesResponse>(`/api/products/${product.id}/vendors`);
   const items = data?.data ?? [];
+  const history = data?.history ?? [];
+  const customer = data?.customer_price ?? null;
+  const [editingCustomer, setEditingCustomer] = useState(false);
+  const [customerValue, setCustomerValue] = useState("");
+  const [editingVendor, setEditingVendor] = useState<number | null>(null);
+  const [vendorValue, setVendorValue] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  async function saveCustomer() {
+    const value = customerValue.trim();
+    if (value !== "" && !AMOUNT.test(value)) return setSaveError("Enter a price with up to 4 decimals, or leave blank.");
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await api.patch(`/api/products/${product.id}`, { customer_price: value || null });
+      notify(`Customer price of ${product.part_number} saved.`);
+      setEditingCustomer(false);
+      reload();
+      onSaved();
+    } catch (err) {
+      setSaveError(err instanceof ApiError ? err.message : "Could not save the customer price.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Vendor price per set for pack parts, per piece otherwise (the other is derived).
+  async function saveVendor(v: ProductVendor) {
+    const value = vendorValue.trim();
+    if (!AMOUNT.test(value)) return setSaveError("Enter a price with up to 4 decimals.");
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await api.patch(`/api/vendors/${v.vendor_id}/products/${v.id}`, v.pack_size > 1 ? { set_price_amount: value } : { price_amount: value });
+      notify(`${v.vendor_name}'s price saved.`);
+      setEditingVendor(null);
+      reload();
+    } catch (err) {
+      setSaveError(err instanceof ApiError ? err.message : "Could not save the vendor price.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const inputClass = "tabular h-8 w-28 rounded-md border border-neutral-300 bg-white px-2 text-right text-sm text-ink focus:border-neutral-500 focus:outline-none";
 
   return (
     <Sheet open onClose={onClose} title={product.part_number}
-           description={product.description ?? "Vendors supplying this part."} icon={<TruckIcon size={18} />}>
-      <section className="overflow-hidden rounded-lg border border-line bg-white shadow-card">
-        <header className="flex items-center justify-between border-b border-neutral-100 px-5 py-3">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-muted">Vendors</h3>
-          {data && <span className="text-xs text-ink-muted">{items.length} vendor{items.length === 1 ? "" : "s"}</span>}
-        </header>
+           description={product.description ?? "Customer and vendor prices of this part."} icon={<TruckIcon size={18} />}>
+      <div className="space-y-4">
+        {saveError && <Alert>{saveError}</Alert>}
         {error ? (
-          <div className="p-4"><Alert title="Could not load the vendors">{error.message}</Alert></div>
+          <Alert title="Could not load the prices">{error.message}</Alert>
         ) : loading && !data ? (
           <div className="flex justify-center py-10"><Spinner /></div>
-        ) : items.length === 0 ? (
-          <p className="px-5 py-8 text-center text-sm text-ink-muted">No vendor is listed for this part.</p>
         ) : (
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="text-2xs font-bold uppercase tracking-wider text-neutral-600">
-                <th className="h-9 border-b border-neutral-200 bg-neutral-50 px-5 text-left">Vendor Name</th>
-                <th className="h-9 border-b border-neutral-200 bg-neutral-50 px-5 text-right">Vendor Price</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((v) => (
-                <tr key={v.id}>
-                  <td className="h-11 border-b border-neutral-100 px-5 font-medium text-ink">{v.vendor_name}</td>
-                  <td className="tabular whitespace-nowrap border-b border-neutral-100 px-5 text-right text-ink">{formatPrice(v) ?? dash}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <>
+            {/* Customer price */}
+            <section className="rounded-lg border border-line bg-gradient-to-br from-tint-violet/60 via-white to-white px-5 py-4 shadow-card">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-ink-muted">Customer price (Deere)</p>
+                  {editingCustomer ? (
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <input autoFocus inputMode="decimal" value={customerValue} onChange={(e) => setCustomerValue(e.target.value)}
+                             aria-label="Customer price per 100 pcs" className={inputClass} />
+                      <span className="text-sm text-ink-muted">per 100 pcs</span>
+                      <Button size="sm" variant="primary" onClick={saveCustomer} disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
+                      <Button size="sm" variant="ghost" onClick={() => setEditingCustomer(false)} disabled={saving}>Cancel</Button>
+                    </div>
+                  ) : customer === null ? (
+                    <p className="mt-1 text-sm text-ink-faint">Not set yet — it is taken from the order file&apos;s Unit Price on the next upload.</p>
+                  ) : (
+                    <p className="mt-1">
+                      <span className="tabular text-2xl font-bold text-ink">{money(customer)}</span>
+                      <span className="ml-1 text-sm text-ink-muted">per 100 pcs</span>
+                      <span className="ml-3 text-sm text-ink-muted">= <span className="tabular font-semibold text-ink">{money(String(Number(customer) / 100), 2)}</span> per piece</span>
+                    </p>
+                  )}
+                </div>
+                {canEdit && !editingCustomer && (
+                  <Button size="sm" onClick={() => { setSaveError(null); setCustomerValue(customer ?? ""); setEditingCustomer(true); }}>
+                    <PencilIcon size={14} className="text-ink-muted" />Edit
+                  </Button>
+                )}
+              </div>
+            </section>
+
+            {/* Vendor prices */}
+            <section className="overflow-hidden rounded-lg border border-line bg-white shadow-card">
+              <header className="flex items-center justify-between border-b border-neutral-100 px-5 py-3">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-muted">Vendor prices</h3>
+                <span className="text-xs text-ink-muted">{items.length} vendor{items.length === 1 ? "" : "s"}</span>
+              </header>
+              {items.length === 0 ? (
+                <p className="px-5 py-8 text-center text-sm text-ink-muted">No vendor is listed for this part.</p>
+              ) : (
+                <table className="w-full border-collapse text-sm">
+                  <tbody>
+                    {items.map((v) => (
+                      <tr key={v.id}>
+                        <td className="h-12 border-b border-neutral-100 px-5 font-medium text-ink">{v.vendor_name}</td>
+                        <td className="tabular whitespace-nowrap border-b border-neutral-100 px-5 text-right text-ink">
+                          {editingVendor === v.id ? (
+                            <span className="inline-flex items-center gap-2">
+                              <input autoFocus inputMode="decimal" value={vendorValue} onChange={(e) => setVendorValue(e.target.value)}
+                                     aria-label={`Price for ${v.vendor_name}`} className={inputClass} />
+                              <span className="text-xs text-ink-muted">{v.price_currency} / {v.pack_size > 1 ? `set of ${v.pack_size}` : "pc"}</span>
+                              <Button size="sm" variant="primary" onClick={() => saveVendor(v)} disabled={saving}>Save</Button>
+                              <Button size="sm" variant="ghost" onClick={() => setEditingVendor(null)} disabled={saving}>Cancel</Button>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-2">
+                              {formatPrice(v) ?? dash}
+                              {canEdit && (
+                                <button type="button" title="Edit price" aria-label={`Edit ${v.vendor_name}'s price`}
+                                        onClick={() => { setSaveError(null); setVendorValue((v.pack_size > 1 ? v.set_price_amount : v.price_amount) ?? ""); setEditingVendor(v.id); }}
+                                        className="inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-muted hover:bg-subtle hover:text-ink">
+                                  <PencilIcon size={14} />
+                                </button>
+                              )}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </section>
+
+            {/* Price history */}
+            <section className="overflow-hidden rounded-lg border border-line bg-white shadow-card">
+              <header className="border-b border-neutral-100 px-5 py-3">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-muted">Price history</h3>
+              </header>
+              {history.length === 0 ? (
+                <p className="px-5 py-8 text-center text-sm text-ink-muted">No price changes yet.</p>
+              ) : (
+                <ul className="divide-y divide-neutral-100">
+                  {history.map((h) => {
+                    const customerChange = h.kind === "customer";
+                    const before = customerChange ? h.old_amount : (h.old_set_amount ?? h.old_amount);
+                    const after = customerChange ? h.new_amount : (h.new_set_amount ?? h.new_amount);
+                    const up = before !== null && after !== null && Number(after) > Number(before);
+                    const down = before !== null && after !== null && Number(after) < Number(before);
+                    return (
+                      <li key={h.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3 text-sm">
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${customerChange ? "bg-tint-violet text-tint-violet-ink" : "bg-tint-amber text-tint-amber-ink"}`}>
+                          {customerChange ? "Customer price" : "Vendor price"}
+                        </span>
+                        {!customerChange && h.vendor_name && <span className="text-xs text-ink-muted">{h.vendor_name}</span>}
+                        <span className="tabular text-ink">
+                          {before === null ? <span className="text-ink-muted">set to</span> : <span className="text-ink-muted line-through">{money(before)}</span>}
+                          {" "}<span className={`font-semibold ${(customerChange ? up : down) ? "text-inc" : (customerChange ? down : up) ? "text-dec" : "text-ink"}`}>{after === null ? "cleared" : money(after)}</span>
+                          <span className="ml-1 text-xs text-ink-muted">{customerChange ? "per 100 pcs" : h.currency ?? ""}</span>
+                        </span>
+                        <span className="ml-auto text-xs text-ink-muted">
+                          {formatDateTime(h.created_at)} · {h.source === "upload" ? `upload${h.upload ? ` ${h.upload}` : ""}` : h.source === "import" ? "vendor file import" : `edited by ${h.changed_by ?? "—"}`}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
+          </>
         )}
-      </section>
+      </div>
     </Sheet>
   );
 }

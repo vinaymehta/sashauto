@@ -20,6 +20,7 @@ Rails.application.routes.draw do
         get :changes
         get :address_changes
         get :moq_alerts
+        get "moq_alerts/export", action: :moq_alerts_export
         get :problems
         get :rows
         get :download

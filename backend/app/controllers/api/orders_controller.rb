@@ -43,11 +43,14 @@ module Api
       dataset = dataset(batch)
       columns = source_columns(batch)
       scope = filter(search(dataset, (params[:search].presence || params[:q]).to_s.strip.first(100)))
+      # Orders inside a combined order (Orders::Combiner) are listed under its first order, not on their own.
+      combined = Orders::Combiner.call(batch&.id)
+      scope = scope.where("order_rows.manual OR order_rows.id NOT IN (?)", combined.hidden.to_a) if combined.hidden.any?
       scope, sort, direction = apply_sort(scope, sorts_for(columns), default: DEFAULT_SORT)
       # Manual orders are always listed first; each part keeps the chosen sort.
       scope = scope.reorder(Arel.sql("order_rows.manual DESC"), *scope.order_values)
 
-      rows, meta = if filtered?
+      rows, meta = if filtered? || combined.hidden.any?
         paginate(scope)
       else
         # Stored rows of the upload (row_count is the number after merging identical rows, not what is listed).
@@ -62,7 +65,8 @@ module Api
       render json: {
         data: rows.map do |row|
           key = placement_key(row)
-          Serializers.order_row(row, source: true).merge(placed: placed.include?(key), deliveries: deliveries.fetch(key, {}))
+          Serializers.order_row(row, source: true).merge(placed: placed.include?(key), deliveries: deliveries.fetch(key, {}),
+                                                         **combined_info(row, combined))
         end,
         meta: meta.merge(sort: sort, direction: direction),
         # Every Excel column of the upload, in file order; `key` is the sort key.
@@ -101,6 +105,43 @@ module Api
     end
 
     private
+
+    STATUSES = %w[none received dispatched inbound outbound].freeze
+
+    # Current status of a listed row (its furthest status mark), or 'none'.
+    CURRENT_STATUS_SQL = <<~SQL.squish.freeze
+      COALESCE((SELECT d.kind FROM order_deliveries d
+                WHERE d.removed_at IS NULL
+                  AND ((order_rows.manual AND d.manual_order_id = order_rows.id)
+                       OR (NOT order_rows.manual AND d.manual_order_id IS NULL AND d.po_number = order_rows.po_number
+                           AND d.part_number = order_rows.part_number AND d.order_type = order_rows.order_type
+                           AND d.po_line_number = order_rows.po_line_number AND d.ship_date = order_rows.ship_date))
+                ORDER BY array_position(ARRAY['received', 'dispatched', 'inbound', 'outbound']::varchar[], d.kind) DESC
+                LIMIT 1), 'none')
+    SQL
+
+    # Status filter (status=none,received,…); without it, fulfilled orders (outbound) are left out.
+    def filter_by_status(scope)
+      statuses = multi_param(:status, STATUSES)
+      return scope.where("#{CURRENT_STATUS_SQL} <> 'outbound'") if statuses.empty?
+
+      scope.where("#{CURRENT_STATUS_SQL} IN (?)", statuses)
+    end
+
+    # For an imported row that starts a combined order: the combined Qty and its orders; below_moq when the order
+    # (single or combined) is still below the part's MOQ.
+    def combined_info(row, combined)
+      return {} if row[:manual]
+
+      group = combined.groups[row.id]
+      info = { below_moq: combined.open.include?(row.id), moq: group && Serializers.qty(group.moq) }
+      return info unless group&.combined?
+
+      info.merge(combined: { total: Serializers.qty(group.total), moq: Serializers.qty(group.moq),
+                             members: group.members.map do |m|
+                               { id: m.id, po_line_number: m.po_line_number, ship_date: m.ship_date, qty: Serializers.qty(m.qty) }
+                             end })
+    end
 
     # Placement key of a listed row (an imported row, or a manual order listed with `manual`).
     def placement_key(row)
@@ -186,14 +227,15 @@ module Api
       OrderRow.from("(#{imported.to_sql} UNION ALL #{manual.to_sql} UNION ALL #{kept.to_sql}) AS order_rows")
     end
 
-    # Orders with an active delivery mark (inbound / outbound) that are no longer in the latest upload: like manual
+    # Orders placed with vendors or with an active status mark that are no longer in the latest upload: like manual
     # orders they stay on the Orders page. One row per order (PO + Part + Type + PO Line + Ship Date), its last version.
     def kept_rows(batch)
       OrderRow.from(<<~SQL.squish)
         (SELECT DISTINCT ON (r.group_key, r.po_line_number, r.ship_date) r.id
          FROM order_rows r
-         JOIN order_deliveries d ON d.order_row_id = r.id AND d.removed_at IS NULL
          WHERE r.upload_batch_id <> #{Integer(batch&.id || 0)}
+           AND (EXISTS (SELECT 1 FROM order_deliveries d WHERE d.order_row_id = r.id AND d.removed_at IS NULL)
+                OR EXISTS (SELECT 1 FROM vendor_order_placements p WHERE p.order_row_id = r.id))
            AND NOT EXISTS (SELECT 1 FROM order_rows n WHERE n.upload_batch_id = #{Integer(batch&.id || 0)}
                            AND n.group_key = r.group_key AND n.po_line_number = r.po_line_number AND n.ship_date = r.ship_date)
          ORDER BY r.group_key, r.po_line_number, r.ship_date, r.upload_batch_id DESC) AS order_rows
@@ -212,7 +254,9 @@ module Api
 
     # Whether the request has any search or filter active.
     def filtered?
-      (params[:search].presence || params[:q].presence).present? ||
+      # Fulfilled (delivered to Deere) orders are hidden by default, so the stored row count no longer applies.
+      OrderDelivery.active.where(kind: "outbound").exists? || params[:status].present? ||
+        (params[:search].presence || params[:q].presence).present? ||
         params[:type].present? || params[:ship_to].present? || params[:commodity_type].present? ||
         params[:ship_date_from].present? || params[:ship_date_to].present? || params[:age].present?
     end
@@ -247,6 +291,7 @@ module Api
       scope = scope.where(ship_to_location: ship_tos) if ship_tos.any?
       scope = scope.where(commodity_type: commodities) if commodities.any?
       scope = filter_by_age(scope)
+      scope = filter_by_status(scope)
       from = iso_date(params[:ship_date_from])
       to = iso_date(params[:ship_date_to])
       scope = scope.where(ship_date: from..) if from

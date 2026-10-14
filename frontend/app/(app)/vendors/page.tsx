@@ -24,6 +24,7 @@ import { TableSkeleton } from "@/components/ui/skeleton";
 import { SortTh } from "@/components/ui/sort-header";
 import { Pagination, Table, Td, Th } from "@/components/ui/table";
 
+const dash = <span className="text-neutral-300">—</span>;
 const iconButton = "inline-flex h-8 w-8 items-center justify-center rounded-md text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-ink";
 
 // Vendors and the parts they supply. Click a vendor to see its parts in the side panel.
@@ -104,15 +105,23 @@ export default function VendorsPage() {
           />
         ) : data ? (
           <div className={`transition-opacity duration-200 ${loading ? "opacity-50" : ""}`}>
-            <Table fixed>
+            <Table fixed minWidth="min-w-[1100px]">
               <colgroup>
-                <col className={isAdmin ? "w-1/3" : "w-1/2"} />
-                <col className={isAdmin ? "w-1/3" : "w-1/2"} />
-                {isAdmin && <col className="w-1/3" />}
+                <col className="w-56" />
+                <col className="w-56" />
+                <col className="w-40" />
+                <col className="w-44" />
+                <col />
+                <col className="w-28" />
+                {isAdmin && <col className="w-28" />}
               </colgroup>
               <thead>
                 <tr>
                   <SortTh label="Vendor Name" sortKey="name" {...sortProps} />
+                  <Th>Email ID</Th>
+                  <Th>Phone Number</Th>
+                  <Th>GST</Th>
+                  <Th>Address</Th>
                   <SortTh label="Products" sortKey="product_count" align="center" {...sortProps} />
                   {isAdmin && <Th align="center">Action</Th>}
                 </tr>
@@ -122,6 +131,10 @@ export default function VendorsPage() {
                   <tr key={v.id} onClick={() => setOpen(v)} aria-haspopup="dialog"
                       className={`cursor-pointer transition-colors hover:bg-neutral-50 ${open?.id === v.id ? "shadow-[inset_3px_0_0_var(--color-accent)]" : ""}`}>
                     <Td className="truncate font-medium" title={v.name}>{v.name}</Td>
+                    <Td className="truncate text-ink-muted" title={v.email ?? undefined}>{v.email ?? dash}</Td>
+                    <Td className="truncate tabular text-ink-muted">{v.phone ?? dash}</Td>
+                    <Td className="truncate tabular text-ink-muted">{v.gst ?? dash}</Td>
+                    <Td className="truncate text-ink-muted" title={v.address ?? undefined}>{v.address ?? dash}</Td>
                     <Td align="center" className="tabular">{formatCount(v.product_count)}</Td>
                     {isAdmin && (
                       <Td align="center" className="space-x-1" onClick={(e) => e.stopPropagation()}>

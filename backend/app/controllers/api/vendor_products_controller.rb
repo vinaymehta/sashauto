@@ -53,6 +53,7 @@ module Api
     end
 
     def save(item, action, status)
+      item.price_changed_by = current_user
       if item.save
         audit(action, subject: item, vendor_id: @vendor.id, part_number: item.product.part_number)
         render json: { data: Serializers.vendor_product(item) }, status: status

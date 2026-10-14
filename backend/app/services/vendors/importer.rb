@@ -109,6 +109,8 @@ module Vendors
       vendor_created = !vendors.key?(name.downcase)
       vendor = vendors[name.downcase] ||= Vendor.create!(name: name)
       item = VendorProduct.find_or_initialize_by(vendor: vendor, product: product)
+      item.price_source = "import"
+      item.price_changed_by = @user
       added = item.new_record?
       item.update!(sash_part: row[:sash_part], vendor_part: row[:vendor_part], description: row[:description], pack_size: pack,
                    moq: moq&.pcs, moq_sets: moq&.sets, moq_text: moq && file_text(row[:moq]), weight_kg: number_or_nil(row[:weight_kg]),

@@ -19,11 +19,13 @@ module VendorOrders
 
     Result = Data.define(:placement, :warnings)
 
-    def self.call(row:, allocations:, user:)
-      new(row, allocations, user).call
+    # `order_qty`: the Qty to place — a combined order's total (Orders::Combiner); the row's own Qty by default.
+    def self.call(row:, allocations:, user:, order_qty: nil)
+      new(row, allocations, user, order_qty).call
     end
 
-    def initialize(row, allocations, user)
+    def initialize(row, allocations, user, order_qty = nil)
+      @order_qty = order_qty
       @row = row
       @allocations = Array(allocations)
       @user = user
@@ -31,7 +33,7 @@ module VendorOrders
 
     def call
       product = Product.find_by(part_number: @row.part_number)
-      order_qty = @row.qty
+      order_qty = @order_qty || @row.qty
       raise Invalid, "This order has no Qty, so it cannot be placed." if order_qty.nil? || order_qty <= 0
 
       links = product ? product.vendor_products.includes(:vendor).index_by(&:vendor_id) : {}

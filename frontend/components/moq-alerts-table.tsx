@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { MoqAlert, Paginated } from "@/lib/types";
 import { formatCount, formatDate, formatQty } from "@/lib/format";
-import { CheckIcon } from "./icons";
+import { CheckIcon, DownloadIcon } from "./icons";
 import { useApi, useDebounced } from "./use-api";
 import { useListQuery } from "./use-list-query";
 import { Alert } from "./ui/feedback";
@@ -27,6 +27,14 @@ export function MoqAlertsTable({ uploadId, manual = false }: { uploadId: number;
       <ListToolbar summary={data ? `${formatCount(data.meta.total)} MOQ alert${data.meta.total === 1 ? "" : "s"}` : ""}>
         <SearchInput label="Search MOQ alerts" placeholder="Search PO or part number" value={search}
                      onSearch={(v) => { setSearch(v); list.resetPage(); }} className="w-full sm:w-72" />
+        {/* Every MOQ alert with its full order row (all columns of the order file), as an Excel file. */}
+        {data && data.meta.total > 0 && (
+          <a href={`/api/uploads/${uploadId}/moq_alerts/export${manual ? "?manual=1" : ""}`} download
+             className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-3 text-sm font-medium text-ink transition-colors hover:border-neutral-400 hover:bg-subtle">
+            <DownloadIcon size={15} className="text-ink-muted" />
+            Export
+          </a>
+        )}
       </ListToolbar>
       {error ? (
         <div className="p-4"><Alert title="Could not load MOQ alerts">{error.message}</Alert></div>

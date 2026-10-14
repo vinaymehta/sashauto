@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { createContext, memo, Suspense, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
-import type { Dashboard, OrderRow, OrdersPage, UploadChoice, UploadDetail } from "@/lib/types";
+import type { Dashboard, OrderRow, OrdersPage, Role, UploadChoice, UploadDetail } from "@/lib/types";
 import { formatCount, formatDate, formatQty } from "@/lib/format";
 import { AlertIcon, ArrowUpDownIcon, MapPinIcon, TableIcon } from "@/components/icons";
 import { AddressChangesTable } from "@/components/address-changes-table";
@@ -37,13 +37,34 @@ interface Column {
   key: string; // sort key accepted by GET /api/orders
   label: string;
   align?: Align;
+  sortable?: boolean; // false for columns the app computes (not in the file)
   render: (row: OrderRow) => ReactNode;
 }
+
+// The file's Unit Price is per 100 pcs; the price of one piece is shown next to it.
+const pricePerPiece = (r: OrderRow) => {
+  const raw = r.source_data?.["Unit Price"];
+  const n = raw === null || raw === undefined || raw === "" ? NaN : Number(raw);
+  return Number.isNaN(n) ? dash : (n / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+};
 
 const dash = <span className="text-neutral-300">—</span>;
 const text = (value: string | null) => value ?? dash;
 const date = (value: string | null) => (value ? formatDate(value) : dash);
 const qty = (value: string | null) => (value === null ? dash : formatQty(value));
+
+// Qty of an order. A combined order (below-MOQ orders of the same PO + Part + Type combined until the MOQ) shows
+// its total in bold; its orders, and whether it is below the MOQ, are shown in Order details.
+function QtyCell({ row }: { row: OrderRow }) {
+  const c = row.combined;
+  return (
+    <span className="inline-flex items-center justify-end">
+      <span className={c ? "font-semibold" : ""} title={c ? `Combined from ${c.members.length} orders — see Order details` : undefined}>
+        {qty(c ? c.total : row.qty)}
+      </span>
+    </span>
+  );
+}
 
 // Opens the Place order panel for a row (provided by the Orders page; null for the Warehouse Manager).
 const PlaceOrderContext = createContext<((row: OrderRow) => void) | null>(null);
@@ -69,9 +90,34 @@ const typedColumns = (uploadId?: number): Record<string, Omit<Column, "key" | "l
   due_date: { render: (r) => date(r.due_date) },
   ship_date: { render: (r) => formatDate(r.ship_date) },
   unit: { render: (r) => <UnitLink row={r} /> },
-  po_number: { render: (r) => <OrderDetailsLink row={r} /> },
+  // PO Number (opens Order details), with tags for a combined order and an order still below the MOQ.
+  po_number: {
+    render: (r) => (
+      <span className="inline-flex items-center gap-1.5">
+        <OrderDetailsLink row={r} />
+        {r.combined && (
+          <span title={`Combined from ${r.combined.members.length} orders — see Order details`}
+                className="inline-flex items-center whitespace-nowrap rounded border border-tint-violet-ink/25 bg-tint-violet px-2 py-0.5 text-xs font-medium text-tint-violet-ink">
+            Combined · {r.combined.members.length}
+          </span>
+        )}
+        {r.below_moq && (
+          <span title={r.moq ? `Below the MOQ of ${r.moq}` : "Below the part's MOQ"}><Badge tone="warn">Low MOQ</Badge></span>
+        )}
+      </span>
+    ),
+  },
+  // Shipped somewhere other than the default Ship To (also emailed after each upload).
+  ship_to_address: {
+    render: (r) => (
+      <span className="inline-flex max-w-80 items-center gap-1.5">
+        <span className="truncate" title={String(r.source_data?.["Ship To Address"] ?? "")}>{cell(r.source_data?.["Ship To Address"])}</span>
+        {r.other_ship_to && <span title="Not the default Ship To address"><Badge tone="warn">Other Ship To</Badge></span>}
+      </span>
+    ),
+  },
   part_number: { render: (r) => <RelatedLink kind="part" value={r.part_number} uploadId={uploadId} /> },
-  qty: { align: "right", render: (r) => qty(r.qty) },
+  qty: { align: "right", render: (r) => <QtyCell row={r} /> },
   previous_qty: { align: "right", render: (r) => qty(r.previous_qty) },
   last_asn_qty: { align: "right", render: (r) => qty(r.last_asn_qty) },
   last_receipt_qty: { align: "right", render: (r) => qty(r.last_receipt_qty) },
@@ -80,14 +126,18 @@ const typedColumns = (uploadId?: number): Record<string, Omit<Column, "key" | "l
 // All Excel columns of the upload, in file order (same as the history table).
 function buildColumns(columns: { key: string; label: string }[], uploadId?: number, numericKeys?: Set<string>): Column[] {
   const TYPED = typedColumns(uploadId);
-  return columns.map(({ key, label }) => {
+  return columns.flatMap(({ key, label }): Column[] => {
     const typed = TYPED[key];
-    if (typed) return { key, label, ...typed };
     const numeric = numericKeys?.has(key) ?? false;
-    return {
+    const column: Column = typed ? { key, label, ...typed } : {
       key, label, align: numeric ? "right" : "left",
       render: (r) => <span className="block max-w-72 truncate" title={String(r.source_data?.[label] ?? "")}>{cell(r.source_data?.[label])}</span>,
     };
+    // "Price per piece" (Unit Price ÷ 100) just before the file's Unit Price.
+    if (label === "Unit Price") {
+      return [{ key: "price_per_piece", label: "Price per piece", align: "right", sortable: false, render: pricePerPiece }, column];
+    }
+    return [column];
   });
 }
 
@@ -97,14 +147,14 @@ const rowKey = (row: OrderRow) => `${row.manual ? "m" : "r"}${row.id}`;
 // One table row. Memoized: the page re-renders when the dashboard, upload list or tabs load or change, and
 // re-rendering every cell of 50 rows × all Excel columns each time blocked the browser for over a second.
 // One order row (not clickable itself): the PO Number opens its details and the Unit opens Place order. The first
-// column is the Delivery status (Inbound / Outbound): the Warehouse Manager (`canMark`) edits it, the admin sees it.
-const OrderTr = memo(function OrderTr({ row, columns, open, today, canMark, onChanged }: {
-  row: OrderRow; columns: Column[]; open: boolean; today: Date; canMark: boolean; onChanged: () => void;
+// column is the order Status: admin sets received / dispatched, the Warehouse Manager inbound / outbound.
+const OrderTr = memo(function OrderTr({ row, columns, open, today, role, onChanged }: {
+  row: OrderRow; columns: Column[]; open: boolean; today: Date; role: Role | undefined; onChanged: () => void;
 }) {
   const tint = ageRowProps(row.ship_date, today);
   return (
     <tr className={`${tint.className} ${open ? "shadow-[inset_3px_0_0_var(--color-accent)]" : ""}`} title={tint.title}>
-      <Td><DeliveryCell row={row} canMark={canMark} onChanged={onChanged} /></Td>
+      <Td><DeliveryCell row={row} role={role} onChanged={onChanged} /></Td>
       {columns.map((c) => (
         <Td key={c.key} align={c.align === "right" ? "right" : "left"}>{c.render(row)}</Td>
       ))}
@@ -149,6 +199,12 @@ function OrdersView() {
     { key: "ship_date", label: "Ship date", type: "date-range", options: [] },
     { key: "commodity_type", label: "Commodity Type", options: (facets?.commodity_types ?? []).map((v) => ({ value: v, label: v })) },
     AGE_FILTER,
+    // Fulfilled orders (delivered to Deere) are hidden unless chosen here.
+    { key: "status", label: "Status", options: [
+      { value: "none", label: "No status" }, { value: "received", label: "Received at SASH Faridabad" },
+      { value: "dispatched", label: "Dispatched from SASH Faridabad" }, { value: "inbound", label: "Delivered to SASH US" },
+      { value: "outbound", label: "Fulfilled (delivered to Deere)" },
+    ] },
   ];
   const filtered = term !== "" || Object.values(list.filters).some(Boolean);
   const clearAll = () => { list.clearFilters(); setSearch(""); };
@@ -266,7 +322,7 @@ function OrdersView() {
       )}
 
       <div className="flex items-center overflow-x-auto border-b border-line">
-        <Tabs active={activeTab} onChange={(t) => { setChangeFilter(undefined); setTab(t); }} tabs={tabs} />
+        <Tabs size="lg" active={activeTab} onChange={(t) => { setChangeFilter(undefined); setTab(t); }} tabs={tabs} />
       </div>
       {/* Keyed so a tab fades in when opened; the order rows do not depend on the upload summary, so the
           table is not rebuilt when the dashboard data arrives. */}
@@ -305,17 +361,18 @@ function OrdersView() {
             <Table dense>
               <thead>
                 <tr>
-                  <Th>{manager ? "Action" : "Delivery"}</Th>
-                  {COLUMNS.map((c) => (
-                    <SortTh key={c.key} label={c.label} sortKey={c.key} align={c.align ?? "left"}
-                            sort={list.sort} direction={list.direction} onSort={list.toggleSort} />
+                  <Th>Status</Th>
+                  {COLUMNS.map((c) => (c.sortable === false
+                    ? <Th key={c.key} align={c.align ?? "left"}>{c.label}</Th>
+                    : <SortTh key={c.key} label={c.label} sortKey={c.key} align={c.align ?? "left"}
+                              sort={list.sort} direction={list.direction} onSort={list.toggleSort} />
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {data.data.map((row) => (
                   <OrderTr key={rowKey(row)} row={row} columns={COLUMNS} open={selectedKey === rowKey(row)} today={today}
-                           canMark={manager} onChanged={reload} />
+                           role={role} onChanged={reload} />
                 ))}
               </tbody>
             </Table>

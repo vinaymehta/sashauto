@@ -44,6 +44,7 @@ export function VendorOrderSection({ orderId, manual = false, onPlaced }: { orde
         {state && (
           <span className="text-xs text-ink-muted">
             Order Qty <span className="tabular font-semibold text-ink">{state.order.qty !== null ? formatQty(state.order.qty) : "—"}</span>
+            {state.order.combined ? <> (combined from {state.order.combined} orders)</> : null}
             {" · "}MOQ <span className="tabular font-semibold text-ink">{state.moq !== null ? formatQty(state.moq) : "—"}</span>
           </span>
         )}

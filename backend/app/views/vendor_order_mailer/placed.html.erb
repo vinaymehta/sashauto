@@ -15,13 +15,15 @@
          [ "Vendor Part", @order.vendor.vendor_products.find_by(product_id: @placement.product_id)&.vendor_part || @product&.vendor_part ],
          [ "Description", @product&.description ],
          [ "Quantity", quantity ],
+         [ "Unit Price", @unit_price ],
+         [ "Total", @total ],
          [ "Ship Date", (@order.ship_date || @placement.ship_date).strftime("%-d %b %Y") ],
          [ "Due Date", @placement.due_date&.strftime("%-d %b %Y") ]
        ] %>
     <% rows.each do |label, value| %>
       <tr style="border-bottom:1px solid #f0f0f0;">
         <td style="padding:9px 10px;color:#737373;width:190px;"><%= label %></td>
-        <td style="padding:9px 10px;color:#171717;font-weight:<%= label == "Quantity" || label == "Vendor Order Number" ? 600 : 400 %>;"><%= value.presence || "—" %></td>
+        <td style="padding:9px 10px;color:#171717;font-weight:<%= %w[Quantity Total].include?(label) || label == "Vendor Order Number" ? 600 : 400 %>;"><%= value.presence || "—" %></td>
       </tr>
     <% end %>
   </table>

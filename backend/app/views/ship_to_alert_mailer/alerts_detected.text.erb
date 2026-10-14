@@ -1,0 +1,11 @@
+Different Ship To
+<%= @batch.original_filename %> · uploaded by <%= @batch.uploaded_by.name %> on <%= @batch.completed_at.utc.strftime("%-d %b %Y, %H:%M UTC") %>
+
+<%= @total %> order row(s) ship to an address other than the default <%= @default %>.
+
+PO Number | PO Line | Part Number | Type | Ship Date | Ship To
+<% @rows.each do |row| %><%= row.po_number %> | <%= row.po_line_number %> | <%= row.part_number %> | <%= row.order_type %> | <%= row.ship_date.strftime("%-d %b %Y") %> | <%= Orders::ShipTo.address(row.source_data) %>
+<% end %><% if @total > @rows.size %>
+Showing the first <%= @rows.size %> of <%= @total %> rows.
+<% end %>
+Open the Orders page: <%= @url %>

@@ -15,14 +15,15 @@ module Api
       render json: {
         data: {
           order: { id: row.id, po_number: row.po_number, po_line_number: row.po_line_number, part_number: row.part_number,
-                   order_type: row.order_type, ship_date: row.ship_date, qty: Serializers.qty(row.qty) },
+                   order_type: row.order_type, ship_date: row.ship_date, qty: Serializers.qty(order_qty(row)),
+                   combined: combined_group(row)&.members&.size },
           # Order Qty counts sets; the part's MOQ in sets and pieces, and how many pieces make a set.
           moq: Serializers.qty(product && (product.moq_sets || product.moq)), moq_pcs: Serializers.qty(product&.moq),
           pack_size: product&.pack_size || 1,
           vendors: vendors.map { |vp| Serializers.product_vendor(vp).merge(has_email: vp.vendor.email.present?) },
           placement: placement && Serializers.vendor_order_placement(placement),
           warnings: placement ? VendorOrders::Placer.moq_warnings(placement) : [],
-          can_place: placement.nil? && current_user.admin? && row.qty.to_d.positive?
+          can_place: placement.nil? && current_user.admin? && order_qty(row).to_d.positive?
         }
       }
     end
@@ -30,7 +31,7 @@ module Api
     def create
       row = order
       allocations = params.permit(allocations: %i[vendor_id qty unit ship_date]).fetch(:allocations, [])
-      result = VendorOrders::Placer.call(row: row, allocations: allocations, user: current_user)
+      result = VendorOrders::Placer.call(row: row, allocations: allocations, user: current_user, order_qty: order_qty(row))
       placement = result.placement
       audit("vendor_order.placed", subject: placement, po_number: placement.po_number, part_number: placement.part_number,
             vendor_orders: placement.vendor_orders.map { |vo| { number: vo.number, vendor_id: vo.vendor_id, qty: vo.qty.to_s } })
@@ -56,6 +57,18 @@ module Api
     # The order row, or (`manual=1`) the manual order, with this id.
     def order
       params[:manual] == "1" ? ManualOrder.active.find(params[:order_id]) : OrderRow.find(params[:order_id])
+    end
+
+    # The combined order this row starts (Orders::Combiner), if any.
+    def combined_group(row)
+      return nil unless row.is_a?(OrderRow)
+      group = Orders::Combiner.call(row.upload_batch_id).groups[row.id]
+      group if group&.combined?
+    end
+
+    # Qty to place: a combined order's total, else the row's Qty.
+    def order_qty(row)
+      combined_group(row)&.total || row.qty
     end
 
     def placement_for(row)

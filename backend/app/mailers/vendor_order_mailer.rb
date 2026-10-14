@@ -1,5 +1,6 @@
-# One Vendor Order sent to its vendor: only that vendor's order, without prices. When the vendor has no email
-# address it goes to the default recipients instead (`fallback`), with a note to forward it to the vendor.
+# One Vendor Order sent to its vendor: only that vendor's order, with its unit price and line total (the vendor's
+# price for the unit ordered). When the vendor has no email address it goes to the default recipients instead
+# (`fallback`), with a note to forward it to the vendor.
 class VendorOrderMailer < ApplicationMailer
   def placed
     @order = params.fetch(:vendor_order)
@@ -8,8 +9,20 @@ class VendorOrderMailer < ApplicationMailer
     @fallback = params.fetch(:fallback, false)
     # Pieces per set, for the quantity line ("200 sets of 10 pcs (2,000 pcs)" / "500 pcs").
     @pack = @order.vendor.vendor_products.find_by(product_id: @placement.product_id)&.pack_size || @product&.pack_size || 1
+    if @order.unit_price
+      per = @order.unit == "pcs" || @pack <= 1 ? "pc" : "set"
+      @unit_price = "#{@order.price_currency} #{format_amount(@order.unit_price)} per #{per}"
+      @total = "#{@order.price_currency} #{ActiveSupport::NumberHelper.number_to_delimited(format('%.2f', @order.unit_price * @order.qty))}"
+    end
     subject = "Purchase order #{@order.number} from SASH"
     subject = "[Forward to #{@order.vendor.name}] #{subject}" if @fallback
     mail(to: params.fetch(:recipients), subject: subject, options: { idempotency_key: "vendor-order-#{@order.id}-#{@order.created_at.to_i}" })
+  end
+
+  private
+
+  # Up to 4 decimals, without trailing zeros (0.425, 60).
+  def format_amount(value)
+    ActiveSupport::NumberHelper.number_to_delimited(value.to_d.round(4).to_s("F").sub(/\.?0+\z/, ""))
   end
 end
