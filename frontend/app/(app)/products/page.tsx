@@ -203,6 +203,8 @@ function ProductVendorsPanel({ product, canEdit, onClose, onSaved }: {
   const items = data?.data ?? [];
   const history = data?.history ?? [];
   const customer = data?.customer_price ?? null;
+  const [historyTab, setHistoryTab] = useState<"customer" | "vendor">("customer");
+  const shownHistory = history.filter((h) => (h.kind === "customer") === (historyTab === "customer"));
   const [editingCustomer, setEditingCustomer] = useState(false);
   const [customerValue, setCustomerValue] = useState("");
   const [editingVendor, setEditingVendor] = useState<number | null>(null);
@@ -263,7 +265,7 @@ function ProductVendorsPanel({ product, canEdit, onClose, onSaved }: {
             <section className="rounded-lg border border-line bg-gradient-to-br from-tint-violet/60 via-white to-white px-5 py-4 shadow-card">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-ink-muted">Customer price (Deere)</p>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-ink-muted">Customer price</p>
                   {editingCustomer ? (
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       <input autoFocus inputMode="decimal" value={customerValue} onChange={(e) => setCustomerValue(e.target.value)}
@@ -335,14 +337,23 @@ function ProductVendorsPanel({ product, canEdit, onClose, onSaved }: {
 
             {/* Price history */}
             <section className="overflow-hidden rounded-lg border border-line bg-white shadow-card">
-              <header className="border-b border-neutral-100 px-5 py-3">
+              <header className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-100 px-5 py-2">
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-muted">Price history</h3>
+                <div role="tablist" className="flex gap-1 rounded-md bg-subtle p-0.5">
+                  {(["customer", "vendor"] as const).map((tab) => (
+                    <button key={tab} type="button" role="tab" aria-selected={historyTab === tab} onClick={() => setHistoryTab(tab)}
+                            className={`rounded px-3 py-1 text-xs font-semibold ${historyTab === tab ? "bg-white text-ink shadow-sm" : "text-ink-muted hover:text-ink"}`}>
+                      {tab === "customer" ? "Customer price" : "Vendor price"}
+                      <span className="ml-1.5 tabular text-ink-faint">{history.filter((h) => (h.kind === "customer") === (tab === "customer")).length}</span>
+                    </button>
+                  ))}
+                </div>
               </header>
-              {history.length === 0 ? (
-                <p className="px-5 py-8 text-center text-sm text-ink-muted">No price changes yet.</p>
+              {shownHistory.length === 0 ? (
+                <p className="px-5 py-8 text-center text-sm text-ink-muted">No {historyTab} price changes yet.</p>
               ) : (
                 <ul className="divide-y divide-neutral-100">
-                  {history.map((h) => {
+                  {shownHistory.map((h) => {
                     const customerChange = h.kind === "customer";
                     const before = customerChange ? h.old_amount : (h.old_set_amount ?? h.old_amount);
                     const after = customerChange ? h.new_amount : (h.new_set_amount ?? h.new_amount);
@@ -350,10 +361,6 @@ function ProductVendorsPanel({ product, canEdit, onClose, onSaved }: {
                     const down = before !== null && after !== null && Number(after) < Number(before);
                     return (
                       <li key={h.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3 text-sm">
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${customerChange ? "bg-tint-violet text-tint-violet-ink" : "bg-tint-amber text-tint-amber-ink"}`}>
-                          {customerChange ? "Customer price" : "Vendor price"}
-                        </span>
-                        {!customerChange && h.vendor_name && <span className="text-xs text-ink-muted">{h.vendor_name}</span>}
                         <span className="tabular text-ink">
                           {before === null ? <span className="text-ink-muted">set to</span> : <span className="text-ink-muted line-through">{money(before)}</span>}
                           {" "}<span className={`font-semibold ${(customerChange ? up : down) ? "text-inc" : (customerChange ? down : up) ? "text-dec" : "text-ink"}`}>{after === null ? "cleared" : money(after)}</span>

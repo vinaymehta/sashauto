@@ -1,6 +1,7 @@
-# The part of an order placed with one vendor, numbered VPO-000001, VPO-000002, ... Its allocation is locked
-# after placement (database trigger); only the email delivery columns change. Its purchase order is a PDF saved at
-# placement (`pdf`); it is emailed to the vendor only when an admin asks (email_status starts as "not_sent").
+# The part of an order placed with one vendor, numbered "<JD PO No.>/<vendor acronym>/<order Ship Date DD-MM-YY>"
+# (#po_number; VPO-000001, ... before Oct 2026). Its allocation is locked
+# after the PO is generated (database trigger). Its purchase order is a PDF saved then (`pdf`); it is not emailed
+# from the app: an admin ticks "Order placed" (order_placed_at) once it was sent to the vendor.
 class VendorOrder < ApplicationRecord
   EMAIL_STATUSES = %w[not_sent pending sent failed no_email].freeze
 
@@ -8,15 +9,32 @@ class VendorOrder < ApplicationRecord
 
   belongs_to :vendor_order_placement
   belongs_to :vendor
+  belongs_to :order_placed_by, class_name: "User", optional: true
 
   validates :email_status, inclusion: { in: EMAIL_STATUSES }
 
-  def self.next_number
-    "VPO-#{connection.select_value("SELECT nextval('vendor_order_number_seq')").to_s.rjust(6, '0')}"
+  # Serializes numbering (call inside the transaction that creates the vendor orders).
+  NUMBER_LOCK_KEY = 7_311_003
+
+  # "5500936312/ZSCTCL/30-04-26": the JD PO number, the vendor's acronym and the order's Ship Date; "-2", "-3", ...
+  # added when that number is taken (the same vendor, PO and Ship Date for another line or part).
+  def self.po_number(jd_po_number, vendor, ship_date)
+    base = [ jd_po_number, acronym(vendor.name), ship_date.strftime("%d-%m-%y") ].join("/")
+    taken = where(number: base).or(where("number LIKE ?", "#{sanitize_sql_like(base)}-%")).pluck(:number).to_set
+    return base unless taken.include?(base)
+
+    "#{base}-#{(2..).find { |n| !taken.include?("#{base}-#{n}") }}"
   end
 
-  def email_sent?
-    email_status == "sent"
+  # First letter of every word of the name: "Zhejiang Shenlong Chain Transmission Co., Ltd." => "ZSCTCL",
+  # "A.H Industrial Corporation" => "AHIC".
+  def self.acronym(name)
+    name.to_s.scan(/[[:alnum:]]+/).map { |word| word[0] }.join.upcase
+  end
+
+  # File name of the PO PDF (a PO number has slashes).
+  def file_name
+    "#{number.tr('/', '-')}.pdf"
   end
 
   # The saved purchase order PDF; made (and saved) now for an order placed before PDFs existed.
@@ -26,6 +44,6 @@ class VendorOrder < ApplicationRecord
   end
 
   def attach_pdf
-    pdf.attach(io: StringIO.new(VendorOrders::PdfBuilder.for_order(self)), filename: "#{number}.pdf", content_type: "application/pdf")
+    pdf.attach(io: StringIO.new(VendorOrders::PdfBuilder.for_order(self)), filename: file_name, content_type: "application/pdf")
   end
 end

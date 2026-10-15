@@ -295,13 +295,15 @@ export interface OrderRow {
   source_row_number?: number | null;
   source_data?: Record<string, string | number | null>;
   manual?: boolean; // created by hand (Create order), not imported
-  placed?: boolean; // placed with vendors (Orders list only)
+  placed?: boolean; // has a PO generated (Orders list only)
+  ordered_qty?: string | null; // sets ordered by its POs so far (Orders list only)
   kept?: boolean; // kept on Orders by a status mark, though no longer in the latest upload
   other_ship_to?: boolean; // Ship To is not the default address
   below_moq?: boolean; // the order (single or combined) is still below the part's MOQ
   moq?: string | null; // the part's MOQ (sets), sent with below_moq
   // First order of a combined order: the combined Qty and its orders (below-MOQ orders combined until the MOQ).
-  combined?: { total: string; moq: string; members: { id: number; po_line_number: string; ship_date: string; qty: string }[] };
+  combined?: { total: string; moq: string; members: { id: number; po_line_number: string; ship_date: string; qty: string; manual: boolean }[] };
+  firm_date?: string | null; // the day the order (or the combined order it starts) first reached the MOQ
   deliveries?: Partial<Record<DeliveryKind, OrderDeliveryInfo>>; // Orders list only
 }
 
@@ -331,6 +333,22 @@ export interface OrderHistory {
   data: OrderRow[];
   headers: string[];
   group: { po_number: string; part_number: string; order_type: OrderType; description: string | null };
+  combined?: ScheduleGroup[]; // combined orders among the rows (imported orders only)
+}
+
+// A combined order in the Order details Schedule. manual_ids: orders an admin added by hand; removed_ids: orders
+// taken out of it; candidate_ids: orders the admin can still add; placed: its PO is generated, so it can no longer
+// change.
+export interface ScheduleGroup {
+  anchor_id: number;
+  member_ids: number[];
+  manual_ids: number[];
+  removed_ids: number[];
+  total: string;
+  moq: string;
+  below_moq: boolean;
+  placed: boolean;
+  candidate_ids: number[];
 }
 
 export interface RelatedItem {
@@ -399,9 +417,6 @@ export interface ProductVendor {
   price_text: string | null;
 }
 
-// not_sent: the purchase order PDF is saved but has not been emailed (vendor orders are no longer emailed automatically).
-export type VendorEmailStatus = "not_sent" | "pending" | "sent" | "failed" | "no_email";
-
 // A vendor order is placed in sets or in pieces; order Qty always counts sets.
 export type OrderUnit = "sets" | "pcs";
 
@@ -416,10 +431,8 @@ export interface VendorOrderInfo {
   price_amount: string | null;
   price_currency: Currency | null;
   price_note: string | null;
-  email_status: VendorEmailStatus;
-  email_recipient: string | null;
-  email_sent_at: string | null;
-  email_last_error: string | null;
+  order_placed_at: string | null; // the admin ticked "Order placed" (the PO was sent to the vendor)
+  order_placed_by: string | null;
   created_at: string;
 }
 
@@ -432,6 +445,7 @@ export interface VendorOrderPlacementInfo {
   ship_date: string;
   due_date: string | null;
   order_qty: string;
+  ordered_qty: string; // sets this PO orders (part of the order Qty)
   moq: string | null;
   placed_by: string | null;
   placed_at: string;
@@ -441,13 +455,15 @@ export interface VendorOrderPlacementInfo {
 export interface VendorOrderWarning { vendor_order_id?: number; vendor_id: number; vendor_name: string; message: string }
 
 export interface VendorOrderState {
-  // qty: a combined order's total; combined: how many orders it combines (null when not combined).
-  order: { id: number; po_number: string; po_line_number: string; part_number: string; order_type: OrderType; ship_date: string; qty: string | null; combined?: number | null };
+  // qty: a combined order's total; combined: how many orders it combines (null when not combined); ordered / remaining:
+  // sets ordered by the POs so far, and still to order.
+  order: { id: number; po_number: string; po_line_number: string; part_number: string; order_type: OrderType; ship_date: string; qty: string | null;
+           ordered: string; remaining: string; combined?: number | null };
   moq: string | null; // the part's MOQ in sets (order Qty counts sets)
   moq_pcs: string | null;
   pack_size: number;
-  vendors: (ProductVendor & { has_email: boolean })[];
-  placement: VendorOrderPlacementInfo | null;
+  vendors: ProductVendor[];
+  placements: VendorOrderPlacementInfo[]; // one per Generate PO, oldest first
   warnings: VendorOrderWarning[];
   can_place: boolean;
 }

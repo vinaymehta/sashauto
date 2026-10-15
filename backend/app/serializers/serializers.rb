@@ -71,7 +71,8 @@ module Serializers
 
   def vendor_order_placement(placement)
     placement.slice(:id, :po_number, :po_line_number, :part_number, :order_type, :ship_date, :due_date, :placed_at)
-             .merge(order_qty: qty(placement.order_qty), moq: qty(placement.moq), placed_by: placement.placed_by&.name,
+             .merge(order_qty: qty(placement.order_qty), ordered_qty: qty(placement.ordered), moq: qty(placement.moq),
+                    placed_by: placement.placed_by&.name,
                     vendor_orders: placement.vendor_orders.map { |vo| vendor_order(vo) })
   end
 
@@ -81,8 +82,8 @@ module Serializers
   end
 
   def vendor_order(order)
-    order.slice(:id, :number, :vendor_id, :ship_date, :email_status, :email_recipient, :email_sent_at, :email_last_error, :created_at)
-         .merge(vendor_name: order.vendor.name, qty: qty(order.qty), unit: order.unit, price_amount: qty(order.unit_price),
+    order.slice(:id, :number, :vendor_id, :ship_date, :order_placed_at, :created_at)
+         .merge(vendor_name: order.vendor.name, order_placed_by: order.order_placed_by&.name, qty: qty(order.qty), unit: order.unit, price_amount: qty(order.unit_price),
                 price_currency: order.price_currency, price_note: order.price_note)
   end
 

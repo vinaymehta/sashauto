@@ -66,6 +66,14 @@ function QtyCell({ row }: { row: OrderRow }) {
   );
 }
 
+// "PO generated" when its POs order the whole Qty, else how much is ordered (the rest is still open).
+function OrderedBadge({ row }: { row: OrderRow }) {
+  const total = Number(row.combined ? row.combined.total : row.qty ?? 0);
+  const ordered = Number(row.ordered_qty ?? 0);
+  if (ordered >= total) return <Badge tone="up">PO generated</Badge>;
+  return <span title={`${formatQty(String(total - ordered))} still to order`}><Badge tone="warn">PO {formatQty(String(ordered))} of {formatQty(String(total))}</Badge></span>;
+}
+
 // Opens the Place order panel for a row (provided by the Orders page; null for the Warehouse Manager).
 const PlaceOrderContext = createContext<((row: OrderRow) => void) | null>(null);
 
@@ -86,7 +94,7 @@ function UnitLink({ row }: { row: OrderRow }) {
 // PO Number opens the ORDER DETAILS window; Part links list the related POs of the shown upload (`uploadId`;
 // undefined = current order data).
 const typedColumns = (uploadId?: number): Record<string, Omit<Column, "key" | "label">> => ({
-  type: { render: (r) => <span className="inline-flex items-center gap-1.5">{r.order_type}{r.manual && <Badge>Manual</Badge>}{r.placed && <Badge tone="up">Order placed</Badge>}</span> },
+  type: { render: (r) => <span className="inline-flex items-center gap-1.5">{r.order_type}{r.manual && <Badge>Manual</Badge>}{r.placed && <OrderedBadge row={r} />}</span> },
   due_date: { render: (r) => date(r.due_date) },
   ship_date: { render: (r) => formatDate(r.ship_date) },
   unit: { render: (r) => <UnitLink row={r} /> },
@@ -136,6 +144,10 @@ function buildColumns(columns: { key: string; label: string }[], uploadId?: numb
     // "Price per piece" (Unit Price ÷ 100) just before the file's Unit Price.
     if (label === "Unit Price") {
       return [{ key: "price_per_piece", label: "Price per piece", align: "right", sortable: false, render: pricePerPiece }, column];
+    }
+    // "Firm Date" (the day the order, or its combined order, first reached the MOQ) just after Due Date.
+    if (key === "due_date") {
+      return [column, { key: "firm_date", label: "Firm Date", sortable: false, render: (r) => date(r.firm_date ?? null) }];
     }
     return [column];
   });

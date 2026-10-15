@@ -36,7 +36,7 @@ export function cell(value: string | number | null | undefined) {
 export function OrderDetailPanel({ row, onClose, onEdit, onDeleted, onPlaced }: {
   row: OrderRow; onClose: () => void; onEdit?: () => void; onDeleted?: () => void; onPlaced?: () => void;
 }) {
-  const { data, error, loading } = useApi<OrderHistory>(`/api/orders/${row.id}/history`, { manual: row.manual ? 1 : undefined });
+  const { data, error, loading, reload } = useApi<OrderHistory>(`/api/orders/${row.id}/history`, { manual: row.manual ? 1 : undefined });
   const role = useSession().user?.role;
   const admin = role === "admin";
   const notify = useToast();
@@ -78,7 +78,8 @@ export function OrderDetailPanel({ row, onClose, onEdit, onDeleted, onPlaced }: 
       ) : loading && !data ? (
         <Skeleton className="h-64 w-full" />
       ) : (
-        <OrderDetailsBody row={row} rows={data?.data ?? [row]} description={data?.group.description ?? null} />
+        <OrderDetailsBody row={row} rows={data?.data ?? [row]} description={data?.group.description ?? null} combined={data?.combined}
+                          onChanged={() => { reload(); onPlaced?.(); }} />
       )}
       <DeliveryMarks row={row} admin={admin} onChanged={onPlaced} />
       {deleting && (

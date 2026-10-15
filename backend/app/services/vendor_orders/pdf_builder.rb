@@ -110,7 +110,11 @@ module VendorOrders
         pdf.text "PURCHASE ORDER", size: 18, align: :right
         pdf.fill_color "000000"
         pdf.move_down 10
-        pdf.formatted_text [ { text: "Order No:  ", styles: [ :bold ], size: 11 }, { text: t(@po.number), styles: [ :bold ], size: 11 } ], align: :right
+        # The PO number (e.g. 5500936312/ZSCTCL/30-04-26) on its own line, shrunk to fit when long.
+        pdf.text "Order No:", style: :bold, size: 11, align: :right
+        pdf.text_box t(@po.number), at: [ 0, pdf.cursor ], width: pdf.bounds.width, height: 14, size: 11, style: :bold,
+                                    align: :right, overflow: :shrink_to_fit, min_font_size: 7
+        pdf.move_down 14
         pdf.move_down 2
         pdf.text "Order Date:  #{@po.date.strftime('%d %b %Y').upcase}", align: :right
         pdf.move_down 2

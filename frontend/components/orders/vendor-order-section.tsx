@@ -1,14 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import type { OrderUnit, ProductVendor, VendorEmailStatus, VendorOrderState } from "@/lib/types";
-import { formatDate, formatDateTime, formatQty } from "@/lib/format";
+import type { OrderUnit, ProductVendor, VendorOrderInfo, VendorOrderPlacementInfo, VendorOrderState } from "@/lib/types";
+import { formatDate, formatDateOnly, formatDateTime, formatQty } from "@/lib/format";
 import { AlertIcon, DownloadIcon, FileIcon } from "../icons";
 import { useSession } from "../session";
 import { useApi } from "../use-api";
 import { useToast } from "../toast";
-import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Alert, Spinner } from "../ui/feedback";
 import { PdfViewer } from "../ui/pdf-viewer";
@@ -16,37 +15,27 @@ import { DatePicker } from "../ui/date-picker";
 import { formatAmount, formatPrice } from "../vendors/vendor-products-panel";
 
 const QTY = /^\d+(\.\d{1,3})?$/;
-// A vendor's ship date defaults to this many days before the order's ship date (time to ship to the customer);
-// never before today. It can be changed per vendor.
+// A vendor's ship date defaults to this many days before the order's ship date (time to ship to the customer).
+// It can be changed per vendor.
 const VENDOR_LEAD_DAYS = 60;
 function defaultVendorShipDate(orderShipDate: string) {
   const [y, m, d] = orderShipDate.split("-").map(Number);
-  const date = new Date(y!, m! - 1, d! - VENDOR_LEAD_DAYS);
-  const today = new Date();
-  const pick = date < new Date(today.getFullYear(), today.getMonth(), today.getDate()) ? today : date;
-  return pick.toLocaleDateString("en-CA");
+  return new Date(y!, m! - 1, d! - VENDOR_LEAD_DAYS).toLocaleDateString("en-CA");
 }
 // Quantities are compared in thousandths so decimal totals add up exactly (Qty has 3 decimals).
 const milli = (value: string) => Math.round(Number(value) * 1000);
 const fromMilli = (value: number) => formatQty(String(value / 1000));
 
-// Vendor orders of one order row: before placement the buyer (admin) selects vendors linked to the part and
-// splits the order Qty among them (the total must equal the Qty; below-MOQ allocations are only warned about).
-// After placement the Vendor Orders (VPO-…) are shown, locked, with each vendor's email status.
+// Vendor orders of one order row: the buyer (admin) selects vendors linked to the part and splits Qty among them;
+// a PO can order all or part of the Qty still to order (below-MOQ allocations are only warned about), and the rest
+// stays open for later POs. Generated POs (numbers like 5500936312/ZSCTCL/30-04-26) are shown, locked, each with
+// its PDF and an "Order placed" tick (POs are not emailed).
 // `manual`: the order is a manual order (same flow; its id is a manual order id).
-// `onPlaced`: called after the order is placed (e.g. to show the "Order placed" tag in the Orders list).
+// `onPlaced`: called after the PO is generated (e.g. to show the "PO generated" tag in the Orders list).
 export function VendorOrderSection({ orderId, manual = false, onPlaced }: { orderId: number; manual?: boolean; onPlaced?: () => void }) {
   const path = `/api/orders/${orderId}/vendor_order${manual ? "?manual=1" : ""}`;
   const { data, error, loading, reload } = useApi<{ data: VendorOrderState }>(path);
   const state = data?.data;
-
-  // Refresh while vendor emails are still being sent.
-  const pending = state?.placement?.vendor_orders.some((vo) => vo.email_status === "pending");
-  useEffect(() => {
-    if (!pending) return;
-    const timer = setTimeout(reload, 4000);
-    return () => clearTimeout(timer);
-  }, [pending, data, reload]);
 
   return (
     <section className="mt-4 overflow-hidden rounded-lg border border-line bg-white shadow-card">
@@ -56,6 +45,8 @@ export function VendorOrderSection({ orderId, manual = false, onPlaced }: { orde
           <span className="text-xs text-ink-muted">
             Order Qty <span className="tabular font-semibold text-ink">{state.order.qty !== null ? formatQty(state.order.qty) : "—"}</span>
             {state.order.combined ? <> (combined from {state.order.combined} orders)</> : null}
+            {state.placements.length > 0 && <>{" · "}Ordered <span className="tabular font-semibold text-ink">{formatQty(state.order.ordered)}</span>
+              {" · "}Open <span className={`tabular font-semibold ${Number(state.order.remaining) > 0 ? "text-dec" : "text-inc"}`}>{formatQty(state.order.remaining)}</span></>}
             {" · "}MOQ <span className="tabular font-semibold text-ink">{state.moq !== null ? formatQty(state.moq) : "—"}</span>
           </span>
         )}
@@ -64,16 +55,21 @@ export function VendorOrderSection({ orderId, manual = false, onPlaced }: { orde
         <div className="p-4"><Alert title="Could not load the vendor order">{error.message}</Alert></div>
       ) : loading && !state ? (
         <div className="flex justify-center py-8"><Spinner /></div>
-      ) : !state ? null : state.placement ? (
-        <PlacedOrders state={state} onChanged={reload} />
-      ) : state.can_place ? (
-        <AllocationForm state={state} path={path} onPlaced={() => { reload(); onPlaced?.(); }} />
-      ) : (
-        <p className="px-5 py-6 text-sm text-ink-muted">
-          {state.order.qty === null || Number(state.order.qty) <= 0
-            ? "This order has no Qty to place with vendors."
-            : state.vendors.length === 0 ? "No vendor is linked to this part." : "Not placed with vendors yet."}
-        </p>
+      ) : !state ? null : (
+        <>
+          {state.placements.map((p) => <PlacedOrders key={p.id} state={state} placement={p} />)}
+          {state.can_place ? (
+            <AllocationForm key={state.order.remaining} state={state} path={path} onPlaced={() => { reload(); onPlaced?.(); }} />
+          ) : state.placements.length === 0 ? (
+            <p className="px-5 py-6 text-sm text-ink-muted">
+              {state.order.qty === null || Number(state.order.qty) <= 0
+                ? "This order has no Qty to place with vendors."
+                : state.vendors.length === 0 ? "No vendor is linked to this part." : "No PO generated yet."}
+            </p>
+          ) : Number(state.order.remaining) <= 0 ? (
+            <p className="border-t border-neutral-100 px-5 py-3 text-sm font-medium text-inc">Fully ordered.</p>
+          ) : null}
+        </>
       )}
     </section>
   );
@@ -100,11 +96,11 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
   const [previewing, setPreviewing] = useState<number | null>(null);
 
   if (state.vendors.length === 0) {
-    return <p className="px-5 py-6 text-sm text-ink-muted">No vendor is linked to this part. Link one on the Vendors page to place this order.</p>;
+    return <p className="px-5 py-6 text-sm text-ink-muted">No vendor is linked to this part. Link one on the Vendors page to generate its PO.</p>;
   }
 
   const fallbackMoq = { sets: state.moq, pcs: state.moq_pcs };
-  const orderQty = milli(state.order.qty ?? "0"); // in sets
+  const orderQty = milli(state.order.remaining); // still to order, in sets
   const selected = state.vendors.filter((v) => alloc[v.vendor_id] !== undefined);
   const valid = (a: Allocation) => QTY.test(a.qty.trim()) && milli(a.qty) > 0;
   const datesSet = selected.every((v) => alloc[v.vendor_id]!.ship_date !== "");
@@ -118,7 +114,8 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
     const { moq } = unitInfo(v, a.unit, fallbackMoq);
     return valid(a) && moq !== null && milli(a.qty) < milli(moq);
   });
-  const ready = selected.length > 0 && invalid.length === 0 && remaining === 0;
+  // A PO can order part of the Qty; the rest stays open for a later PO.
+  const ready = selected.length > 0 && invalid.length === 0 && total > 0 && remaining >= 0;
 
   // Selecting a vendor starts it with the sets not yet allocated (editable, in sets).
   function toggle(vendorId: number) {
@@ -152,12 +149,12 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
     setError(null);
     try {
       const res = await api.post<{ warnings: { message: string }[] }>(path, { allocations: allocationsBody() });
-      notify(`${selected.length} vendor order${selected.length === 1 ? "" : "s"} placed. The purchase order PDF${selected.length === 1 ? " is" : "s are"} saved.`);
-      if (res.warnings.length) notify(`Placed below MOQ: ${res.warnings.map((w) => w.message).join(" ")}`, "error");
+      notify(`${selected.length} PO${selected.length === 1 ? "" : "s"} generated. The PDF${selected.length === 1 ? " is" : "s are"} saved.`);
+      if (res.warnings.length) notify(`Below MOQ: ${res.warnings.map((w) => w.message).join(" ")}`, "error");
       setConfirming(false);
       onPlaced();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not place the vendor orders.");
+      setError(err instanceof ApiError ? err.message : "Could not generate the PO.");
     } finally {
       setBusy(false);
     }
@@ -169,23 +166,33 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
     return a.unit === "pcs" ? `${formatQty(a.qty)} pcs` : pack > 1 ? `${formatQty(a.qty)} sets (${formatQty(String(Number(a.qty) * pack))} pcs)` : formatQty(a.qty);
   };
 
-  // DRAFT purchase order PDF of one vendor (not saved), shown below the review card.
-  async function previewPdf(vendorId: number) {
+  // DRAFT purchase order PDF of one vendor (not saved): shown in the viewer, or (`download`) saved as a file.
+  async function draftPdf(vendorId: number, download = false) {
     setPreviewing(vendorId);
     setError(null);
     try {
       const blob = await api.postBlob(`${path.split("?")[0]}/preview${path.includes("?") ? `?${path.split("?")[1]}` : ""}`, {
         vendor_id: vendorId, allocations: allocationsBody(),
       });
-      setPreview((old) => { if (old) URL.revokeObjectURL(old.url); return { vendorId, url: URL.createObjectURL(blob) }; });
+      const url = URL.createObjectURL(blob);
+      if (download) {
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `purchase-order-draft-${state.vendors.find((v) => v.vendor_id === vendorId)?.vendor_name ?? vendorId}.pdf`;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } else {
+        setPreview((old) => { if (old) URL.revokeObjectURL(old.url); return { vendorId, url }; });
+      }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not make the preview.");
+      setError(err instanceof ApiError ? err.message : "Could not make the PDF.");
     } finally {
       setPreviewing(null);
     }
   }
 
-  // Review step, in the same panel: each vendor's quantity, ship date and PDF preview, then Place orders (or Back).
+  // Review step, in the same panel: each vendor's quantity, ship date and PDF preview or download, then Generate PO
+  // (or Back).
   if (confirming) {
     return (
       <div>
@@ -207,8 +214,12 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
                       <DatePicker value={a.ship_date} invalid={!a.ship_date} aria-label={`Ship date for ${v.vendor_name}`} className="w-44"
                                   onChange={(day) => { setPreview(null); setAlloc((current) => ({ ...current, [v.vendor_id]: { ...current[v.vendor_id]!, ship_date: day } })); }} />
                     </span>
-                    <Button size="sm" onClick={() => previewPdf(v.vendor_id)} disabled={previewing !== null || !a.ship_date}>
+                    <Button size="sm" onClick={() => draftPdf(v.vendor_id)} disabled={previewing !== null || !a.ship_date}>
                       <FileIcon size={14} className="text-ink-muted" />{previewing === v.vendor_id ? "Making…" : "Preview PDF"}
+                    </Button>
+                    <Button size="sm" onClick={() => draftPdf(v.vendor_id, true)} disabled={previewing !== null || !a.ship_date}
+                            title="Download the draft PDF">
+                      <DownloadIcon size={14} className="text-ink-muted" />Download
                     </Button>
                   </span>
                 </li>
@@ -217,23 +228,17 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
           </ul>
           <p className="text-sm text-ink-muted">
             Order ship date: <span className="font-medium text-ink">{formatDate(state.order.ship_date)}</span>. Each vendor&apos;s ship date is set
-            {` ${VENDOR_LEAD_DAYS}`} days earlier by default (not before today); change it if needed. The purchase order shows it as Required By.
+            {` ${VENDOR_LEAD_DAYS}`} days earlier by default; change it if needed. The purchase order shows it as Required By.
           </p>
           {!datesSet && <p className="text-sm text-dec">Choose a ship date for each vendor.</p>}
-          {belowMoq.length > 0 && (
-            <p className="flex items-start gap-2 rounded-md bg-age-yellow px-3 py-2 text-sm text-age-yellow-ink">
-              <AlertIcon size={14} className="mt-0.5 shrink-0" />
-              {belowMoq.length} allocation{belowMoq.length === 1 ? " is" : "s are"} below the MOQ. You can still place the order.
-            </p>
-          )}
           <p className="text-sm text-ink-muted">
-            Placing saves each vendor&apos;s purchase order as a PDF (no email is sent; you can email it from the placed order). After
-            placing, the allocation and dates are locked.
+            Generating saves each vendor&apos;s PO as a PDF. Tick &quot;Order placed&quot; once you have sent it to the vendor. After
+            generating, the allocation and dates are locked.
           </p>
         </div>
         <div className="flex justify-end gap-2 border-t border-neutral-100 bg-neutral-50 px-5 py-3">
           <Button size="sm" variant="ghost" onClick={() => { setPreview(null); setConfirming(false); }} disabled={busy}>Back</Button>
-          <Button size="sm" variant="primary" onClick={place} disabled={busy || !datesSet}>{busy ? "Placing…" : "Place orders"}</Button>
+          <Button size="sm" variant="primary" onClick={place} disabled={busy || !datesSet}>{busy ? "Generating…" : "Generate PO"}</Button>
         </div>
         {preview && (
           <PdfViewer url={preview.url} onClose={() => setPreview(null)}
@@ -261,7 +266,6 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
                 <span className="block text-xs text-ink-muted">
                   {price ? `${price} / ${unit === "pcs" ? "pc" : pack > 1 ? `set of ${pack}` : "pc"}` : formatPrice(v) ?? "No price"}
                   {moq !== null && ` · MOQ ${formatQty(moq)} ${unit === "pcs" || pack <= 1 ? "pcs" : "sets"}`}
-                  {!v.has_email && <span className="ml-1.5 text-age-yellow-ink" title="The order email goes to the default recipient from .env, to forward to the vendor">· no email, sent to default recipient</span>}
                 </span>
               </span>
               <span className="flex items-center gap-1.5">
@@ -288,10 +292,11 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
           <span className="text-ink-muted">
             Allocated <span className="tabular font-semibold text-ink">{fromMilli(total)}</span> of{" "}
             <span className="tabular font-semibold text-ink">{fromMilli(orderQty)}</span>{state.pack_size > 1 ? " sets" : ""}
+            {state.placements.length > 0 && " still to order"}
             {state.pack_size > 1 && <span className="ml-1 text-xs">({fromMilli(orderQty * state.pack_size)} pcs)</span>}
           </span>
-          <span className={`tabular text-xs font-semibold ${remaining === 0 ? "text-inc" : "text-dec"}`}>
-            {remaining === 0 ? "Fully allocated" : remaining > 0 ? `${fromMilli(remaining)} left to allocate` : `${fromMilli(-remaining)} over the order Qty`}
+          <span className={`tabular text-xs font-semibold ${remaining === 0 ? "text-inc" : remaining > 0 ? "text-age-yellow-ink" : "text-dec"}`}>
+            {remaining === 0 ? "Fully allocated" : remaining > 0 ? `${fromMilli(remaining)} stays open for a later PO` : `${fromMilli(-remaining)} over the Qty to order`}
           </span>
         </div>
         {belowMoq.length > 0 && (
@@ -302,14 +307,14 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
                 const { moq } = unitInfo(v, alloc[v.vendor_id]!.unit, fallbackMoq);
                 const u = alloc[v.vendor_id]!.unit === "pcs" || (v.pack_size ?? 1) <= 1 ? "pcs" : "sets";
                 return `${v.vendor_name} (${formatQty(alloc[v.vendor_id]!.qty)} of ${formatQty(moq!)} ${u})`;
-              }).join(", ")}. You can still place the order, or change the allocation.
+              }).join(", ")}. This is only a warning: it does not stop the PO.
             </span>
           </p>
         )}
         {invalid.length > 0 && <p className="text-xs text-dec">Enter a quantity greater than 0 (up to 3 decimals) for each selected vendor.</p>}
         <div className="flex justify-end pt-1">
           <Button variant="primary" size="sm" disabled={!ready} onClick={() => { setError(null); setConfirming(true); }}>
-            Place vendor order{selected.length === 1 ? "" : "s"}
+            Generate PO
           </Button>
         </div>
       </div>
@@ -318,87 +323,85 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
   );
 }
 
-const EMAIL_BADGE: Record<VendorEmailStatus, { tone: "up" | "warn" | "down" | "neutral"; label: string }> = {
-  not_sent: { tone: "neutral", label: "Not emailed" },
-  sent: { tone: "up", label: "Emailed" },
-  pending: { tone: "warn", label: "Sending" },
-  failed: { tone: "down", label: "Email failed" },
-  no_email: { tone: "down", label: "No recipient" },
-};
-
-function PlacedOrders({ state, onChanged }: { state: VendorOrderState; onChanged: () => void }) {
-  const notify = useToast();
-  const placement = state.placement!;
-  const [retrying, setRetrying] = useState<number | null>(null);
+// One generated PO (placement): its vendor orders, each with the PDF and the "Order placed" tick.
+function PlacedOrders({ state, placement }: { state: VendorOrderState; placement: VendorOrderPlacementInfo }) {
+  const warnings = state.warnings.filter((w) => placement.vendor_orders.some((vo) => vo.id === w.vendor_order_id));
   const [viewing, setViewing] = useState<{ id: number; number: string } | null>(null);
-  const admin = useSession().user?.role === "admin";
-
-  async function retry(id: number) {
-    setRetrying(id);
-    try {
-      await api.post(`/api/vendor_orders/${id}/retry_email`);
-      notify("The purchase order PDF is being emailed to the vendor.");
-      onChanged();
-    } catch (err) {
-      notify(err instanceof ApiError ? err.message : "Could not email the purchase order.", "error");
-    } finally {
-      setRetrying(null);
-    }
-  }
 
   return (
     <div>
       <ul className="divide-y divide-neutral-100">
-        {placement.vendor_orders.map((vo) => {
-          const badge = EMAIL_BADGE[vo.email_status];
-          return (
-            <li key={vo.id} className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-2 px-5 py-3 text-sm">
-              <span className="min-w-0">
-                <span className="block font-semibold text-ink">{vo.number}</span>
-                <span className="block truncate text-xs text-ink-muted">
-                  {vo.vendor_name}{vo.ship_date ? ` · ship ${formatDate(vo.ship_date)}` : ""}{vo.email_recipient ? ` · ${vo.email_recipient}` : ""}
-                </span>
+        {placement.vendor_orders.map((vo) => (
+          <li key={vo.id} className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-2 px-5 py-3 text-sm">
+            <span className="min-w-0">
+              <span className="block font-semibold text-ink">{vo.number}</span>
+              <span className="block truncate text-xs text-ink-muted">
+                {vo.vendor_name}{vo.ship_date ? ` · ship ${formatDate(vo.ship_date)}` : ""}
               </span>
-              <span className="flex items-center gap-3">
-                <span className="tabular font-semibold text-ink">{formatQty(vo.qty)} {vo.unit === "pcs" || state.pack_size <= 1 ? "pcs" : "sets"}</span>
-                <span title={vo.email_last_error ?? (vo.email_sent_at ? `Sent ${formatDateTime(vo.email_sent_at)}` : undefined)}>
-                  <Badge tone={badge.tone}>{badge.label}</Badge>
-                </span>
-              </span>
-              {/* The saved purchase order PDF; an admin can email it to the vendor. */}
-              <span className="col-span-2 flex flex-wrap items-center gap-2">
-                <button type="button" onClick={() => setViewing({ id: vo.id, number: vo.number })}
-                        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-2.5 text-xs font-medium text-ink hover:border-neutral-400 hover:bg-subtle">
-                  <FileIcon size={13} className="text-ink-muted" />View PDF
-                </button>
-                <a href={`/api/vendor_orders/${vo.id}/pdf?download=1`}
-                   className="inline-flex h-8 items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-2.5 text-xs font-medium text-ink hover:border-neutral-400 hover:bg-subtle">
-                  <DownloadIcon size={13} className="text-ink-muted" />Download
-                </a>
-                {admin && vo.email_status !== "sent" && vo.email_status !== "pending" && (
-                  <Button size="sm" onClick={() => retry(vo.id)} disabled={retrying === vo.id}>
-                    {retrying === vo.id ? "Sending…" : vo.email_status === "not_sent" ? "Email PDF" : "Email again"}
-                  </Button>
-                )}
-              </span>
-            </li>
-          );
-        })}
+            </span>
+            <span className="tabular font-semibold text-ink">{formatQty(vo.qty)} {vo.unit === "pcs" || state.pack_size <= 1 ? "pcs" : "sets"}</span>
+            {/* The saved PO PDF, and the admin's "Order placed" tick once it was sent to the vendor. */}
+            <span className="col-span-2 flex flex-wrap items-center gap-2">
+              <button type="button" onClick={() => setViewing({ id: vo.id, number: vo.number })}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-2.5 text-xs font-medium text-ink hover:border-neutral-400 hover:bg-subtle">
+                <FileIcon size={13} className="text-ink-muted" />View PDF
+              </button>
+              <a href={`/api/vendor_orders/${vo.id}/pdf?download=1`}
+                 className="inline-flex h-8 items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-2.5 text-xs font-medium text-ink hover:border-neutral-400 hover:bg-subtle">
+                <DownloadIcon size={13} className="text-ink-muted" />Download
+              </a>
+              <OrderPlacedTick order={vo} />
+            </span>
+          </li>
+        ))}
       </ul>
-      {state.warnings.length > 0 && (
+      {warnings.length > 0 && (
         <p className="mx-5 mb-3 flex items-start gap-2 rounded-md bg-age-yellow px-3 py-2 text-xs text-age-yellow-ink">
           <AlertIcon size={14} className="mt-px shrink-0" />
-          <span>Placed below the MOQ: {state.warnings.map((w) => w.message).join(" ")}</span>
+          <span>Below the MOQ: {warnings.map((w) => w.message).join(" ")}</span>
         </p>
       )}
       {viewing && (
         <PdfViewer url={`/api/vendor_orders/${viewing.id}/pdf`} downloadUrl={`/api/vendor_orders/${viewing.id}/pdf?download=1`}
                    title={`Purchase order ${viewing.number}`} onClose={() => setViewing(null)} />
       )}
-      <p className="border-t border-neutral-100 bg-neutral-50 px-5 py-2.5 text-xs text-ink-muted">
-        Placed{placement.placed_by ? ` by ${placement.placed_by}` : ""} on {formatDateTime(placement.placed_at)} · locked, cannot be edited
-        {placement.order_qty ? ` · original Qty ${formatQty(placement.order_qty)}` : ""}
+      <p className="border-b border-neutral-100 bg-neutral-50 px-5 py-2.5 text-xs text-ink-muted">
+        PO generated{placement.placed_by ? ` by ${placement.placed_by}` : ""} on {formatDateTime(placement.placed_at)} · ordered{" "}
+        <span className="tabular font-semibold text-ink">{formatQty(placement.ordered_qty)}</span> of {formatQty(placement.order_qty)} · locked, cannot be edited
       </p>
     </div>
+  );
+}
+
+// "Order placed" tick of one generated PO: an admin ticks it once the PO was sent to the vendor (and can untick it).
+function OrderPlacedTick({ order }: { order: VendorOrderInfo }) {
+  const notify = useToast();
+  const admin = useSession().user?.role === "admin";
+  const [current, setCurrent] = useState(order);
+  const [saving, setSaving] = useState(false);
+  const placed = current.order_placed_at !== null;
+
+  async function toggle() {
+    setSaving(true);
+    try {
+      const res = await api.patch<{ data: VendorOrderInfo }>(`/api/vendor_orders/${order.id}`, { order_placed: !placed });
+      setCurrent(res.data);
+      notify(placed ? `${order.number}: "Order placed" removed.` : `${order.number} marked as order placed.`);
+    } catch (err) {
+      notify(err instanceof ApiError ? err.message : "Could not save.", "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <label className={`ml-auto inline-flex h-8 items-center gap-2 rounded-md px-2.5 text-xs font-medium ${
+      placed ? "bg-age-green text-age-green-ink" : "text-ink-muted"} ${admin ? "cursor-pointer" : ""}`}
+           title={placed ? `Ticked${current.order_placed_by ? ` by ${current.order_placed_by}` : ""} on ${formatDateTime(current.order_placed_at!)}` : undefined}>
+      <input type="checkbox" checked={placed} disabled={!admin || saving} onChange={toggle}
+             className="h-4 w-4 accent-[var(--color-accent)]" />
+      Order placed
+      {placed && <span className="font-normal">· {formatDateOnly(current.order_placed_at)}</span>}
+    </label>
   );
 }

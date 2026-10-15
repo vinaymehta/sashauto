@@ -1,29 +1,33 @@
 module Api
-  # Vendor orders of one order row (the Orders page detail). Reading is open to signed-in users;
-  # placing and retrying emails is admin-only.
+  # Vendor orders of one order row (the Orders page detail). Reading is open to signed-in users; generating the POs
+  # and ticking "Order placed" is admin-only. POs are not emailed from the app.
   class VendorOrdersController < ApplicationController
-    before_action -> { require_role(:admin) }, only: %i[create preview retry_email]
+    before_action -> { require_role(:admin) }, only: %i[create preview update]
     rate_limit to: 60, within: 1.hour, only: :create, store: RATE_LIMIT_STORE, by: -> { current_user&.id || request.remote_ip },
                with: -> { render_error "Too many placements in a short time. Try again later.", :too_many_requests }
 
-    # The placement of this row (if placed, also from an earlier upload), or the vendors it can be placed with.
+    # The placements of this row (also from earlier uploads), the Qty ordered and still to order, and the vendors it
+    # can be ordered from.
     def show
       row = order
-      placement = placement_for(row)
+      placements = placements_for(row)
+      ordered = placements.sum(&:ordered)
+      remaining = [ order_qty(row).to_d - ordered, 0 ].max
       product = Product.find_by(part_number: row.part_number)
       vendors = product ? product.vendor_products.includes(:vendor).joins(:vendor).order("vendors.name") : []
       render json: {
         data: {
           order: { id: row.id, po_number: row.po_number, po_line_number: row.po_line_number, part_number: row.part_number,
                    order_type: row.order_type, ship_date: row.ship_date, qty: Serializers.qty(order_qty(row)),
+                   ordered: Serializers.qty(ordered), remaining: Serializers.qty(remaining),
                    combined: combined_group(row)&.members&.size },
           # Order Qty counts sets; the part's MOQ in sets and pieces, and how many pieces make a set.
           moq: Serializers.qty(product && (product.moq_sets || product.moq)), moq_pcs: Serializers.qty(product&.moq),
           pack_size: product&.pack_size || 1,
-          vendors: vendors.map { |vp| Serializers.product_vendor(vp).merge(has_email: vp.vendor.email.present?) },
-          placement: placement && Serializers.vendor_order_placement(placement),
-          warnings: placement ? VendorOrders::Placer.moq_warnings(placement) : [],
-          can_place: placement.nil? && current_user.admin? && order_qty(row).to_d.positive?
+          vendors: vendors.map { |vp| Serializers.product_vendor(vp) },
+          placements: placements.map { |p| Serializers.vendor_order_placement(p) },
+          warnings: placements.flat_map { |p| VendorOrders::Placer.moq_warnings(p) },
+          can_place: current_user.admin? && remaining.positive?
         }
       }
     end
@@ -40,7 +44,6 @@ module Api
       render_error e.message, :unprocessable_content, details: e.details.presence
     end
 
-    # Sends a failed / not-sent vendor email again (e.g. after the vendor's email address was added).
     # The PDF a placement would create for one vendor (DRAFT, not saved): POST with the allocations and vendor_id.
     def preview
       row = order
@@ -54,19 +57,17 @@ module Api
     # The saved purchase order PDF of a vendor order.
     def pdf
       vendor_order = VendorOrder.find(params[:id])
-      send_data vendor_order.pdf_document, filename: "#{vendor_order.number}.pdf", type: "application/pdf",
+      send_data vendor_order.pdf_document, filename: vendor_order.file_name, type: "application/pdf",
                                            disposition: params[:download] == "1" ? "attachment" : "inline"
     end
 
-    # Emails the purchase order PDF to the vendor (only when an admin asks).
-    def retry_email
+    # "Order placed" tick of a generated PO (the admin sent it to the vendor): PATCH { order_placed: true | false }.
+    def update
       order = VendorOrder.find(params[:id])
-      return render_error("This purchase order was already emailed.", :conflict) if order.email_sent?
-
-      order.update!(email_status: "pending", email_last_error: nil)
-      VendorOrders::DeliverJob.dispatch(order)
-      audit("vendor_order.email_retry_requested", subject: order)
-      render json: { data: Serializers.vendor_order(order) }, status: :accepted
+      placed = ActiveModel::Type::Boolean.new.cast(params.require(:order_placed))
+      order.update!(order_placed_at: placed ? Time.current : nil, order_placed_by: placed ? current_user : nil)
+      audit(placed ? "vendor_order.marked_placed" : "vendor_order.unmarked_placed", subject: order, number: order.number)
+      render json: { data: Serializers.vendor_order(order) }
     end
 
     private
@@ -88,8 +89,9 @@ module Api
       combined_group(row)&.total || row.qty
     end
 
-    def placement_for(row)
-      VendorOrderPlacement.includes(:placed_by, vendor_orders: :vendor).find_by(order_key: VendorOrderPlacement.order_key(row))
+    def placements_for(row)
+      VendorOrderPlacement.includes(:placed_by, vendor_orders: %i[vendor order_placed_by])
+                          .where(order_key: VendorOrderPlacement.order_key(row)).order(:placed_at).to_a
     end
   end
 end

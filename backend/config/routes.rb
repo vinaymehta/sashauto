@@ -34,6 +34,7 @@ Rails.application.routes.draw do
         post :preview
       end
       resources :deliveries, only: :create, controller: :order_deliveries
+      resources :merges, only: %i[create destroy], controller: :order_merges
       collection do
         get :by_po
         get :by_part
@@ -43,11 +44,8 @@ Rails.application.routes.draw do
     resources :manual_orders, only: %i[show create update destroy] do
       get :fields, on: :collection
     end
-    resources :vendor_orders, only: [] do
-      member do
-        post :retry_email
-        get :pdf
-      end
+    resources :vendor_orders, only: :update do
+      get :pdf, on: :member
     end
     resources :vendors, only: %i[index show create update destroy] do
       post :import, on: :collection

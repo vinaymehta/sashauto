@@ -4,9 +4,10 @@ module VendorOrders
   #   allocations: [{ vendor_id:, qty:, unit:, ship_date: }]  (ship_date: YYYY-MM-DD, defaults to the order's Ship Date)
   #
   # Rules: at least one vendor; each vendor once and linked to the row's Part Number (Vendors list);
-  # every qty a number > 0; the total equals the row's Qty exactly. The original order row is not changed.
+  # every qty a number > 0; the total at most the Qty still to order. The original order row is not changed.
   # MOQ is never enforced: allocations below the Product MOQ are returned as warnings only.
-  # A row (PO + Part + Type + PO Line + Ship Date) can be placed once; later attempts are refused.
+  # An order (PO + Part + Type + PO Line + Ship Date) can be ordered in parts: each placement (one Generate PO) orders
+  # some of its Qty (allocated_qty) and the rest stays open for later placements.
   class Placer
     class Invalid < StandardError
       attr_reader :details
@@ -40,25 +41,30 @@ module VendorOrders
       lines = parse(links)
       # Order Qty counts sets; an allocation in pieces counts as pieces ÷ the vendor's pack size.
       total = lines.sum { |l| l[:sets] }
-      unless total == order_qty
-        raise Invalid.new("The allocated total (#{fmt(total)} sets) must equal the order Qty (#{fmt(order_qty)} sets).",
-                          { total: [ "must equal #{fmt(order_qty)} sets" ] })
-      end
 
       placement = nil
       VendorOrderPlacement.transaction do
+        # One placement at a time (the Qty still to order and the PO numbers depend on the earlier ones).
+        VendorOrder.connection.execute("SELECT pg_advisory_xact_lock(#{VendorOrder::NUMBER_LOCK_KEY})")
         key = VendorOrderPlacement.order_key(@row)
-        raise Invalid, "This order was already placed with vendors." if VendorOrderPlacement.exists?(order_key: key)
+        remaining = order_qty - VendorOrderPlacement.ordered_qty(key)
+        raise Invalid, "This order is already fully ordered." unless remaining.positive?
+        if total > remaining
+          raise Invalid.new("The allocated total (#{fmt(total)} sets) is more than the Qty still to order (#{fmt(remaining)} sets).",
+                            { total: [ "must be at most #{fmt(remaining)} sets" ] })
+        end
 
         placement = VendorOrderPlacement.create!(
           order_key: key, **order_reference, product: product,
           po_number: @row.po_number, po_line_number: @row.po_line_number, part_number: @row.part_number,
           order_type: @row.order_type, ship_date: @row.ship_date, due_date: @row.due_date, unit: @row.unit&.strip,
-          order_qty: order_qty, moq: product && (product.moq_sets || product.moq), placed_by: @user, placed_at: Time.current
+          order_qty: order_qty, allocated_qty: total, moq: product && (product.moq_sets || product.moq),
+          placed_by: @user, placed_at: Time.current
         )
         lines.each do |line|
           link = links.fetch(line[:vendor_id])
-          VendorOrder.create!(vendor_order_placement: placement, vendor: link.vendor, number: VendorOrder.next_number,
+          VendorOrder.create!(vendor_order_placement: placement, vendor: link.vendor,
+                              number: VendorOrder.po_number(@row.po_number, link.vendor, @row.ship_date),
                               qty: line[:qty], unit: line[:unit], ship_date: line[:ship_date] || default_ship_date,
                               unit_price: line[:unit] == "pcs" ? link.price_amount : link.set_price_amount,
                               price_currency: link.price_currency, price_note: link.price_note, email_status: "not_sent")
@@ -67,8 +73,6 @@ module VendorOrders
       # Each vendor's purchase order is saved as a PDF (no email; an admin can email it later).
       placement.vendor_orders.each(&:attach_pdf)
       Result.new(placement: placement, warnings: moq_warnings(placement))
-    rescue ActiveRecord::RecordNotUnique
-      raise Invalid, "This order was already placed with vendors."
     end
 
     # The PDF that placing would create for one vendor of the allocation (not saved, marked DRAFT).
@@ -88,11 +92,11 @@ module VendorOrders
                          required_by: line[:ship_date] || default_ship_date, prepared_by: @user.name)
     end
 
-    # Vendors ship this many days before the order's ship date, unless a date is chosen (not before today).
+    # Vendors ship this many days before the order's ship date, unless a date is chosen.
     VENDOR_LEAD_DAYS = 60
 
     def default_ship_date
-      [ @row.ship_date - VENDOR_LEAD_DAYS, Date.current ].max
+      @row.ship_date - VENDOR_LEAD_DAYS
     end
 
     # The placed order: an imported order row (with its upload) or a manual order.

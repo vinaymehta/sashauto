@@ -60,13 +60,15 @@ module Api
       end
 
       ship_to_locations, commodity_types = facets(batch, dataset)
-      placed = placed_keys(rows)
+      ordered = ordered_by_key(rows)
       deliveries = deliveries_by_key(rows)
+      firm_dates = Orders::FirmDates.for_keys(rows.map { |row| placement_key(row) })
       render json: {
         data: rows.map do |row|
           key = placement_key(row)
-          Serializers.order_row(row, source: true).merge(placed: placed.include?(key), deliveries: deliveries.fetch(key, {}),
-                                                         **combined_info(row, combined))
+          Serializers.order_row(row, source: true).merge(placed: ordered.key?(key), ordered_qty: Serializers.qty(ordered[key]),
+                                                         deliveries: deliveries.fetch(key, {}),
+                                                         firm_date: firm_dates[key], **combined_info(row, combined))
         end,
         meta: meta.merge(sort: sort, direction: direction),
         # Every Excel column of the upload, in file order; `key` is the sort key.
@@ -79,18 +81,23 @@ module Api
     end
 
     # Order detail of one row: every row of the same upload with the same PO Number + Part Number + Type
-    # (the clicked row included), ordered by PO Line Number then Ship Date, plus the product Description.
+    # (the clicked row included), ordered by PO Line Number then Ship Date, plus the product Description, each
+    # row's Firm Date and the combined orders among them (`combined`; `candidate_ids`: orders an admin can add).
     def history
       return manual_history(ManualOrder.active.find(params[:id])) if params[:manual] == "1"
 
       row = OrderRow.find(params[:id])
       rows = OrderRow.where(upload_batch_id: row.upload_batch_id, group_key: row.group_key)
                      .order(:po_line_number, :ship_date, :source_row_number).limit(1_000)
+      firm_dates = Orders::FirmDates.for_keys(rows.map { |r| VendorOrderPlacement.order_key(r) })
+      combined = Orders::Combiner.call(row.upload_batch_id)
+      groups = combined.groups.values.select { |g| Orders::Merges.shown?(g) && g.members.first.group_key == row.group_key }
       render json: {
-        data: rows.map { |r| Serializers.order_row(r, source: true) },
+        data: rows.map { |r| Serializers.order_row(r, source: true).merge(firm_date: firm_dates[VendorOrderPlacement.order_key(r)]) },
         headers: row.source_columns.presence || row.source_data.keys,
         group: { po_number: row.po_number, part_number: row.part_number, order_type: row.order_type,
-                 description: Product.find_by(part_number: row.part_number)&.description }
+                 description: Product.find_by(part_number: row.part_number)&.description },
+        combined: groups.map { |g| schedule_group(g, combined) }
       }
     end
 
@@ -139,8 +146,18 @@ module Api
 
       info.merge(combined: { total: Serializers.qty(group.total), moq: Serializers.qty(group.moq),
                              members: group.members.map do |m|
-                               { id: m.id, po_line_number: m.po_line_number, ship_date: m.ship_date, qty: Serializers.qty(m.qty) }
+                               { id: m.id, po_line_number: m.po_line_number, ship_date: m.ship_date, qty: Serializers.qty(m.qty),
+                                 manual: group.manual_ids.include?(m.id) }
                              end })
+    end
+
+    # A combined order in the Order details Schedule. PO generated (placed): its orders can no longer change.
+    def schedule_group(group, combined)
+      anchor = OrderRow.find(group.anchor_id)
+      { anchor_id: group.anchor_id, member_ids: group.members.map(&:id), manual_ids: group.manual_ids, removed_ids: group.removed_ids,
+        total: Serializers.qty(group.total), moq: Serializers.qty(group.moq), below_moq: group.below_moq?,
+        placed: VendorOrderPlacement.exists?(order_key: VendorOrderPlacement.order_key(anchor)),
+        candidate_ids: current_user.admin? ? Orders::Merges.candidates(anchor, combined).map(&:id) : [] }
     end
 
     # Placement key of a listed row (an imported row, or a manual order listed with `manual`).
@@ -148,9 +165,10 @@ module Api
       VendorOrderPlacement.order_key(row[:manual] ? ManualOrder.new(id: row.id) : row)
     end
 
-    # Placement keys of the listed rows that were placed with vendors (in one query).
-    def placed_keys(rows)
-      VendorOrderPlacement.where(order_key: rows.map { |row| placement_key(row) }).pluck(:order_key).to_set
+    # Sets ordered so far (Generate PO) per placement key of the listed rows (in one query).
+    def ordered_by_key(rows)
+      VendorOrderPlacement.where(order_key: rows.map { |row| placement_key(row) }).group(:order_key)
+                          .sum(Arel.sql("COALESCE(allocated_qty, order_qty)"))
     end
 
     # Active inbound / outbound delivery marks of the listed rows: { key => { "inbound" => {...}, "outbound" => {...} } }.

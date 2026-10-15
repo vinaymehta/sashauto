@@ -600,6 +600,74 @@ ALTER SEQUENCE public.order_deliveries_id_seq OWNED BY public.order_deliveries.i
 
 
 --
+-- Name: order_firm_dates; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.order_firm_dates (
+    id bigint NOT NULL,
+    order_key character varying(64) NOT NULL,
+    firm_on date NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: order_firm_dates_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.order_firm_dates_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: order_firm_dates_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.order_firm_dates_id_seq OWNED BY public.order_firm_dates.id;
+
+
+--
+-- Name: order_merges; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.order_merges (
+    id bigint NOT NULL,
+    anchor_key character varying(64) NOT NULL,
+    member_key character varying(64) NOT NULL,
+    group_key character varying NOT NULL,
+    added_by_id bigint NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    kind character varying DEFAULT 'added'::character varying NOT NULL,
+    CONSTRAINT order_merges_kind_valid CHECK (((kind)::text = ANY ((ARRAY['added'::character varying, 'removed'::character varying])::text[])))
+);
+
+
+--
+-- Name: order_merges_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.order_merges_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: order_merges_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.order_merges_id_seq OWNED BY public.order_merges.id;
+
+
+--
 -- Name: order_rows; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1054,6 +1122,8 @@ CREATE TABLE public.vendor_order_placements (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     manual_order_id bigint,
+    allocated_qty numeric(15,3),
+    CONSTRAINT vendor_order_placements_allocated_positive CHECK (((allocated_qty IS NULL) OR (allocated_qty > (0)::numeric))),
     CONSTRAINT vendor_order_placements_one_order CHECK ((((manual_order_id IS NOT NULL) AND (order_row_id IS NULL) AND (upload_batch_id IS NULL)) OR ((manual_order_id IS NULL) AND (order_row_id IS NOT NULL) AND (upload_batch_id IS NOT NULL)))),
     CONSTRAINT vendor_order_placements_qty_positive CHECK ((order_qty > (0)::numeric))
 );
@@ -1102,6 +1172,8 @@ CREATE TABLE public.vendor_orders (
     updated_at timestamp(6) without time zone NOT NULL,
     unit character varying DEFAULT 'sets'::character varying NOT NULL,
     ship_date date,
+    order_placed_at timestamp(6) without time zone,
+    order_placed_by_id bigint,
     CONSTRAINT vendor_orders_email_status_valid CHECK (((email_status)::text = ANY ((ARRAY['not_sent'::character varying, 'pending'::character varying, 'sent'::character varying, 'failed'::character varying, 'no_email'::character varying])::text[]))),
     CONSTRAINT vendor_orders_qty_positive CHECK ((qty > (0)::numeric)),
     CONSTRAINT vendor_orders_unit_valid CHECK (((unit)::text = ANY ((ARRAY['sets'::character varying, 'pcs'::character varying])::text[])))
@@ -1299,6 +1371,20 @@ ALTER TABLE ONLY public.order_deliveries ALTER COLUMN id SET DEFAULT nextval('pu
 
 
 --
+-- Name: order_firm_dates id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_firm_dates ALTER COLUMN id SET DEFAULT nextval('public.order_firm_dates_id_seq'::regclass);
+
+
+--
+-- Name: order_merges id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_merges ALTER COLUMN id SET DEFAULT nextval('public.order_merges_id_seq'::regclass);
+
+
+--
 -- Name: order_rows id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -1484,6 +1570,22 @@ ALTER TABLE ONLY public.notifications
 
 ALTER TABLE ONLY public.order_deliveries
     ADD CONSTRAINT order_deliveries_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: order_firm_dates order_firm_dates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_firm_dates
+    ADD CONSTRAINT order_firm_dates_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: order_merges order_merges_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_merges
+    ADD CONSTRAINT order_merges_pkey PRIMARY KEY (id);
 
 
 --
@@ -1871,6 +1973,41 @@ CREATE UNIQUE INDEX index_order_deliveries_one_active ON public.order_deliveries
 
 
 --
+-- Name: index_order_firm_dates_on_order_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_order_firm_dates_on_order_key ON public.order_firm_dates USING btree (order_key);
+
+
+--
+-- Name: index_order_merges_on_added_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_order_merges_on_added_by_id ON public.order_merges USING btree (added_by_id);
+
+
+--
+-- Name: index_order_merges_on_anchor_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_order_merges_on_anchor_key ON public.order_merges USING btree (anchor_key);
+
+
+--
+-- Name: index_order_merges_on_group_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_order_merges_on_group_key ON public.order_merges USING btree (group_key);
+
+
+--
+-- Name: index_order_merges_on_member_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_order_merges_on_member_key ON public.order_merges USING btree (member_key);
+
+
+--
 -- Name: index_order_rows_on_batch_and_excel_row; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2147,7 +2284,7 @@ CREATE INDEX index_vendor_order_placements_on_manual_order_id ON public.vendor_o
 -- Name: index_vendor_order_placements_on_order_key; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX index_vendor_order_placements_on_order_key ON public.vendor_order_placements USING btree (order_key);
+CREATE INDEX index_vendor_order_placements_on_order_key ON public.vendor_order_placements USING btree (order_key);
 
 
 --
@@ -2183,6 +2320,13 @@ CREATE INDEX index_vendor_order_placements_on_upload_batch_id ON public.vendor_o
 --
 
 CREATE UNIQUE INDEX index_vendor_orders_on_number ON public.vendor_orders USING btree (number);
+
+
+--
+-- Name: index_vendor_orders_on_order_placed_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_vendor_orders_on_order_placed_by_id ON public.vendor_orders USING btree (order_placed_by_id);
 
 
 --
@@ -2714,6 +2858,22 @@ ALTER TABLE ONLY public.order_deliveries
 
 
 --
+-- Name: order_merges fk_rails_f06959002c; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_merges
+    ADD CONSTRAINT fk_rails_f06959002c FOREIGN KEY (added_by_id) REFERENCES public.users(id);
+
+
+--
+-- Name: vendor_orders fk_rails_f3b4e77c67; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vendor_orders
+    ADD CONSTRAINT fk_rails_f3b4e77c67 FOREIGN KEY (order_placed_by_id) REFERENCES public.users(id);
+
+
+--
 -- Name: product_conflicts fk_rails_f74a21bb34; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2768,6 +2928,9 @@ ALTER TABLE ONLY public.address_changes
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261015000003'),
+('20261015000002'),
+('20261015000001'),
 ('20261014120001'),
 ('20261014090001'),
 ('20261013130001'),
