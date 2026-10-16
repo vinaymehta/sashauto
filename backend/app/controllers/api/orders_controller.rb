@@ -95,8 +95,7 @@ module Api
       render json: {
         data: rows.map { |r| Serializers.order_row(r, source: true).merge(firm_date: firm_dates[VendorOrderPlacement.order_key(r)]) },
         headers: row.source_columns.presence || row.source_data.keys,
-        group: { po_number: row.po_number, part_number: row.part_number, order_type: row.order_type,
-                 description: Product.find_by(part_number: row.part_number)&.description },
+        group: group_info(row),
         combined: groups.map { |g| schedule_group(g, combined) }
       }
     end
@@ -149,6 +148,15 @@ module Api
                                { id: m.id, po_line_number: m.po_line_number, ship_date: m.ship_date, qty: Serializers.qty(m.qty),
                                  manual: group.manual_ids.include?(m.id) }
                              end })
+    end
+
+    # Order details header of a row's PO Number + Part Number + Type: the part's Description and MOQ (sets, and pieces
+    # for pack parts).
+    def group_info(row)
+      product = Product.find_by(part_number: row.part_number)
+      { po_number: row.po_number, part_number: row.part_number, order_type: row.order_type, description: product&.description,
+        moq: Serializers.qty(product && (product.moq_sets || product.moq)), moq_pcs: Serializers.qty(product&.moq),
+        pack_size: product&.pack_size || 1 }
     end
 
     # A combined order in the Order details Schedule. PO generated (placed): its orders can no longer change.
@@ -211,8 +219,7 @@ module Api
       render json: {
         data: [ Serializers.order_row(order, source: true) ],
         headers: order.source_columns,
-        group: { po_number: order.po_number, part_number: order.part_number, order_type: order.order_type,
-                 description: Product.find_by(part_number: order.part_number)&.description }
+        group: group_info(order)
       }
     end
 

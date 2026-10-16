@@ -1,8 +1,10 @@
 module Api
   # Vendors list (search, sort and pagination in PostgreSQL), CRUD and Excel import. Changes are admin-only.
   class VendorsController < ApplicationController
-    # Contact details of a vendor (besides the name).
-    DETAILS = %i[email address gst phone].freeze
+    # Details of a vendor (besides the name).
+    DETAILS = %i[code vendor_type salutation first_name last_name company_name email phone mobile language address gst
+                 gst_treatment place_of_supply pan tax_preference currency payment_terms lead_days gst_rate tax_officer_address
+                 portal_enabled remarks].freeze
 
     SORTS = {
       "name" => "vendors.name", "product_count" => "product_count", "updated_at" => "vendors.updated_at"
@@ -18,7 +20,7 @@ module Api
         term = "%#{Vendor.sanitize_sql_like(params[:q].to_s.strip.first(100))}%"
         # Vendor name, or any of its parts (Part Number, SASH Part, Vendor Part).
         scope = scope.where(<<~SQL, t: term)
-          vendors.name ILIKE :t OR EXISTS (
+          vendors.name ILIKE :t OR vendors.code ILIKE :t OR vendors.company_name ILIKE :t OR EXISTS (
             SELECT 1 FROM vendor_products vp JOIN products p ON p.id = vp.product_id
             WHERE vp.vendor_id = vendors.id AND (p.part_number ILIKE :t OR vp.sash_part ILIKE :t OR vp.vendor_part ILIKE :t)
           )
@@ -77,6 +79,9 @@ module Api
         return render_error("The file is larger than #{AppConfig.max_upload_bytes / 1.megabyte} MB.", :unprocessable_content, code: "invalid_file")
       end
 
+      # The vendor details or tax officer file (Vendors::DetailsImporter); otherwise a DTP Details file.
+      return import_details(file) if Vendors::DetailsImporter.handles?(file.path)
+
       result = Vendors::Importer.call(path: file.path, user: current_user, filename: file.original_filename)
       audit("vendor.imported", filename: file.original_filename.to_s.first(255), **result.to_h.except(:skipped), skipped: result.skipped.size)
       render json: { data: result.to_h }
@@ -85,6 +90,16 @@ module Api
     end
 
     private
+
+    # Vendor details (Vendor Code, contact, GSTIN, Lead Days, …) or the jurisdictional tax officer addresses, from the
+    # vendor master files (Vendors::DetailsImporter).
+    def import_details(file)
+      result = Vendors::DetailsImporter.call(path: file.path, user: current_user, filename: file.original_filename)
+      audit("vendor.details_imported", filename: file.original_filename.to_s.first(255), **result.to_h)
+      render json: { data: result.to_h }
+    rescue Vendors::DetailsImporter::InvalidFile => e
+      render_error e.message, :unprocessable_content, code: "invalid_file"
+    end
 
     def find_vendor
       Vendor.select("vendors.*", "(SELECT COUNT(*) FROM vendor_products vp WHERE vp.vendor_id = vendors.id) AS product_count")

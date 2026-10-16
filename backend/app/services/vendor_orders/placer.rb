@@ -70,8 +70,11 @@ module VendorOrders
                               price_currency: link.price_currency, price_note: link.price_note, email_status: "not_sent")
         end
       end
-      # Each vendor's purchase order is saved as a PDF (no email; an admin can email it later).
-      placement.vendor_orders.each(&:attach_pdf)
+      # Each vendor's purchase order and Intimation Letter are saved as PDFs (not emailed).
+      placement.vendor_orders.each do |order|
+        order.attach_pdf
+        order.attach_letter
+      end
       Result.new(placement: placement, warnings: moq_warnings(placement))
     end
 

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { Paginated, Vendor, VendorImportResult } from "@/lib/types";
 import { formatCount } from "@/lib/format";
-import { PencilIcon, PlusIcon, TrashIcon } from "@/components/icons";
+import { EyeIcon, PencilIcon, PlusIcon, TrashIcon } from "@/components/icons";
 import { useSession } from "@/components/session";
 import { useToast } from "@/components/toast";
 import { useApi, useDebounced } from "@/components/use-api";
@@ -12,6 +12,7 @@ import { useListQuery } from "@/components/use-list-query";
 import { DtpImportButton } from "@/components/vendors/dtp-import";
 import { ImportIssuesPanel, useOpenImportIssues } from "@/components/vendors/import-issues";
 import { Tabs } from "@/components/ui/tabs";
+import { VendorDetailsPanel } from "@/components/vendors/vendor-details-panel";
 import { VendorFormPanel } from "@/components/vendors/vendor-form-panel";
 import { VendorProductsPanel } from "@/components/vendors/vendor-products-panel";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,7 @@ export default function VendorsPage() {
 
   const [open, setOpen] = useState<Vendor | null>(null);
   const [editing, setEditing] = useState<Vendor | "new" | null>(null);
+  const [viewing, setViewing] = useState<Vendor | null>(null); // the details panel
   const [deleting, setDeleting] = useState<Vendor | null>(null);
   const [busy, setBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -72,7 +74,7 @@ export default function VendorsPage() {
         title="Vendors"
         actions={isAdmin && (
           <div className="flex items-center gap-2">
-            <DtpImportButton onImported={onImported} />
+            <DtpImportButton onImported={onImported} onDetailsImported={(n) => { reload(); issues.reload(); if (n) setView("issues"); }} />
             <Button variant="primary" onClick={() => setEditing("new")}><PlusIcon size={15} />Add vendor</Button>
           </div>
         )}
@@ -105,25 +107,26 @@ export default function VendorsPage() {
           />
         ) : data ? (
           <div className={`transition-opacity duration-200 ${loading ? "opacity-50" : ""}`}>
-            <Table fixed minWidth="min-w-[1100px]">
+            {/* The list shows who the vendor is; everything else is in its details panel (View). */}
+            {/* Columns share the width in proportion to their content, so the gaps between them stay even on any screen;
+                the table scrolls sideways below 1080px. Action fits the View, Edit and Delete icons in one line. */}
+            <Table fixed minWidth="min-w-[1080px]">
               <colgroup>
-                <col className="w-56" />
-                <col className="w-56" />
-                <col className="w-40" />
-                <col className="w-44" />
-                <col />
-                <col className="w-28" />
-                {isAdmin && <col className="w-28" />}
+                <col className="w-[30%]" />
+                <col className="w-[10%]" />
+                <col className="w-[22%]" />
+                <col className="w-[16%]" />
+                <col className="w-[10%]" />
+                <col className="w-[12%]" />
               </colgroup>
               <thead>
                 <tr>
                   <SortTh label="Vendor Name" sortKey="name" {...sortProps} />
-                  <Th>Email ID</Th>
-                  <Th>Phone Number</Th>
-                  <Th>GST</Th>
-                  <Th>Address</Th>
+                  <Th>Code</Th>
+                  <Th>Contact No</Th>
+                  <Th>Place of Supply</Th>
                   <SortTh label="Products" sortKey="product_count" align="center" {...sortProps} />
-                  {isAdmin && <Th align="center">Action</Th>}
+                  <Th align="center">Action</Th>
                 </tr>
               </thead>
               <tbody>
@@ -131,13 +134,15 @@ export default function VendorsPage() {
                   <tr key={v.id} onClick={() => setOpen(v)} aria-haspopup="dialog"
                       className={`cursor-pointer transition-colors hover:bg-neutral-50 ${open?.id === v.id ? "shadow-[inset_3px_0_0_var(--color-accent)]" : ""}`}>
                     <Td className="truncate font-medium" title={v.name}>{v.name}</Td>
-                    <Td className="truncate text-ink-muted" title={v.email ?? undefined}>{v.email ?? dash}</Td>
-                    <Td className="truncate tabular text-ink-muted">{v.phone ?? dash}</Td>
-                    <Td className="truncate tabular text-ink-muted">{v.gst ?? dash}</Td>
-                    <Td className="truncate text-ink-muted" title={v.address ?? undefined}>{v.address ?? dash}</Td>
+                    <Td className="truncate font-semibold text-ink-muted">{v.code ?? dash}</Td>
+                    <Td className="truncate tabular text-ink-muted" title={v.phone ?? v.mobile ?? undefined}>{v.phone ?? v.mobile ?? dash}</Td>
+                    <Td className="truncate text-ink-muted">{v.place_of_supply ?? dash}</Td>
                     <Td align="center" className="tabular">{formatCount(v.product_count)}</Td>
-                    {isAdmin && (
-                      <Td align="center" className="space-x-1" onClick={(e) => e.stopPropagation()}>
+                    <Td align="center" className="space-x-1" onClick={(e) => e.stopPropagation()}>
+                      <button type="button" className={iconButton} onClick={() => setViewing(v)} aria-label={`View ${v.name}`} title="View vendor details">
+                        <EyeIcon size={16} />
+                      </button>
+                      {isAdmin && (<>
                         <button type="button" className={iconButton} onClick={() => setEditing(v)} aria-label={`Edit ${v.name}`} title="Edit vendor">
                           <PencilIcon size={16} />
                         </button>
@@ -145,8 +150,8 @@ export default function VendorsPage() {
                                 aria-label={`Delete ${v.name}`} title="Delete vendor">
                           <TrashIcon size={16} />
                         </button>
-                      </Td>
-                    )}
+                      </>)}
+                    </Td>
                   </tr>
                 ))}
               </tbody>
@@ -158,6 +163,10 @@ export default function VendorsPage() {
       )}
 
       {open && <VendorProductsPanel key={open.id} vendor={open} canEdit={isAdmin} onClose={() => setOpen(null)} onChanged={reload} />}
+      {viewing && (
+        <VendorDetailsPanel vendor={viewing} onClose={() => setViewing(null)}
+                            onEdit={isAdmin ? () => { setEditing(viewing); setViewing(null); } : undefined} />
+      )}
       {editing && (
         <VendorFormPanel vendor={editing === "new" ? undefined : editing} onClose={() => setEditing(null)}
                          onSaved={(v) => { reload(); if (open?.id === v.id) setOpen({ ...open, name: v.name }); }} />

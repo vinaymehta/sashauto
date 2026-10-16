@@ -19,7 +19,7 @@ module Orders
 
       taken = combined.hidden + combined.groups.values.select(&:combined?).map(&:anchor_id)
       rows = OrderRow.where(upload_batch_id: anchor.upload_batch_id, group_key: anchor.group_key)
-                     .where("qty > 0").where(ship_date: anchor.ship_date..).where.not(id: taken.to_a)
+                     .where("qty > 0").where(ship_date: anchor.ship_date..).where.not(id: [ anchor.id, *taken ])
                      .order(:ship_date, :source_row_number).to_a
       placed = VendorOrderPlacement.where(order_key: rows.map { |row| VendorOrderPlacement.order_key(row) }).pluck(:order_key).to_set
       rows.reject { |row| placed.include?(VendorOrderPlacement.order_key(row)) }

@@ -2,7 +2,7 @@
 
 import { createContext, Fragment, useContext, useState, type ReactNode } from "react";
 import { api, ApiError } from "@/lib/api";
-import type { OrderRow, ScheduleGroup } from "@/lib/types";
+import type { OrderHistory, OrderRow, ScheduleGroup } from "@/lib/types";
 import { formatDate, formatQty } from "@/lib/format";
 import { ageGroup } from "../age";
 import { BoxIcon, ChevronDownIcon, ChevronRightIcon, CloseIcon, MapPinIcon, PlusIcon } from "../icons";
@@ -22,6 +22,9 @@ function src(data: Source, key: string) {
 
 const price = (value: string | null) => (value === null || Number.isNaN(Number(value)) ? value : Number(value).toFixed(2));
 
+// The part's MOQ (sets) for the Schedule's ✓ / ✗ next to each Quantity.
+const MoqContext = createContext<string | null>(null);
+
 // Opens the order details panel for a row (provided by the Orders page).
 export const OpenOrderContext = createContext<(row: OrderRow) => void>(() => undefined);
 
@@ -39,13 +42,15 @@ export function OrderDetailsLink({ row }: { row: OrderRow }) {
 const AGE_DOT = { green: "bg-age-green-ink", yellow: "bg-age-yellow-ink", red: "bg-age-red-ink" } as const;
 const AGE_DOT_TITLE = { green: "30–45 days to ship date", yellow: "15–29 days to ship date", red: "Under 15 days to ship date, or overdue" } as const;
 
-const COLUMNS: { label: string; value: (r: OrderRow, description: string | null) => ReactNode; align?: "right" }[] = [
+const COLUMNS: { label: string; value: (r: OrderRow, description: string | null) => ReactNode; align?: "right" | "center" }[] = [
   { label: "Deere Part Number", value: (r) => r.part_number },
   { label: "Order Type", value: (r) => r.order_type },
   { label: "Due Date", value: (r) => (r.due_date ? formatDate(r.due_date) : null) },
   { label: "Firm Date", value: (r) => (r.firm_date ? formatDate(r.firm_date) : null) },
   { label: "Ship Date", value: (r) => formatDate(r.ship_date) },
   { label: "Quantity", value: (r) => (r.qty === null ? null : formatQty(r.qty)), align: "right" },
+  // ✓ / ✗: the row's Qty (a combined row's total) reaches the part's MOQ or not (MoqMark).
+  { label: "MOQ", value: () => null, align: "center" },
   { label: "UOM", value: () => null },
   { label: "Price", value: (r) => price(src(r.source_data, "Unit Price")), align: "right" },
   { label: "Unit of Price", value: () => null },
@@ -67,9 +72,10 @@ const COLUMNS: { label: string; value: (r: OrderRow, description: string | null)
 // Order details content, in the app's card and table style: the order's facts (only fields the file has), its
 // Ship To address, and every row of the same PO Number + Part Number + Type (`rows`, the clicked row highlighted).
 // Combined orders (`combined`) show in the Schedule as one row that opens to list its orders; `onChanged` is called
-// after an admin adds orders to one or takes them out.
-export function OrderDetailsBody({ row, rows, description, combined = [], onChanged }: {
+// after an admin adds orders to one or takes them out. `group` gives the part's MOQ (header, and ✓ / ✗ per Quantity).
+export function OrderDetailsBody({ row, rows, description, combined = [], onChanged, group }: {
   row: OrderRow; rows: OrderRow[]; description: string | null; combined?: ScheduleGroup[]; onChanged?: () => void;
+  group?: OrderHistory["group"];
 }) {
   const s = row.source_data;
   const cityLine = [src(s, "Ship to City"), [src(s, "Ship to Region"), src(s, "Ship to PostalCode")].filter(Boolean).join(" ")].filter(Boolean).join(", ");
@@ -78,6 +84,7 @@ export function OrderDetailsBody({ row, rows, description, combined = [], onChan
     ["PO Line", row.po_line_number],
     ["Supplier Part Number", row.supplier_part_number],
     ["Unit", row.unit?.trim() || null],
+    ["MOQ", group?.moq ? `${formatQty(group.moq)}${group.pack_size > 1 ? ` sets (${formatQty(group.moq_pcs ?? String(Number(group.moq) * group.pack_size))} pcs)` : ""}` : null],
   ] as [string, string | null][]).filter(([, value]) => value);
   // Every column of the supplier-portal order view, also when the file has no value for it.
   const columns = COLUMNS;
@@ -141,13 +148,15 @@ export function OrderDetailsBody({ row, rows, description, combined = [], onChan
                 <th aria-label="Age" className="h-10 w-8 border-b border-neutral-200 bg-neutral-50 pl-5" />
                 {columns.map((c) => (
                   <th key={c.label} className={`h-10 whitespace-nowrap border-b border-neutral-200 bg-neutral-50 px-3 text-xs font-bold uppercase tracking-wider text-neutral-800 last:pr-5 ${
-                    c.align === "right" ? "text-right" : "text-left"}`}>
+                    c.align === "right" ? "text-right" : c.align === "center" ? "text-center" : "text-left"}`}>
                     {c.label}
                   </th>
                 ))}
               </tr>
             </thead>
-            <ScheduleRows row={row} rows={rows} description={description} groups={combined} today={today} onChanged={onChanged} />
+            <MoqContext.Provider value={group?.moq ?? null}>
+              <ScheduleRows row={row} rows={rows} description={description} groups={combined} today={today} onChanged={onChanged} />
+            </MoqContext.Provider>
           </table>
         </div>
       </section>
@@ -156,11 +165,11 @@ export function OrderDetailsBody({ row, rows, description, combined = [], onChan
 }
 
 // Schedule rows. The orders of a combined order are listed under one tinted row (combined Qty, first to last Ship
-// Date) that opens and closes on click; the one with the clicked order starts open.
+// Date) that opens and closes on click; all start closed.
 function ScheduleRows({ row, rows, description, groups, today, onChanged }: {
   row: OrderRow; rows: OrderRow[]; description: string | null; groups: ScheduleGroup[]; today: Date; onChanged?: () => void;
 }) {
-  const [open, setOpen] = useState<Set<number>>(() => new Set(groups.filter((g) => g.member_ids.includes(row.id)).map((g) => g.anchor_id)));
+  const [open, setOpen] = useState<Set<number>>(() => new Set());
   const groupOf = new Map(groups.flatMap((g) => g.member_ids.map((id) => [id, g] as const)));
   const takenOut = new Set(groups.flatMap((g) => g.removed_ids));
   const byId = new Map(rows.map((r) => [r.id, r]));
@@ -216,6 +225,7 @@ function ScheduleTr({ r, current, description, today, member = false, manual = f
       onChanged?.();
     } catch (err) {
       notify(err instanceof ApiError ? err.message : "Could not take the order out.", "error");
+    } finally {
       setBusy(false);
     }
   }
@@ -228,7 +238,7 @@ function ScheduleTr({ r, current, description, today, member = false, manual = f
       </td>
       {COLUMNS.map((c, i) => (
         <td key={c.label} className={`h-11 whitespace-nowrap border-b border-neutral-100 px-3 text-ink last:pr-5 ${
-          c.align === "right" ? "tabular text-right" : ""} ${current ? "font-semibold" : ""}`}>
+          c.align === "right" ? "tabular text-right" : c.align === "center" ? "text-center" : ""} ${current ? "font-semibold" : ""}`}>
           {i === 0 ? (
             <span className="inline-flex items-center gap-1.5">
               {c.value(r, description)}
@@ -242,6 +252,12 @@ function ScheduleTr({ r, current, description, today, member = false, manual = f
                 </button>
               )}
             </span>
+          ) : c.label === "MOQ" ? (
+            <MoqMark qty={r.qty} />
+          ) : c.label === "Firm Date" && (member || r.qty === null) ? (
+            // Only the combined row and single orders with a Qty have a Firm Date (another line with the same PO Line
+            // and Ship Date would otherwise show theirs).
+            <span className="text-neutral-300">—</span>
           ) : c.value(r, description) ?? <span className="text-neutral-300">—</span>}
         </td>
       ))}
@@ -264,13 +280,15 @@ function CombinedTr({ group, members, expanded, description, onToggle }: {
       </td>
       {COLUMNS.map((c, i) => (
         <td key={c.label} className={`h-11 whitespace-nowrap border-b border-tint-violet-ink/15 px-3 text-ink last:pr-5 ${
-          c.align === "right" ? "tabular text-right" : ""}`}>
+          c.align === "right" ? "tabular text-right" : c.align === "center" ? "text-center" : ""}`}>
           {i === 0 ? (
             <span className="inline-flex items-center gap-1.5">
               {anchor.part_number}
               <span className="rounded border border-tint-violet-ink/25 bg-white px-1.5 py-px text-xs font-medium text-tint-violet-ink">Combined · {members.length}</span>
               {group.below_moq && <span className="rounded bg-age-yellow px-1.5 py-px text-xs font-medium text-age-yellow-ink">Below MOQ {formatQty(group.moq)}</span>}
             </span>
+          ) : c.label === "MOQ" ? (
+            <MoqMark qty={group.total} />
           ) : c.label === "Ship Date" && first && last ? (
             first === last ? formatDate(first) : `${formatDate(first)} – ${formatDate(last)}`
           ) : c.value(merged, description) ?? <span className="text-neutral-300">—</span>}
@@ -340,5 +358,18 @@ function CombinedActions({ group, rows, onChanged }: { group: ScheduleGroup; row
         )}
       </td>
     </tr>
+  );
+}
+
+// MOQ column: ✓ when the Qty reaches the part's MOQ, ✗ when it is below ("—" without a Qty or an MOQ).
+function MoqMark({ qty }: { qty: string | null }) {
+  const moq = useContext(MoqContext);
+  if (qty === null || moq === null) return <span className="text-neutral-300">—</span>;
+  const reached = Number(qty) >= Number(moq);
+  return (
+    <span title={`${reached ? "Reached" : "Below"} the MOQ of ${formatQty(moq)}`} aria-label={reached ? "Reached MOQ" : "Below MOQ"}
+          className={`text-base font-bold ${reached ? "text-inc" : "text-dec"}`}>
+      {reached ? "✓" : "✗"}
+    </span>
   );
 }

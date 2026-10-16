@@ -28,9 +28,9 @@ export function Textarea({ className = "", invalid = false, ...props }: Textarea
   );
 }
 
-export function Select({ className = "", children, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
+export function Select({ className = "", invalid = false, children, ...props }: SelectHTMLAttributes<HTMLSelectElement> & { invalid?: boolean }) {
   return (
-    <select className={`${control} ${borders.normal} pr-8 ${className}`} {...props}>
+    <select aria-invalid={invalid || undefined} className={`${control} ${invalid ? borders.invalid : borders.normal} pr-8 ${className}`} {...props}>
       {children}
     </select>
   );

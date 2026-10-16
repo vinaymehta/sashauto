@@ -376,7 +376,7 @@ CREATE TABLE public.import_issues (
     resolved_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT import_issues_kind_valid CHECK (((kind)::text = ANY ((ARRAY['skipped'::character varying, 'unreadable'::character varying])::text[]))),
+    CONSTRAINT import_issues_kind_valid CHECK (((kind)::text = ANY ((ARRAY['skipped'::character varying, 'unreadable'::character varying, 'vendor_details'::character varying])::text[]))),
     CONSTRAINT import_issues_status_valid CHECK (((status)::text = ANY ((ARRAY['open'::character varying, 'resolved'::character varying, 'dismissed'::character varying])::text[])))
 );
 
@@ -1263,7 +1263,30 @@ CREATE TABLE public.vendors (
     email character varying,
     address text,
     gst character varying(32),
-    phone character varying(40)
+    phone character varying(200),
+    code character varying(20),
+    vendor_type character varying DEFAULT 'business'::character varying NOT NULL,
+    salutation character varying(10),
+    first_name character varying(100),
+    last_name character varying(100),
+    company_name character varying(200),
+    mobile character varying(200),
+    language character varying(40) DEFAULT 'English'::character varying NOT NULL,
+    gst_treatment character varying,
+    place_of_supply character varying(60),
+    pan character varying(10),
+    tax_preference character varying DEFAULT 'taxable'::character varying NOT NULL,
+    currency character varying(3) DEFAULT 'INR'::character varying NOT NULL,
+    payment_terms character varying(200),
+    lead_days integer,
+    gst_rate numeric(5,2),
+    tax_officer_address text,
+    portal_enabled boolean DEFAULT false NOT NULL,
+    remarks text,
+    CONSTRAINT vendors_gst_rate_valid CHECK (((gst_rate IS NULL) OR (gst_rate >= (0)::numeric))),
+    CONSTRAINT vendors_lead_days_valid CHECK (((lead_days IS NULL) OR (lead_days >= 0))),
+    CONSTRAINT vendors_tax_preference_valid CHECK (((tax_preference)::text = ANY ((ARRAY['taxable'::character varying, 'tax_exempt'::character varying])::text[]))),
+    CONSTRAINT vendors_type_valid CHECK (((vendor_type)::text = ANY ((ARRAY['business'::character varying, 'individual'::character varying])::text[])))
 );
 
 
@@ -2372,6 +2395,13 @@ CREATE UNIQUE INDEX index_vendor_products_on_vendor_id_and_product_id ON public.
 
 
 --
+-- Name: index_vendors_on_lower_code; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_vendors_on_lower_code ON public.vendors USING btree (lower((code)::text));
+
+
+--
 -- Name: index_vendors_on_lower_name; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2928,6 +2958,8 @@ ALTER TABLE ONLY public.address_changes
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261016000002'),
+('20261016000001'),
 ('20261015000003'),
 ('20261015000002'),
 ('20261015000001'),

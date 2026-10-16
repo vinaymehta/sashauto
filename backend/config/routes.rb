@@ -38,6 +38,7 @@ Rails.application.routes.draw do
       get :history, on: :member
       resource :vendor_order, only: %i[show create], controller: :vendor_orders do
         post :preview
+        post :preview_letter
       end
       resources :deliveries, only: :create, controller: :order_deliveries
       resources :merges, only: %i[create destroy], controller: :order_merges
@@ -51,7 +52,10 @@ Rails.application.routes.draw do
       get :fields, on: :collection
     end
     resources :vendor_orders, only: :update do
-      get :pdf, on: :member
+      member do
+        get :pdf
+        get :letter
+      end
     end
     resources :vendors, only: %i[index show create update destroy] do
       post :import, on: :collection
@@ -65,6 +69,8 @@ Rails.application.routes.draw do
         post :resolve
         post :dismiss
         post :delete_part
+        post :link_vendor
+        post :create_vendor
       end
     end
     resources :product_conflicts, only: [] do

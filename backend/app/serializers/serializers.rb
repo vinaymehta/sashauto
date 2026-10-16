@@ -65,8 +65,10 @@ module Serializers
   end
 
   def vendor(vendor, product_count: nil)
-    vendor.slice(:id, :name, :email, :address, :gst, :phone, :created_at, :updated_at)
-          .merge(product_count: product_count || (vendor.has_attribute?(:product_count) ? vendor[:product_count] : vendor.vendor_products.count))
+    vendor.slice(:id, :name, :code, :vendor_type, :salutation, :first_name, :last_name, :company_name, :email, :phone, :mobile,
+                 :language, :address, :gst, :gst_treatment, :place_of_supply, :pan, :tax_preference, :currency, :payment_terms,
+                 :lead_days, :tax_officer_address, :portal_enabled, :remarks, :created_at, :updated_at)
+          .merge(gst_rate: qty(vendor.gst_rate), product_count: product_count || (vendor.has_attribute?(:product_count) ? vendor[:product_count] : vendor.vendor_products.count))
   end
 
   def vendor_order_placement(placement)
@@ -156,7 +158,10 @@ module Serializers
          .merge(imported_by: issue.imported_by&.name, resolved_by: issue.resolved_by&.name,
                 part_number: issue.row_data["part_number"], vendor_name: issue.row_data["vendor_name"],
                 vendor_id: issue.vendor_product&.vendor_id, product_id: issue.product_id,
-                has_part: issue.vendor_product_id.present? || issue.product_id.present?)
+                has_part: issue.vendor_product_id.present? || issue.product_id.present?,
+                # Vendor details rows: the file ("details" / "tax_officer"), Vendor Code and the vendors to offer first.
+                source: issue.row_data["source"], vendor_code: issue.row_data["vendor_code"],
+                candidates: Vendor.where(id: Array(issue.row_data["candidate_ids"])).order(:name).map { |v| { id: v.id, name: v.name, code: v.code } })
   end
 
   def product_conflict(conflict)

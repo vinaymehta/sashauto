@@ -147,7 +147,7 @@ function buildColumns(columns: { key: string; label: string }[], uploadId?: numb
     }
     // "Firm Date" (the day the order, or its combined order, first reached the MOQ) just after Due Date.
     if (key === "due_date") {
-      return [column, { key: "firm_date", label: "Firm Date", sortable: false, render: (r) => date(r.firm_date ?? null) }];
+      return [column, { key: "firm_date", label: "Firm Date", sortable: false, render: (r) => date(r.qty === null ? null : r.firm_date ?? null) }];
     }
     return [column];
   });

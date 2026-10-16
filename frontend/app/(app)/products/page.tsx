@@ -63,7 +63,8 @@ function ProductsView() {
     <>
       <PageHeader
         title="Products"
-        actions={isAdmin && <DtpImportButton label="Upload file" onImported={onImported} />}
+        actions={isAdmin && <DtpImportButton onImported={onImported}
+                                             onDetailsImported={(n) => { issues.reload(); if (n) setView("issues"); }} />}
       />
       <div className="flex items-center border-b border-line">
         <Tabs active={view} onChange={setView} tabs={[

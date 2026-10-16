@@ -1,6 +1,8 @@
 module Api
   # Problems from vendor workbook imports (skipped rows, unreadable values), listed on the Import issues tab of
-  # Products and Vendors. Admins can fix and add a row, dismiss an issue, or delete the part a row created.
+  # Products and Vendors. Admins can fix and add a row, dismiss an issue, or delete the part a row created. A row of the
+  # vendor details / tax officer file that was not saved (kind "vendor_details") is linked to an existing vendor
+  # (its details go onto that vendor) or added as a new vendor.
   class ImportIssuesController < ApplicationController
     before_action -> { require_role(:admin) }, except: :index
     before_action :load_open_issue, except: :index
@@ -36,6 +38,23 @@ module Api
       render json: { data: Serializers.import_issue(@issue.reload) }
     end
 
+    # POST /api/import_issues/:id/link_vendor  { vendor_id: } — the row is this vendor: its details go onto it.
+    def link_vendor
+      return render_error("This issue is not a vendor details row.", :unprocessable_content) unless @issue.kind == "vendor_details"
+
+      vendor = Vendor.find(params.require(:vendor_id))
+      save_vendor(vendor, "linked")
+    end
+
+    # POST /api/import_issues/:id/create_vendor — the row is a new vendor (vendor details file only).
+    def create_vendor
+      unless @issue.kind == "vendor_details" && @issue.row_data["source"] == "details"
+        return render_error("Only a row of the vendor details file can be added as a vendor.", :unprocessable_content)
+      end
+
+      save_vendor(Vendor.new(name: @issue.row_data["vendor_name"].to_s.squish.first(200)), "created")
+    end
+
     def dismiss
       @issue.close!("dismissed", user: current_user)
       audit("import_issue.dismissed", subject: @issue)
@@ -63,6 +82,20 @@ module Api
     end
 
     private
+
+    # Applies the row's details to `vendor` (saving it) and closes the issue; validation problems are returned as is.
+    def save_vendor(vendor, resolution)
+      ImportIssue.transaction do
+        vendor.update!(@issue.row_data["attributes"].to_h)
+        @issue.close!("resolved", user: current_user, resolution: resolution)
+      end
+      audit("import_issue.vendor_#{resolution}", subject: @issue, vendor: vendor.name)
+      render json: { data: Serializers.import_issue(@issue.reload), vendor: Serializers.vendor(vendor, product_count: 0) }
+    rescue ActiveRecord::RecordInvalid => e
+      render_error "#{vendor.name}: #{e.record.errors.full_messages.to_sentence}", :unprocessable_content
+    rescue ActiveRecord::RecordNotUnique
+      render_error "#{vendor.name}: another vendor already has this name or Vendor Code.", :unprocessable_content
+    end
 
     def load_open_issue
       @issue = ImportIssue.open.find(params[:id])

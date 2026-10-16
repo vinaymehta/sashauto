@@ -2,7 +2,7 @@ module Api
   # Vendor orders of one order row (the Orders page detail). Reading is open to signed-in users; generating the POs
   # and ticking "Order placed" is admin-only. POs are not emailed from the app.
   class VendorOrdersController < ApplicationController
-    before_action -> { require_role(:admin) }, only: %i[create preview update]
+    before_action -> { require_role(:admin) }, only: %i[create preview preview_letter update]
     rate_limit to: 60, within: 1.hour, only: :create, store: RATE_LIMIT_STORE, by: -> { current_user&.id || request.remote_ip },
                with: -> { render_error "Too many placements in a short time. Try again later.", :too_many_requests }
 
@@ -52,6 +52,24 @@ module Api
       send_data pdf, filename: "purchase-order-draft.pdf", type: "application/pdf", disposition: "inline"
     rescue VendorOrders::Placer::Invalid => e
       render_error e.message, :unprocessable_content
+    end
+
+    # The Intimation Letter the PO would come with for one vendor (DRAFT, not saved): POST with vendor_id.
+    def preview_letter
+      row = order
+      product = Product.find_by(part_number: row.part_number)
+      link = product&.vendor_products&.find_by(vendor_id: params.require(:vendor_id))
+      return render_error("Choose a vendor linked to this part.", :unprocessable_content) unless link
+
+      send_data VendorOrders::IntimationLetter.preview(vendor: link.vendor), filename: "intimation-letter-draft.pdf",
+                                                                            type: "application/pdf", disposition: "inline"
+    end
+
+    # The saved Intimation Letter of a vendor order.
+    def letter
+      vendor_order = VendorOrder.find(params[:id])
+      send_data vendor_order.letter_document, filename: vendor_order.letter_file_name, type: "application/pdf",
+                                              disposition: params[:download] == "1" ? "attachment" : "inline"
     end
 
     # The saved purchase order PDF of a vendor order.

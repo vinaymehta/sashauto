@@ -332,7 +332,8 @@ export interface UploadChoice {
 export interface OrderHistory {
   data: OrderRow[];
   headers: string[];
-  group: { po_number: string; part_number: string; order_type: OrderType; description: string | null };
+  // moq: the part's MOQ in sets (order Qty counts sets); moq_pcs: in pieces; pack_size: pieces per set.
+  group: { po_number: string; part_number: string; order_type: OrderType; description: string | null; moq: string | null; moq_pcs: string | null; pack_size: number };
   combined?: ScheduleGroup[]; // combined orders among the rows (imported orders only)
 }
 
@@ -366,13 +367,36 @@ export interface OrdersPage {
   columns?: { key: string; label: string }[];
 }
 
+export type VendorType = "business" | "individual";
+export type GstTreatment = "registered_regular" | "registered_composition" | "unregistered" | "consumer" | "overseas" | "sez" | "deemed_export";
+
+// name: the display name used across the app; company_name: the legal name; code: the supplier acronym in PO numbers.
 export interface Vendor {
   id: number;
   name: string;
-  email: string | null;
+  code: string | null;
+  vendor_type: VendorType;
+  salutation: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  company_name: string | null;
+  email: string | null; // one or several, separated by commas
+  phone: string | null; // work phone
+  mobile: string | null;
+  language: string;
   address: string | null;
   gst: string | null;
-  phone: string | null;
+  gst_treatment: GstTreatment | null;
+  place_of_supply: string | null;
+  pan: string | null;
+  tax_preference: "taxable" | "tax_exempt";
+  currency: Currency;
+  payment_terms: string | null;
+  lead_days: number | null; // days the vendor needs from the PO to dispatch
+  gst_rate: string | null; // e.g. "18" or "0.1" (%)
+  tax_officer_address: string | null; // jurisdictional tax officer, for the Intimation Letter
+  portal_enabled: boolean;
+  remarks: string | null;
   product_count: number;
   created_at: string;
   updated_at: string;
@@ -505,12 +529,12 @@ export interface ImportIssue {
   id: number;
   filename: string;
   excel_row: number;
-  kind: "skipped" | "unreadable";
+  kind: "skipped" | "unreadable" | "vendor_details"; // vendor_details: a vendor details / tax officer row not saved
   field: string | null;
   message: string;
   row_data: ImportRowData;
   status: "open" | "resolved" | "dismissed";
-  resolution: "fixed" | "deleted" | "reimported" | null;
+  resolution: "fixed" | "deleted" | "reimported" | "linked" | "created" | null;
   created_at: string;
   resolved_at: string | null;
   imported_by: string | null;
@@ -520,4 +544,19 @@ export interface ImportIssue {
   vendor_id: number | null;
   product_id: number | null;
   has_part: boolean;
+  // Vendor details rows: the file ("details" can be added as a new vendor), the Vendor Code and the vendors offered first.
+  source: "details" | "tax_officer" | null;
+  vendor_code: string | null;
+  candidates: { id: number; name: string; code: string | null }[];
+}
+
+// Result of importing the vendor master file (details) or the jurisdictional tax officer file. issues: rows not saved
+// (no matching vendor, or a possible duplicate), listed on the Import issues tab.
+export interface VendorDetailsImportResult {
+  kind: "details" | "tax_officer";
+  rows: number;
+  created: number;
+  updated: number;
+  unchanged: number;
+  issues: number;
 }

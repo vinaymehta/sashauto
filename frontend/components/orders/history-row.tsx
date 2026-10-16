@@ -79,6 +79,7 @@ export function OrderDetailPanel({ row, onClose, onEdit, onDeleted, onPlaced }: 
         <Skeleton className="h-64 w-full" />
       ) : (
         <OrderDetailsBody row={row} rows={data?.data ?? [row]} description={data?.group.description ?? null} combined={data?.combined}
+                          group={data?.group}
                           onChanged={() => { reload(); onPlaced?.(); }} />
       )}
       <DeliveryMarks row={row} admin={admin} onChanged={onPlaced} />
