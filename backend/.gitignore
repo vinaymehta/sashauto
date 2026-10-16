@@ -10,3 +10,6 @@
 .env
 .env.*
 !.env.example
+
+# Excel reports downloaded by the Deere portal job (SecurePortal)
+/public/secure_portal/
