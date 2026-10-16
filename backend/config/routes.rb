@@ -1,5 +1,7 @@
 Rails.application.routes.draw do
   get "up" => "rails/health#show", as: :rails_health_check
+  # Sidekiq dashboard (password in .env, see config/initializers/sidekiq.rb)
+  mount Sidekiq::Web => "/sidekiq" if defined?(Sidekiq::Web)
   resources :otp_requests, only: [:index], id: /[a-z0-9_]+/ do
     member do
       post :submit
