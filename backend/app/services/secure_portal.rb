@@ -23,9 +23,9 @@ class SecurePortal
     @session_store = BrowserSessionStore.new('secure_portal')
   end
 
-  # Returns the path of the downloaded Excel report. The file is left in
-  # public/secure_portal/ for the caller to process; stale reports from an
-  # earlier run are cleared at the start of the next download instead.
+  # Returns the path of the downloaded Excel report. Every download is kept in
+  # DOWNLOAD_DIR, named with the date and time it was downloaded (IST), e.g.
+  # SupplierRequirements_16-10-26_13-05.xlsx.
   def call
     ensure_logged_in
     download_requirement_report
@@ -49,13 +49,13 @@ class SecurePortal
     puts "Type: -> #{selected_text('type')}"
 
     FileUtils.mkdir_p(DOWNLOAD_DIR)
-    FileUtils.rm_f(Dir.glob(File.join(DOWNLOAD_DIR, '*')))
+    before = Dir.glob(File.join(DOWNLOAD_DIR, '*'))
     # Headless Chrome doesn't always honour the download prefs from WebdriverSetup.
     @driver.execute_cdp('Browser.setDownloadBehavior', behavior: 'allow', downloadPath: DOWNLOAD_DIR)
 
     excel_button = @driver.find_element(css: EXCEL_BUTTON_CSS)
     @driver.execute_script("arguments[0].click();", excel_button)
-    file_path = wait_for_download
+    file_path = timestamped(wait_for_download(before))
     puts "Downloaded: -> #{file_path} (#{File.size(file_path)} bytes)"
     file_path
   end
@@ -180,11 +180,24 @@ class SecurePortal
     Selenium::WebDriver::Support::Select.new(@driver.find_element(id: select_id)).first_selected_option.text.strip
   end
 
+  # Renames the download to "<name>_<dd-mm-yy>_<HH-MM>.<ext>" (IST), so each download is kept, e.g.
+  # SupplierRequirements.xlsx -> SupplierRequirements_16-10-26_13-05.xlsx. Returns the new path.
+  def timestamped(path)
+    stamp = Time.find_zone!(AppConfig.ageing_time_zone).now.strftime('%d-%m-%y_%H-%M')
+    ext = File.extname(path)
+    name = File.basename(path, ext).sub(/ \(\d+\)\z/, '') # Chrome's "(1)" when the name was taken
+    target = File.join(File.dirname(path), "#{name}_#{stamp}#{ext}")
+    target = File.join(File.dirname(path), "#{name}_#{stamp}-#{SecureRandom.hex(2)}#{ext}") if File.exist?(target)
+    File.rename(path, target)
+    target
+  end
+
   # Chrome writes "<name>.crdownload" while downloading and renames it when done.
-  def wait_for_download
+  # Only files that weren't in the folder before the click (`before`) count, since earlier downloads are kept.
+  def wait_for_download(before)
     deadline = Time.now + DOWNLOAD_TIMEOUT
     loop do
-      files = Dir.glob(File.join(DOWNLOAD_DIR, '*'))
+      files = Dir.glob(File.join(DOWNLOAD_DIR, '*')) - before
       done = files.reject { |f| f.end_with?('.crdownload', '.tmp') || File.basename(f).start_with?('.') }
       return done.max_by { |f| File.mtime(f) } if done.any? && files.none? { |f| f.end_with?('.crdownload') }
       raise "SecurePortal: Excel download didn't finish within #{DOWNLOAD_TIMEOUT}s" if Time.now > deadline
