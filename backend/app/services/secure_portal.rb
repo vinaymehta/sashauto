@@ -8,7 +8,7 @@ class SecurePortal
   # TODO: confirm these against the real OTP page (paste @driver.page_source
   # when it shows) -- they're generic guesses covering Okta and most SMS forms.
   OTP_SEND_CODE_CSS = 'input.button.button-primary'.freeze
-  OTP_INPUT_CSS = 'input#input47'.freeze
+  OTP_INPUT_CSS = 'input[name="credentials.passcode"]'.freeze
   OTP_SUBMIT_CSS = 'input.button.button-primary'.freeze
   OTP_MAX_ATTEMPTS = 3
 
