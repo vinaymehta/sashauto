@@ -1,4 +1,4 @@
-class ApplicationController < ActionController::API
+class ApplicationController < ActionController
   include ActionController::Cookies
   include ActionController::RequestForgeryProtection
 
