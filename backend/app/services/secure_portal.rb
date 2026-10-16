@@ -49,13 +49,13 @@ class SecurePortal
     puts "Type: -> #{selected_text('type')}"
 
     FileUtils.mkdir_p(DOWNLOAD_DIR)
-    before = Dir.glob(File.join(DOWNLOAD_DIR, '*'))
+    clicked_at = Time.now - 1
     # Headless Chrome doesn't always honour the download prefs from WebdriverSetup.
     @driver.execute_cdp('Browser.setDownloadBehavior', behavior: 'allow', downloadPath: DOWNLOAD_DIR)
 
     excel_button = @driver.find_element(css: EXCEL_BUTTON_CSS)
     @driver.execute_script("arguments[0].click();", excel_button)
-    file_path = timestamped(wait_for_download(before))
+    file_path = timestamped(wait_for_download(clicked_at))
     puts "Downloaded: -> #{file_path} (#{File.size(file_path)} bytes)"
     file_path
   end
@@ -193,11 +193,12 @@ class SecurePortal
   end
 
   # Chrome writes "<name>.crdownload" while downloading and renames it when done.
-  # Only files that weren't in the folder before the click (`before`) count, since earlier downloads are kept.
-  def wait_for_download(before)
+  # Only files written after the click (`since`) count: earlier downloads are kept, and Chrome may overwrite a file
+  # of the same name.
+  def wait_for_download(since)
     deadline = Time.now + DOWNLOAD_TIMEOUT
     loop do
-      files = Dir.glob(File.join(DOWNLOAD_DIR, '*')) - before
+      files = Dir.glob(File.join(DOWNLOAD_DIR, '*')).select { |f| File.mtime(f) >= since }
       done = files.reject { |f| f.end_with?('.crdownload', '.tmp') || File.basename(f).start_with?('.') }
       return done.max_by { |f| File.mtime(f) } if done.any? && files.none? { |f| f.end_with?('.crdownload') }
       raise "SecurePortal: Excel download didn't finish within #{DOWNLOAD_TIMEOUT}s" if Time.now > deadline
