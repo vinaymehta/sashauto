@@ -1,0 +1,48 @@
+<div class="max-w-3xl mx-auto">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-lg font-semibold text-gray-900">OTP Requests</h1>
+      <p class="text-xs text-gray-500 mt-0.5">Scrapers waiting for an SMS code. Each request expires after about 8 minutes.</p>
+    </div>
+    <a href="<%= otp_requests_path %>" class="btn-secondary text-xs h-8">Refresh</a>
+  </div>
+
+  <% if @requests.empty? %>
+    <div class="bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-16 text-center">
+      <p class="text-sm text-gray-500">No scraper is waiting for an OTP right now.</p>
+    </div>
+  <% else %>
+    <div class="space-y-4">
+      <% @requests.each do |req| %>
+        <div id="<%= req['key'] %>" class="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="text-sm font-semibold text-gray-900"><%= req['label'] %></p>
+              <p class="text-xs text-gray-500 mt-1"><%= req['message'] %></p>
+              <p class="text-[11px] text-gray-400 mt-1">Requested <%= Time.iso8601(req['requested_at']).localtime.strftime('%b %d, %H:%M:%S') rescue req['requested_at'] %></p>
+            </div>
+            <% if req['status'] == 'submitted' %>
+              <span class="text-[11px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">Code submitted, verifying…</span>
+            <% else %>
+              <span class="text-[11px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">Waiting for code</span>
+            <% end %>
+          </div>
+
+          <%= form_with url: submit_otp_request_path(req['key']), method: :post, local: true, class: "mt-4 flex items-center gap-2" do %>
+            <input type="text" name="code" inputmode="numeric" autocomplete="one-time-code" required
+                   placeholder="Enter SMS code" class="modal-input flex-1 font-mono tracking-widest">
+            <button type="submit" class="btn-primary text-sm h-10">Submit OTP</button>
+          <% end %>
+        </div>
+      <% end %>
+    </div>
+  <% end %>
+</div>
+
+<script>
+  // Pick up new requests without a manual refresh, but never while someone is typing a code.
+  setInterval(() => {
+    const active = document.activeElement;
+    if (!(active && active.name === 'code' && active.value)) window.location.reload();
+  }, 15000);
+</script>

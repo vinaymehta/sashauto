@@ -62,6 +62,11 @@ module AppConfig
     env("AGEING_TIME_ZONE", "Asia/Kolkata")
   end
 
+  # Slack Incoming Webhook for alerts (the portal's OTP request and failures). Blank: alerts are only logged.
+  def slack_webhook_url
+    env("SLACK_WEBHOOK_URL")
+  end
+
   def max_upload_bytes
     Integer(env("MAX_UPLOAD_BYTES", 20.megabytes))
   end

@@ -1,6 +1,10 @@
 Rails.application.routes.draw do
   get "up" => "rails/health#show", as: :rails_health_check
-
+  resources :otp_requests, only: [:index], id: /[a-z0-9_]+/ do
+    member do
+      post :submit
+    end
+  end
   scope :api, module: :api, as: :api, defaults: { format: :json } do
     resource :session, only: %i[show create destroy] do
       patch :password

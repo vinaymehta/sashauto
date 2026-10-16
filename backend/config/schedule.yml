@@ -1,0 +1,8 @@
+# Sidekiq-Cron schedule, loaded when Sidekiq starts (sidekiq-cron reads config/schedule.yml).
+# Deere portal sync: get the order file from the supplier portal and upload it (SecurePortalSyncJob).
+secure_portal_sync:
+  cron: "0 8,20 * * * Asia/Kolkata"
+  class: "SecurePortalSyncJob"
+  queue: "default"
+  active_job: true
+  description: "Deere portal: order file to upload, at 08:00 and 20:00 IST"
