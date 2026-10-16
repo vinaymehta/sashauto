@@ -73,6 +73,7 @@ class SecurePortal
     # would force an OTP that isn't actually needed.
     sleep 10
     login if login_form?
+    sleep 5
     verify_otp if otp_form?
     # raise "SecurePortal: not logged in, still on #{@driver.current_url}" if login_form? || otp_form?
     @session_store.capture_storage(@driver)
