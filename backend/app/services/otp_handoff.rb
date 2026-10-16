@@ -88,8 +88,7 @@ class OtpHandoff
     end
 
     path = "/otp_requests##{@key}"
-    app_url = ENV['APP_URL'].to_s.chomp('/')
-    SlackNotifier.new.notify_otp_required(@label, message, url: app_url.present? ? "#{app_url}#{path}" : path) rescue nil
+    SlackNotifier.new.notify_otp_required(@label, message, url: "#{AppConfig.backend_public_url}#{path}") rescue nil
   end
 
   def take_code

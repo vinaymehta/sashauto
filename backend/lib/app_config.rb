@@ -62,6 +62,12 @@ module AppConfig
     env("AGEING_TIME_ZONE", "Asia/Kolkata")
   end
 
+  # Public URL of this backend (pages it renders itself, e.g. /otp_requests), used for the Slack OTP link.
+  # Not APP_URL: that is the frontend, which only forwards /api to the backend.
+  def backend_public_url
+    required("BACKEND_PUBLIC_URL", "http://localhost:4000").chomp("/")
+  end
+
   # Slack Incoming Webhook for alerts (the portal's OTP request and failures). Blank: alerts are only logged.
   def slack_webhook_url
     env("SLACK_WEBHOOK_URL")
