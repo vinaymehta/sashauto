@@ -82,7 +82,7 @@ class SecurePortal
   def login
     open_page(LOGIN_URL)
     sleep 3
-    input_email = @driver.find_element(css: 'input#input28')
+    input_email = @driver.find_element(css: 'input[name="identifier"]')
     input_email.send_keys(ENV['SECURE_PORTAL_USERNAME'])
     sleep 3
     remember_me = @driver.find_element(css: 'input[name="rememberMe"]')
@@ -91,7 +91,7 @@ class SecurePortal
     submit_button = @driver.find_element(css: 'input.button.button-primary')
     submit_button.click
     sleep 3
-    input_password = @driver.find_element(css: 'input#input63')
+    input_password = @driver.find_element(css: 'input[type="password"]')
     input_password.send_keys(ENV['SECURE_PORTAL_PASSWORD'])
     sleep 3
     submit_button = @driver.find_element(css: 'input.button.button-primary')
