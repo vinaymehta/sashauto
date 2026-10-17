@@ -215,7 +215,7 @@ function ScheduleTr({ r, current, description, today, member = false, manual = f
   const notify = useToast();
   const admin = useSession().user?.role === "admin";
   const [busy, setBusy] = useState(false);
-  const age = member || r.qty === null ? null : ageGroup(r.firm_date, today); // as the Firm Date column
+  const age = r.qty === null ? null : ageGroup(r.firm_date, today); // as the Firm Date column
 
   async function remove() {
     setBusy(true);
@@ -254,9 +254,9 @@ function ScheduleTr({ r, current, description, today, member = false, manual = f
             </span>
           ) : c.label === "MOQ" ? (
             <MoqMark qty={r.qty} />
-          ) : c.label === "Firm Date" && (member || r.qty === null) ? (
-            // Only the combined row and single orders with a Qty have a Firm Date (another line with the same PO Line
-            // and Ship Date would otherwise show theirs).
+          ) : c.label === "Firm Date" && r.qty === null ? (
+            // Every order with a Qty shows its own Firm Date, inside a combined order too (another line with the same
+            // PO Line and Ship Date but no Qty would otherwise show theirs).
             <span className="text-neutral-300">—</span>
           ) : c.value(r, description) ?? <span className="text-neutral-300">—</span>}
         </td>

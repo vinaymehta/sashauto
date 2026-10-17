@@ -25,7 +25,7 @@ module Orders
 
       now = Time.current
       OrderFirmDate.upsert_all(dates.map { |key, date| { order_key: key, firm_on: date, created_at: now, updated_at: now } },
-                               unique_by: :order_key, update_only: %i[firm_on updated_at])
+                               unique_by: :order_key, update_only: :firm_on) # Rails sets updated_at when it changes
     end
 
     # Records today for the orders of `result` at or above the MOQ that have no Firm Date yet. Only for the latest
