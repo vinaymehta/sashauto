@@ -2,7 +2,7 @@
   <h1 style="font-size:20px;font-weight:700;margin:0 0 4px;color:#1d2636;">Order ageing</h1>
   <p style="margin:0 0 20px;color:#737373;">
     <%= @digest.row_count %> order row<%= "s" unless @digest.row_count == 1 %>
-    (one per PO Number, Part Number and Type, latest ship date) by days to their ship date, as of <%= @today.strftime("%-d %b %Y") %>.
+    by days since their Firm Date, as of <%= @today.strftime("%-d %b %Y") %>.
   </p>
   <% @bands.each do |band, rows| %>
     <% next if rows.empty? %>
@@ -18,8 +18,9 @@
           <th style="padding:8px 10px;font-weight:600;">PO Line</th>
           <th style="padding:8px 10px;font-weight:600;">Part Number</th>
           <th style="padding:8px 10px;font-weight:600;">Type</th>
+          <th style="padding:8px 10px;font-weight:600;">Firm Date</th>
+          <th style="padding:8px 10px;font-weight:600;text-align:right;">Days since firm</th>
           <th style="padding:8px 10px;font-weight:600;">Ship Date</th>
-          <th style="padding:8px 10px;font-weight:600;text-align:right;">Days to ship</th>
           <th style="padding:8px 10px;font-weight:600;text-align:right;">Qty</th>
         </tr>
       </thead>
@@ -30,8 +31,10 @@
             <td style="padding:8px 10px;color:#171717;"><%= row.po_line_number %></td>
             <td style="padding:8px 10px;color:#171717;"><%= row.part_number %></td>
             <td style="padding:8px 10px;color:#171717;"><%= row.order_type %></td>
+            <% firm = @firm_dates[row.id] %>
+            <td style="padding:8px 10px;color:#171717;white-space:nowrap;"><%= firm&.strftime("%-d %b %Y") %></td>
+            <td style="padding:8px 10px;text-align:right;font-weight:600;color:<%= ink %>;"><%= firm && Ageing::Rules.days_since(firm, @today) %></td>
             <td style="padding:8px 10px;color:#171717;white-space:nowrap;"><%= row.ship_date.strftime("%-d %b %Y") %></td>
-            <td style="padding:8px 10px;text-align:right;font-weight:600;color:<%= ink %>;"><% days = Ageing::Rules.days_until(row.ship_date, @today) %><%= days.negative? ? "#{-days} overdue" : days %></td>
             <td style="padding:8px 10px;text-align:right;color:#171717;"><%= format_qty(row.effective_qty) %></td>
           </tr>
         <% end %>

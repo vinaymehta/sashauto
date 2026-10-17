@@ -112,6 +112,7 @@ export interface QuantityChange {
   old_qty: string;
   new_qty: string;
   difference: string;
+  firm_date?: string | null; // the order's Firm Date (age colour)
 }
 
 export interface ProductConflict {
@@ -232,6 +233,7 @@ export interface SnapshotRow {
   qty: string | null;
   previous_qty: string | null;
   effective_qty: string | null;
+  firm_date?: string | null; // the order's Firm Date (age colour)
 }
 
 export interface SnapshotRowsPage extends Paginated<SnapshotRow> {
@@ -303,7 +305,7 @@ export interface OrderRow {
   moq?: string | null; // the part's MOQ (sets), sent with below_moq
   // First order of a combined order: the combined Qty and its orders (below-MOQ orders combined until the MOQ).
   combined?: { total: string; moq: string; members: { id: number; po_line_number: string; ship_date: string; qty: string; manual: boolean }[] };
-  firm_date?: string | null; // the day the order (or the combined order it starts) first reached the MOQ
+  firm_date?: string | null; // from the order file, else the day the order (or the combined order it starts) first reached the MOQ
   deliveries?: Partial<Record<DeliveryKind, OrderDeliveryInfo>>; // Orders list only
 }
 

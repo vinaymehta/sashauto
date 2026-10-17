@@ -1,7 +1,7 @@
 import type { FilterGroup } from "./ui/filter-menu";
 
-// Age group of an order row = days from today until its ship date:
-// 30-45 green, 15-29 yellow, under 15 (or the ship date has passed) red; more than 45 days away is uncoloured.
+// Age group of an order row = days since its Firm Date:
+// 30-59 green, 60-89 yellow, 90 or more red; under 30 days, or no Firm Date (Forecast never has one), is uncoloured.
 // Same rule as the server (Ageing::Rules) and the ageing email.
 // The server filters with the same rule (param `age`), using the browser's date sent as `today`.
 export type AgeGroup = "green" | "yellow" | "red" | null;
@@ -12,19 +12,19 @@ export const AGE_ROW: Record<Exclude<AgeGroup, null>, string> = {
   red: "bg-age-red hover:bg-age-red/70",
 };
 
-const AGE_TITLE: Record<Exclude<AgeGroup, null>, string> = {
-  green: "Ship date 30–45 days away",
-  yellow: "Ship date 15–29 days away",
-  red: "Ship date under 15 days away, or overdue",
+export const AGE_TITLE: Record<Exclude<AgeGroup, null>, string> = {
+  green: "30–59 days since Firm Date",
+  yellow: "60–89 days since Firm Date",
+  red: "90 days or more since Firm Date",
 };
 
 export const AGE_FILTER: FilterGroup = {
   key: "age",
   label: "Age group",
   options: [
-    { value: "red", label: "Under 15 days to ship date or overdue" },
-    { value: "yellow", label: "15–29 days to ship date" },
-    { value: "green", label: "30–45 days to ship date" },
+    { value: "red", label: "90+ days since Firm Date" },
+    { value: "yellow", label: "60–89 days since Firm Date" },
+    { value: "green", label: "30–59 days since Firm Date" },
   ],
 };
 
@@ -34,29 +34,30 @@ export function todayParam(today: Date = new Date()) {
   return `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
 }
 
-export function ageGroup(shipDate: string, today: Date = new Date()): AgeGroup {
-  const [y, m, d] = shipDate.split("-").map(Number);
-  const ship = Date.UTC(y!, m! - 1, d!);
+export function ageGroup(firmDate: string | null | undefined, today: Date = new Date()): AgeGroup {
+  if (!firmDate) return null;
+  const [y, m, d] = firmDate.split("-").map(Number);
+  const firm = Date.UTC(y!, m! - 1, d!);
   const now = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
-  const daysUntil = Math.round((ship - now) / 86_400_000);
-  if (daysUntil > 45) return null;
-  if (daysUntil >= 30) return "green";
-  if (daysUntil >= 15) return "yellow";
-  return "red";
+  const daysSince = Math.round((now - firm) / 86_400_000);
+  if (daysSince >= 90) return "red";
+  if (daysSince >= 60) return "yellow";
+  if (daysSince >= 30) return "green";
+  return null;
 }
 
 // Row props for a table row: the age tint (or the neutral hover) plus an explanatory tooltip.
-export function ageRowProps(shipDate: string, today: Date, neutral = "hover:bg-neutral-50/50") {
-  const age = ageGroup(shipDate, today);
+export function ageRowProps(firmDate: string | null | undefined, today: Date, neutral = "hover:bg-neutral-50/50") {
+  const age = ageGroup(firmDate, today);
   return { className: `transition-colors duration-150 ${age ? AGE_ROW[age] : neutral}`, title: age ? AGE_TITLE[age] : undefined };
 }
 
 export function AgeLegend() {
   const items: [string, string][] = [
-    ["bg-age-red border-age-red-ink/30", "Under 15 days to ship date or overdue"],
-    ["bg-age-yellow border-age-yellow-ink/30", "15–29 days"],
-    ["bg-age-green border-age-green-ink/30", "30–45 days"],
-    ["bg-white border-neutral-300", "More than 45 days"],
+    ["bg-age-red border-age-red-ink/30", "90+ days since Firm Date"],
+    ["bg-age-yellow border-age-yellow-ink/30", "60–89 days"],
+    ["bg-age-green border-age-green-ink/30", "30–59 days"],
+    ["bg-white border-neutral-300", "Under 30 days or no Firm Date"],
   ];
   return (
     <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 border-b border-line bg-white px-6 py-2.5 text-xs text-ink-muted">

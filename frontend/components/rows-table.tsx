@@ -77,7 +77,7 @@ export function RowsTable({ uploadId }: { uploadId: number }) {
             </thead>
             <tbody>
               {data.data.map((r) => (
-                <tr key={r.id} {...ageRowProps(r.ship_date, today)}>
+                <tr key={r.id} {...ageRowProps(r.firm_date, today)}>
                   <Td align="right" className="text-ink-muted" title={r.source_row_numbers.length > 1 ? "Duplicate rows merged into one order row" : undefined}>
                     {r.source_row_numbers.join(", ")}
                   </Td>

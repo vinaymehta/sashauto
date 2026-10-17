@@ -13,7 +13,7 @@ module Orders
     Row = Data.define(:id, :group_key, :part_number, :po_number, :po_line_number, :order_type, :ship_date, :qty)
     # anchor_id => Group; hidden: ids of the non-anchor members (not listed on their own); open: anchor ids of
     # orders (single or combined) whose Qty is still below the MOQ; firm: id => order key of every order (single or
-    # combined) at or above the MOQ. manual_ids: members added by hand; removed_ids: orders taken out of it.
+    # combined, not Forecast) at or above the MOQ. manual_ids: members added by hand; removed_ids: orders taken out of it.
     Group = Data.define(:anchor_id, :members, :total, :moq, :manual_ids, :removed_ids) do
       def combined? = members.size > 1
       def below_moq? = total < moq
@@ -108,9 +108,10 @@ module Orders
                                manual_ids: g[:manual] || [], removed_ids: g[:removed] || []) ]
       end
       hidden = built.values.flat_map { |g| g.members.map(&:id) - [ g.anchor_id ] }.to_set
-      firm = built.values.reject(&:below_moq?).to_h { |g| [ g.anchor_id, keys[g.anchor_id] ] }
+      # Forecast orders never get a Firm Date (the orders of a combined order share the Type).
+      firm = built.values.reject { |g| g.below_moq? || g.members.first.order_type == "Forecast" }.to_h { |g| [ g.anchor_id, keys[g.anchor_id] ] }
       rows.each do |row|
-        next if built.key?(row.id) || hidden.include?(row.id)
+        next if built.key?(row.id) || hidden.include?(row.id) || row.order_type == "Forecast"
 
         moq = moqs[row.part_number]
         firm[row.id] = keys[row.id] if moq && row.qty && row.qty >= moq

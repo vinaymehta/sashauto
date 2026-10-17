@@ -145,7 +145,9 @@ function buildColumns(columns: { key: string; label: string }[], uploadId?: numb
     if (label === "Unit Price") {
       return [{ key: "price_per_piece", label: "Price per piece", align: "right", sortable: false, render: pricePerPiece }, column];
     }
-    // "Firm Date" (the day the order, or its combined order, first reached the MOQ) just after Due Date.
+    // The file's own "Firm Date" column is shown as the Firm Date column below (with the date of orders it has none for).
+    if (label.trim().toLowerCase() === "firm date") return [];
+    // "Firm Date" (from the file, else the day the order, or its combined order, first reached the MOQ) just after Due Date.
     if (key === "due_date") {
       return [column, { key: "firm_date", label: "Firm Date", sortable: false, render: (r) => date(r.qty === null ? null : r.firm_date ?? null) }];
     }
@@ -163,7 +165,7 @@ const rowKey = (row: OrderRow) => `${row.manual ? "m" : "r"}${row.id}`;
 const OrderTr = memo(function OrderTr({ row, columns, open, today, role, onChanged }: {
   row: OrderRow; columns: Column[]; open: boolean; today: Date; role: Role | undefined; onChanged: () => void;
 }) {
-  const tint = ageRowProps(row.ship_date, today);
+  const tint = ageRowProps(row.qty === null ? null : row.firm_date, today); // as the Firm Date column
   return (
     <tr className={`${tint.className} ${open ? "shadow-[inset_3px_0_0_var(--color-accent)]" : ""}`} title={tint.title}>
       <Td><DeliveryCell row={row} role={role} onChanged={onChanged} /></Td>

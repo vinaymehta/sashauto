@@ -4,7 +4,7 @@ import { createContext, Fragment, useContext, useState, type ReactNode } from "r
 import { api, ApiError } from "@/lib/api";
 import type { OrderHistory, OrderRow, ScheduleGroup } from "@/lib/types";
 import { formatDate, formatQty } from "@/lib/format";
-import { ageGroup } from "../age";
+import { AGE_TITLE, ageGroup } from "../age";
 import { BoxIcon, ChevronDownIcon, ChevronRightIcon, CloseIcon, MapPinIcon, PlusIcon } from "../icons";
 import { useSession } from "../session";
 import { useToast } from "../toast";
@@ -40,7 +40,7 @@ export function OrderDetailsLink({ row }: { row: OrderRow }) {
 }
 
 const AGE_DOT = { green: "bg-age-green-ink", yellow: "bg-age-yellow-ink", red: "bg-age-red-ink" } as const;
-const AGE_DOT_TITLE = { green: "30–45 days to ship date", yellow: "15–29 days to ship date", red: "Under 15 days to ship date, or overdue" } as const;
+const AGE_DOT_TITLE = AGE_TITLE;
 
 const COLUMNS: { label: string; value: (r: OrderRow, description: string | null) => ReactNode; align?: "right" | "center" }[] = [
   { label: "Deere Part Number", value: (r) => r.part_number },
@@ -215,7 +215,7 @@ function ScheduleTr({ r, current, description, today, member = false, manual = f
   const notify = useToast();
   const admin = useSession().user?.role === "admin";
   const [busy, setBusy] = useState(false);
-  const age = ageGroup(r.ship_date, today);
+  const age = member || r.qty === null ? null : ageGroup(r.firm_date, today); // as the Firm Date column
 
   async function remove() {
     setBusy(true);
@@ -233,7 +233,7 @@ function ScheduleTr({ r, current, description, today, member = false, manual = f
   return (
     <tr className={current ? "bg-accent/5" : member ? "bg-tint-violet/25" : "hover:bg-neutral-50/60"} aria-current={current || undefined}>
       <td className={`h-11 border-b border-neutral-100 pl-5 ${member ? "shadow-[inset_3px_0_0_var(--color-tint-violet-ink)]" : ""}`}>
-        <span title={age ? AGE_DOT_TITLE[age] : "More than 45 days to ship date"}
+        <span title={age ? AGE_DOT_TITLE[age] : "Under 30 days since Firm Date, or no Firm Date"}
               className={`block h-2.5 w-2.5 rounded-full ${age ? AGE_DOT[age] : "bg-neutral-200"}`} />
       </td>
       {COLUMNS.map((c, i) => (

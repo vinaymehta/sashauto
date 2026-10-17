@@ -102,7 +102,7 @@ export function ChangesTable({ uploadId, emptyDescription, manual = false, direc
             </thead>
             <tbody>
               {data.data.map((c) => (
-                <tr key={c.id} {...ageRowProps(c.ship_date, today, "hover:bg-canvas")}>
+                <tr key={c.id} {...ageRowProps(c.firm_date, today, "hover:bg-canvas")}>
                   <Td className="font-medium">{c.po_number}</Td>
                   <Td className="text-ink-muted">{c.po_line_number}</Td>
                   <Td>{c.part_number}</Td>

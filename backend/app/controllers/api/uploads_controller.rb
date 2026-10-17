@@ -69,7 +69,9 @@ module Api
       scope = scope.order(CHANGE_SORTS.fetch(params[:sort].to_s, CHANGE_SORTS["ship_date"])).order(:id)
 
       changes, meta = paginate(scope)
-      render json: { data: changes.map { |c| Serializers.quantity_change(c) }, meta: meta.merge(net: Serializers.qty(net), rescheduled: rescheduled) }
+      firm_dates = Orders::FirmDates.for_rows(changes)
+      render json: { data: changes.map { |c| Serializers.quantity_change(c).merge(firm_date: firm_dates[c.id]) },
+                     meta: meta.merge(net: Serializers.qty(net), rescheduled: rescheduled) }
     end
 
     # Uploaded-rows sort keys => fixed SQL (whitelist). "po" and "part" kept for older links.
@@ -102,7 +104,8 @@ module Api
 
       rows, meta = paginate(scope)
       meta = meta.merge(sort: sort, direction: direction)
-      render json: { data: rows.map { |r| Serializers.snapshot_row(r) }, meta: meta,
+      firm_dates = Orders::FirmDates.for_rows(rows)
+      render json: { data: rows.map { |r| Serializers.snapshot_row(r).merge(firm_date: firm_dates[r.id]) }, meta: meta,
                      ship_to_locations: batch.order_snapshot_rows.distinct.order(:ship_to_location).pluck(:ship_to_location) }
     end
 

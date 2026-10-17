@@ -1,10 +1,9 @@
 module Ageing
-  # Builds the ageing email of one upload from its CURRENT rows: one row per PO Number + Part Number + Type
-  # (the latest Ship Date), i.e. the rows shown on the Orders page, grouped by age band (Ageing::Rules: red under 15
-  # days to ship date or overdue, yellow 15-29 days, green 30-45 days; orders more than 45 days away are not listed).
+  # Builds the ageing email of one upload from its order rows, grouped by age band (Ageing::Rules: days since the
+  # Firm Date; green 30-59, yellow 60-89, red 90 or more; orders under 30 days or without a Firm Date are not listed).
   #
   # Called inside the upload's commit transaction (outbox): the digest commits with the upload, and the
-  # caller hands it to Sidekiq after commit. Returns nil when no current row is 45 days or less from its ship date.
+  # caller hands it to Sidekiq after commit. Returns nil when no row is in a band.
   class DigestBuilder
     def self.call(batch:, today:)
       new(batch, today).call
@@ -16,8 +15,7 @@ module Ageing
     end
 
     def call
-      current = @batch.order_rows.current_rows
-      counts = Rules::BANDS.to_h { |band| [ band, current.where(ship_date: Rules.ship_date_range(band, @today)).count ] }
+      counts = Rules::BANDS.to_h { |band| [ band, Rules.in_bands(@batch.order_rows, [ band ], @today).count ] }
       total = counts.values.sum
       return nil if total.zero?
 
