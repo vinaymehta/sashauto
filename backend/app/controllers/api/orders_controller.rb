@@ -46,7 +46,7 @@ module Api
       combined = Orders::Combiner.call(batch&.id)
       scope = filter(search(dataset, (params[:search].presence || params[:q]).to_s.strip.first(100)), combined)
       scope = scope.where("order_rows.manual OR order_rows.id NOT IN (?)", combined.hidden.to_a) if combined.hidden.any?
-      scope, sort, direction = apply_sort(scope, sorts_for(columns), default: DEFAULT_SORT)
+      scope, sort, direction = apply_sort(scope, sorts_for(columns).merge("firm_date" => firm_date_sql(combined)), default: DEFAULT_SORT)
       # Manual orders are always listed first; each part keeps the chosen sort.
       scope = scope.reorder(Arel.sql("order_rows.manual DESC"), *scope.order_values)
 
@@ -79,7 +79,7 @@ module Api
         source: batch && { uploaded_at: batch.completed_at, original_filename: batch.original_filename, upload_id: batch.id,
                            latest: current_view? },
         # Values present in the current data, for the filter panel.
-        facets: { ship_to_locations: ship_to_locations, commodity_types: commodity_types }
+        facets: { ship_to_locations: ship_to_locations, commodity_types: commodity_types, vendors: vendor_facet(dataset) }
       }
     end
 
@@ -196,6 +196,15 @@ module Api
         # The combined order's Firm Date: the day it reached the MOQ (its orders keep their own).
         firm_date: OrderFirmDate.find_by(order_key: Orders::FirmDates.combined_key(VendorOrderPlacement.order_key(anchor)))&.firm_on,
         candidate_ids: current_user.admin? ? Orders::Merges.candidates(anchor, combined).map(&:id) : [] }
+    end
+
+    # The Firm Date of a listed row in SQL (sorting): the combined order's own date for a row that starts one, none for
+    # manual orders (as shown on the page).
+    def firm_date_sql(combined)
+      key = Orders::FirmDates.key_sql("order_rows")
+      anchors = combined.groups.values.select(&:combined?).map { |g| Integer(g.anchor_id) }
+      key = "CASE WHEN order_rows.id IN (#{anchors.join(',')}) THEN #{Orders::FirmDates.combined_key_sql(key)} ELSE #{key} END" if anchors.any?
+      "(SELECT f.firm_on FROM order_firm_dates f WHERE NOT order_rows.manual AND f.order_key = #{key})"
     end
 
     # Key of a listed row's Firm Date: the combined order's own key when the row starts a combined order.
@@ -319,7 +328,8 @@ module Api
       OrderDelivery.active.where(kind: "outbound").exists? || params[:status].present? ||
         (params[:search].presence || params[:q].presence).present? ||
         params[:type].present? || params[:ship_to].present? || params[:commodity_type].present? ||
-        params[:ship_date_from].present? || params[:ship_date_to].present? || params[:age].present? || params[:po].present?
+        params[:ship_date_from].present? || params[:ship_date_to].present? || params[:age].present? || params[:po].present? || params[:combined].present? ||
+        %i[moq timing source vendor firm_date_from firm_date_to].any? { |k| params[k].present? }
     end
 
     # SORTS plus the Excel columns without a typed column, sorted by their imported value
@@ -355,11 +365,90 @@ module Api
       scope = filter_by_age(scope, combined_ids: combined.groups.values.select(&:combined?).map(&:anchor_id), manual_column: true)
       scope = filter_by_status(scope)
       scope = filter_by_po(scope)
+      scope = filter_by_combined(scope, combined)
+      scope = filter_by_moq(scope, combined)
+      scope = filter_by_timing(scope)
+      scope = filter_by_source(scope)
+      scope = filter_by_vendor(scope)
+      scope = filter_by_firm_date(scope, combined)
       from = iso_date(params[:ship_date_from])
       to = iso_date(params[:ship_date_to])
       scope = scope.where(ship_date: from..) if from
       scope = scope.where(ship_date: ..to) if to
       scope
+    end
+
+    # Vendors that supply a part of the listed orders, for the Vendor filter: [{ id, name }].
+    def vendor_facet(dataset)
+      Vendor.joins(vendor_products: :product).where(products: { part_number: dataset.unscope(:order).select(:part_number) })
+            .distinct.order(:name).pluck(:id, :name).map { |id, name| { id: id, name: name } }
+    end
+
+    # The part's MOQ in sets (what order Qty counts), in SQL.
+    MOQ_SQL = "(SELECT COALESCE(p.moq_sets, p.moq) FROM products p WHERE p.part_number = order_rows.part_number)".freeze
+
+    # MOQ filter (moq=below,reached): orders (single or combined) still below the part's MOQ, or at / above it (with a
+    # Qty, for parts with an MOQ). A combined order counts by its total, as listed.
+    def filter_by_moq(scope, combined)
+      values = multi_param(:moq, %w[below reached])
+      return scope if values.empty? || values.size == 2
+
+      open_ids = combined.open.to_a.map { |id| Integer(id) }
+      below = "((NOT order_rows.manual AND order_rows.id IN (#{open_ids.presence&.join(',') || 'NULL'})) OR " \
+              "(order_rows.manual AND order_rows.qty > 0 AND order_rows.qty < #{MOQ_SQL}))"
+      values == [ "below" ] ? scope.where(below) : scope.where("order_rows.qty > 0 AND #{MOQ_SQL} IS NOT NULL AND NOT #{below}")
+    end
+
+    # Ship timing filter (timing=overdue,next30): ship date before today, or from today to 30 days ahead (today = the
+    # browser's IST date, as the age colours).
+    def filter_by_timing(scope)
+      values = multi_param(:timing, %w[overdue next30])
+      return scope if values.empty?
+
+      today = request_today
+      ranges = values.map { |v| v == "overdue" ? ...today : today..(today + 30) }
+      ranges.map { |range| scope.where(ship_date: range) }.reduce(:or)
+    end
+
+    # Source filter (source=upload,manual): rows of the uploaded file, or manual orders.
+    def filter_by_source(scope)
+      values = multi_param(:source, %w[upload manual])
+      return scope if values.empty? || values.size == 2
+
+      scope.where(manual: values == [ "manual" ])
+    end
+
+    # Vendor filter (vendor=id,id): orders whose part one of these vendors supplies.
+    def filter_by_vendor(scope)
+      ids = multi_param(:vendor).filter_map { |v| Integer(v, exception: false) }
+      return scope if ids.empty?
+
+      scope.where("EXISTS (SELECT 1 FROM vendor_products vp JOIN products p ON p.id = vp.product_id " \
+                  "WHERE p.part_number = order_rows.part_number AND vp.vendor_id IN (?))", ids)
+    end
+
+    # Firm Date range filter (firm_date_from / firm_date_to): by the Firm Date shown (a combined order's own).
+    def filter_by_firm_date(scope, combined)
+      from = iso_date(params[:firm_date_from])
+      to = iso_date(params[:firm_date_to])
+      return scope unless from || to
+
+      firm = firm_date_sql(combined)
+      scope = scope.where("#{firm} >= ?", from) if from
+      scope = scope.where("#{firm} <= ?", to) if to
+      scope
+    end
+
+    # Combined filter (combined=yes,no): orders that are a combined order (listed as its first row), or the others.
+    def filter_by_combined(scope, combined)
+      values = multi_param(:combined, %w[yes no])
+      return scope if values.empty? || values.size == 2
+
+      anchors = combined.groups.values.select(&:combined?).map(&:anchor_id)
+      return values == [ "yes" ] ? scope.none : scope if anchors.empty?
+
+      condition = scope.sanitize_sql_array([ "NOT order_rows.manual AND order_rows.id IN (?)", anchors ])
+      values == [ "yes" ] ? scope.where(condition) : scope.where.not(condition)
     end
 
     # Vendor PO filter (po=none,generated): orders with a Qty and no PO generated yet, or with at least one PO.

@@ -1,16 +1,18 @@
 require "bigdecimal"
 
 module Dashboard
-  # Money figures of the dashboard, each with the series for its graph:
-  # - open_sale: Deere orders still to deliver, i.e. Firm and Order rows of the latest upload, and active manual
+  # Money figures of the dashboard, each with the series for its graph. Orders are counted as the Orders page lists
+  # them (Dashboard::Overview): a combined order once, at the total of its rows and on its first row's ship date.
+  # - open_sale: Deere orders still to deliver, i.e. Firm and Order orders of the latest upload, and active manual
   #   orders, without an active "Delivered to Deere" (outbound) mark. Value = Qty × Unit Price ÷ 100 (Deere prices per
   #   100 pcs; USD). by_date: value per ship date (the graph groups it by week or month).
   # - open_supplier: vendor POs whose order has no status mark yet (not Received at SASH Faridabad). Value = PO qty ×
   #   the vendor's unit price, per currency (there is no exchange rate). by_vendor: value per vendor and currency.
   # - ytd_customer_spend: Deere's Firm and Order orders with a ship date from the start of the financial year
-  #   (1 April) to today: the last version of each order across every upload, plus manual orders. Same value as
-  #   open_sale. by_date: value per ship date from series_from (the earlier of the financial year start and six months
-  #   ago) to today, for the graph's Month / 6 months / Year views.
+  #   (1 April) to today: the last version of each order across every upload (rows of a combined order of the latest
+  #   upload counted as that one order), plus manual orders. Same value as open_sale. by_date: value per ship date from
+  #   series_from (the earlier of the financial year start and six months ago) to today, for the graph's Month /
+  #   6 months / Year views.
   # The Unit Price is the order's own (file column "Unit Price"), else the part's customer price (Products).
   class Money
     TYPES = %w[Firm Order].freeze
@@ -18,12 +20,13 @@ module Dashboard
     # One sale order: part, Qty, Unit Price text (per 100 pcs) and ship date.
     Sale = Data.define(:part, :qty, :price, :ship_date)
 
-    def self.call(today: Time.find_zone!(AppConfig.ageing_time_zone).today)
-      new(today).call
+    def self.call(today: Time.find_zone!(AppConfig.ageing_time_zone).today, overview: nil)
+      new(today, overview || Overview.new(today)).call
     end
 
-    def initialize(today)
+    def initialize(today, overview)
       @today = today
+      @overview = overview
     end
 
     def call
@@ -33,25 +36,40 @@ module Dashboard
     private
 
     def open_sale
-      batch = UploadBatch.latest_completed
-      rows = batch ? OrderRow.where(upload_batch_id: batch.id, order_type: TYPES).pluck(:group_key, :po_line_number, :ship_date, :part_number, :qty, Arel.sql("source_data->>'Unit Price'")) : []
-      keyed = rows.map { |g, line, ship, part, qty, price| [ order_key(g, line, ship), Sale.new(part, qty, price, ship) ] } +
-              manual_orders.map { |id, sale| [ VendorOrderPlacement.order_key(ManualOrder.new(id: id)), sale ] }
-      delivered = OrderDelivery.active.where(kind: "outbound", order_key: keyed.map(&:first)).distinct.pluck(:order_key).to_set
-      sales = keyed.reject { |key, _| delivered.include?(key) }.map(&:last)
-      sale_total(sales).merge(by_date: by_date(sales))
+      open = @overview.open_orders
+      totals(open.map { |o| [ o.ship_date, o.value, o.unpriced ] })
     end
 
     def ytd_customer_spend
       from = @today.month >= 4 ? Date.new(@today.year, 4, 1) : Date.new(@today.year - 1, 4, 1)
       series_from = [ from, (@today << 5).beginning_of_month ].min
-      rows = OrderRow.where(order_type: TYPES, ship_date: series_from..@today)
-                     .select("DISTINCT ON (group_key, po_line_number, ship_date) part_number, qty, ship_date, source_data->>'Unit Price' AS unit_price")
-                     .order(:group_key, :po_line_number, :ship_date, upload_batch_id: :desc)
-                     .map { |r| Sale.new(r.part_number, r.qty, r.unit_price, r.ship_date) }
-      sales = rows + manual_orders(ship_date: series_from..@today).map(&:last)
-      ytd = sales.select { |s| s.ship_date >= from }
-      sale_total(ytd).merge(from: from, to: @today, series_from: series_from, by_date: by_date(sales))
+      # Every row of each order's last version (the latest upload that has it); an order the file lists twice (e.g. once
+      # without a Qty) counts once, with all of its rows.
+      latest = OrderRow.where(order_type: TYPES, ship_date: series_from..@today)
+                       .select("order_rows.*, MAX(upload_batch_id) OVER (PARTITION BY group_key, po_line_number, ship_date) AS latest_batch_id")
+      rows = OrderRow.from(latest, :order_rows).where("order_rows.upload_batch_id = order_rows.latest_batch_id")
+                     .pluck(:group_key, :po_line_number, :part_number, :qty, :ship_date, Arel.sql("source_data->>'Unit Price'"))
+                     .map { |g, line, part, qty, ship, price| [ order_key(g, line, ship), Sale.new(part, qty, price, ship) ] }
+      sales = rows + manual_orders(ship_date: series_from..@today)
+      values = values_of(sales.map(&:last))
+      # Rows of one combined order count as one order: its first (earliest) ship date, the total value.
+      anchors = @overview.anchor_keys
+      orders = sales.zip(values).group_by { |(key, _), _| anchors[key] || key }.values.map do |list|
+        [ list.map { |(_, sale), _| sale.ship_date }.min, list.sum(BigDecimal("0")) { |_, v| v || 0 }, list.any? { |_, v| v.nil? } ]
+      end
+      ytd = orders.select { |ship, *| ship >= from }
+      totals(ytd).merge(from: from, to: @today, series_from: series_from, by_date: by_date(orders))
+    end
+
+    # { amount, orders, without_price, currency, by_date } of [ship date, value, unpriced] orders.
+    def totals(orders)
+      { amount: money(orders.sum(BigDecimal("0")) { |_, v, _| v }), orders: orders.size, without_price: orders.count { |*, unpriced| unpriced },
+        currency: SALE_CURRENCY, by_date: by_date(orders) }
+    end
+
+    # [{ date, amount }] of [ship date, value, unpriced] orders by ship date.
+    def by_date(orders)
+      orders.group_by(&:first).sort.map { |date, list| { date: date, amount: money(list.sum(BigDecimal("0")) { |_, v, _| v }) } }
     end
 
     def open_supplier
@@ -70,24 +88,11 @@ module Dashboard
       { by_currency: totals, orders: open.size, without_price: unpriced.size, by_vendor: by_vendor }
     end
 
-    # Active manual orders of type Firm / Order: [[id, Sale], ...].
+    # Active manual orders of type Firm / Order: [[order key, Sale], ...].
     def manual_orders(**where)
       ManualOrder.active.where(order_type: TYPES, **where)
                  .pluck(:id, :part_number, :qty, Arel.sql("source_data->>'Unit Price'"), :ship_date)
-                 .map { |id, part, qty, price, ship| [ id, Sale.new(part, qty, price, ship) ] }
-    end
-
-    # { amount, orders, without_price, currency } of sale orders.
-    def sale_total(sales)
-      values = values_of(sales)
-      { amount: money(values.compact.sum(BigDecimal("0"))), orders: sales.size, without_price: values.count(nil), currency: SALE_CURRENCY }
-    end
-
-    # [{ date, amount }] of sale orders by ship date.
-    def by_date(sales)
-      totals = Hash.new(BigDecimal("0"))
-      sales.zip(values_of(sales)).each { |sale, value| totals[sale.ship_date] += value if value }
-      totals.keys.sort.map { |d| { date: d, amount: money(totals[d]) } }
+                 .map { |id, part, qty, price, ship| [ VendorOrderPlacement.order_key(ManualOrder.new(id: id)), Sale.new(part, qty, price, ship) ] }
     end
 
     # Each sale's value (Qty × price per 100 pcs ÷ 100), nil without a price. Cached per list.

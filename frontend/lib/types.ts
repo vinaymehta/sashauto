@@ -404,7 +404,7 @@ export interface OrdersPage {
   meta: PageMeta & { sort?: string; direction?: "asc" | "desc" };
   // The shown upload; `latest` = the current order data (it also lists the manual orders).
   source: { uploaded_at: string; original_filename: string; upload_id: number; latest: boolean } | null;
-  facets: { ship_to_locations: string[]; commodity_types: string[] } | null;
+  facets: { ship_to_locations: string[]; commodity_types: string[]; vendors?: { id: number; name: string }[] } | null;
   columns?: { key: string; label: string }[];
 }
 

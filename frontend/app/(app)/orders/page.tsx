@@ -38,6 +38,7 @@ interface Column {
   label: string;
   align?: Align;
   sortable?: boolean; // false for columns the app computes (not in the file)
+  header?: string; // shown in the table header instead of `label` (which also names the file column to read)
   render: (row: OrderRow) => ReactNode;
 }
 
@@ -143,13 +144,14 @@ function buildColumns(columns: { key: string; label: string }[], uploadId?: numb
     };
     // "Price per piece" (Unit Price ÷ 100) just before the file's Unit Price.
     if (label === "Unit Price") {
-      return [{ key: "price_per_piece", label: "Price per piece", align: "right", sortable: false, render: pricePerPiece }, column];
+      return [{ key: "price_per_piece", label: "Price per piece", header: "Price per piece (Unit Price ÷ 100)", align: "right", sortable: false, render: pricePerPiece },
+              { ...column, header: "Unit Price (Price per piece × 100)" }];
     }
     // The file's own "Firm Date" column is shown as the Firm Date column below (with the date of orders it has none for).
     if (label.trim().toLowerCase() === "firm date") return [];
     // "Firm Date" (from the file, else the day the order, or its combined order, first reached the MOQ) just after Due Date.
     if (key === "due_date") {
-      return [column, { key: "firm_date", label: "Firm Date", sortable: false, render: (r) => date(r.qty === null ? null : r.firm_date ?? null) }];
+      return [column, { key: "firm_date", label: "Firm Date", render: (r) => date(r.qty === null ? null : r.firm_date ?? null) }];
     }
     return [column];
   });
@@ -212,18 +214,25 @@ function OrdersView() {
   // useApi keeps the previous response while a new page loads, so the option lists and columns never empty.
   const facets = data?.facets ?? null;
 
+  // Grouped in sections, in the order orders are usually narrowed down: what they are, when, purchasing, part and place.
   const filters: FilterGroup[] = [
-    { key: "type", label: "Type", options: [{ value: "Order", label: "Order" }, { value: "Firm", label: "Firm" }, { value: "Forecast", label: "Forecast" }] },
-    { key: "ship_to", label: "Ship To Location", options: (facets?.ship_to_locations ?? []).map((v) => ({ value: v, label: v })) },
-    { key: "ship_date", label: "Ship date", type: "date-range", options: [] },
-    { key: "commodity_type", label: "Commodity Type", options: (facets?.commodity_types ?? []).map((v) => ({ value: v, label: v })) },
-    AGE_FILTER,
-    { key: "po", label: "Vendor PO", options: [{ value: "none", label: "No PO yet" }, { value: "generated", label: "PO generated" }] },
+    { section: "Order", key: "type", label: "Type", options: [{ value: "Order", label: "Order" }, { value: "Firm", label: "Firm" }, { value: "Forecast", label: "Forecast" }] },
     // Fulfilled orders (delivered to Deere) are hidden unless chosen here.
-    { key: "status", label: "Status", options: [
+    { section: "Order", key: "status", label: "Status", options: [
       { value: "none", label: "No status" }, { value: "received", label: "Received" }, { value: "dispatched", label: "Dispatched" },
       { value: "inbound", label: "Inbound" }, { value: "outbound", label: "Outbound (fulfilled)" },
     ] },
+    { section: "Order", key: "source", label: "Source", options: [{ value: "upload", label: "Uploaded file" }, { value: "manual", label: "Manual orders" }] },
+    { section: "Dates", key: "timing", label: "Ship timing", options: [{ value: "overdue", label: "Past ship date" }, { value: "next30", label: "Shipping in next 30 days" }] },
+    { section: "Dates", key: "ship_date", label: "Ship date", type: "date-range", options: [] },
+    { section: "Dates", key: "firm_date", label: "Firm date", type: "date-range", options: [] },
+    { ...AGE_FILTER, section: "Dates" },
+    { section: "Purchasing", key: "po", label: "Vendor PO", options: [{ value: "none", label: "No PO yet" }, { value: "generated", label: "PO generated" }] },
+    { section: "Purchasing", key: "vendor", label: "Vendor", options: (facets?.vendors ?? []).map((v) => ({ value: String(v.id), label: v.name })) },
+    { section: "Purchasing", key: "moq", label: "MOQ", options: [{ value: "below", label: "Below MOQ" }, { value: "reached", label: "Reached MOQ" }] },
+    { section: "Purchasing", key: "combined", label: "Combined", options: [{ value: "yes", label: "Combined orders" }, { value: "no", label: "Not combined" }] },
+    { section: "Part & delivery", key: "commodity_type", label: "Commodity Type", options: (facets?.commodity_types ?? []).map((v) => ({ value: v, label: v })) },
+    { section: "Part & delivery", key: "ship_to", label: "Ship To Location", options: (facets?.ship_to_locations ?? []).map((v) => ({ value: v, label: v })) },
   ];
   const filtered = term !== "" || Object.values(list.filters).some(Boolean);
   const clearAll = () => { list.clearFilters(); setSearch(""); };
@@ -391,8 +400,8 @@ function OrdersView() {
                 <tr>
                   <Th>Status</Th>
                   {COLUMNS.map((c) => (c.sortable === false
-                    ? <Th key={c.key} align={c.align ?? "left"}>{c.label}</Th>
-                    : <SortTh key={c.key} label={c.label} sortKey={c.key} align={c.align ?? "left"}
+                    ? <Th key={c.key} align={c.align ?? "left"}>{c.header ?? c.label}</Th>
+                    : <SortTh key={c.key} label={c.header ?? c.label} sortKey={c.key} align={c.align ?? "left"}
                               sort={list.sort} direction={list.direction} onSort={list.toggleSort} />
                   ))}
                 </tr>

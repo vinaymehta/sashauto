@@ -11,6 +11,9 @@ module Dashboard
 
     def call
       latest = UploadBatch.latest_completed
+      today = Time.find_zone!(AppConfig.ageing_time_zone).today
+      # One order list for both (Dashboard::Overview), so their counts agree.
+      overview = Overview.new(today)
       {
         latest: latest && latest_summary(latest),
         totals: totals,
@@ -20,9 +23,9 @@ module Dashboard
         top_changes: top_changes,
         recent_uploads: UploadBatch.includes(:uploaded_by).order(created_at: :desc, id: :desc).limit(6).map { |b| Serializers.upload_batch(b) },
         # Executive figures: open sale and supplier values, and this financial year's customer spend (Dashboard::Money).
-        money: Money.call,
+        money: Money.call(today: today, overview: overview),
         # Open orders, pipeline, ageing, outlook, top parts and upcoming shipments (Dashboard::Overview).
-        overview: Overview.call
+        overview: overview.call
       }
     end
 
