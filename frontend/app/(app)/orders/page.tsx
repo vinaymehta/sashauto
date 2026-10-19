@@ -179,6 +179,10 @@ const OrderTr = memo(function OrderTr({ row, columns, open, today, role, onChang
 });
 
 // ?tab=changes opens the Quantity changes tab (e.g. "View all" on the Dashboard).
+// Filter keys a link to the Orders page may set.
+const LINKABLE_FILTERS = ["type", "status", "source", "timing", "ship_date_from", "ship_date_to", "firm_date_from", "firm_date_to", "age",
+  "po", "vendor", "moq", "combined", "commodity_type", "ship_to"];
+
 export default function OrdersPage() {
   return (
     <Suspense fallback={<TableSkeleton rows={10} columns={8} />}>
@@ -189,7 +193,11 @@ export default function OrdersPage() {
 
 function OrdersView() {
   const params = useSearchParams();
-  const list = useListQuery({}, 25, { key: "ship_date", direction: "asc" });
+  // Filters can come in the link (e.g. from the dashboard: /orders?timing=overdue&type=Firm,Order).
+  const [linkedFilters] = useState(() => Object.fromEntries(
+    LINKABLE_FILTERS.flatMap((key) => (params.get(key) ? [[key, params.get(key)!]] : [])),
+  ));
+  const list = useListQuery(linkedFilters, 25, { key: "ship_date", direction: "asc" });
   const [search, setSearch] = useState("");
   const term = useDebounced(search.trim());
   const role = useSession().user?.role;
@@ -295,7 +303,8 @@ function OrdersView() {
   // Fall back to the order rows when the chosen tab no longer exists (e.g. a new first upload).
   const activeTab: TabKey = tabs.some((t) => t.key === tab) ? tab : "orders";
 
-  const [panel, setPanel] = useState<"upload" | "create" | null>(null);
+  // ?upload=1 (the dashboard's "Upload new file") opens the upload panel.
+  const [panel, setPanel] = useState<"upload" | "create" | null>(() => (params.get("upload") === "1" && !manager ? "upload" : null));
   const reloadDashboard = dashboard.reload;
   const reloadUploads = uploads.reload;
   const onFinished = useCallback((upload: UploadDetail) => {

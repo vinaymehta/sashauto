@@ -26,6 +26,8 @@ function formatMoney(amount: string | number, currency: string, compact = false)
   }).format(Number(amount));
 }
 const usd = (v: string | number, compact = false) => formatMoney(v, "USD", compact);
+// The Orders page filtered to open orders (Firm and Order; delivered ones are hidden there by default).
+const OPEN_ORDERS = "/orders?type=Firm,Order";
 const plural = (n: number, word: string) => `${formatCount(n)} ${word}${n === 1 ? "" : "s"}`;
 const ordersText = (n: number, missing: number) => `${plural(n, "order")}${missing ? ` · ${formatCount(missing)} without a price` : ""}`;
 
@@ -94,7 +96,7 @@ export default function DashboardPage() {
     <PageHeader
       title="Dashboard"
       description="Open orders with Deere and vendors, where they stand, and Deere's spend with SASH this financial year."
-      actions={<Link href="/orders"><Button variant="primary"><UploadIcon size={15} />Upload new file</Button></Link>}
+      actions={<Link href="/orders?upload=1"><Button variant="primary"><UploadIcon size={15} />Upload new file</Button></Link>}
     />
   );
 
@@ -116,7 +118,7 @@ export default function DashboardPage() {
   }
 
   const attention = [
-    overview.kpis.overdue.count > 0 && { text: `${plural(overview.kpis.overdue.count, "open order")} past the ship date`, href: "/orders" },
+    overview.kpis.overdue.count > 0 && { text: `${plural(overview.kpis.overdue.count, "open order")} past the ship date`, href: `${OPEN_ORDERS}&timing=overdue` },
     totals.open_conflicts > 0 && { text: `${totals.open_conflicts} Commodity Type conflict${totals.open_conflicts === 1 ? "" : "s"} to review`, href: "/products?conflicts=open" },
     totals.emails_failed > 0 && { text: `${totals.emails_failed} email${totals.emails_failed === 1 ? "" : "s"} failed to send`, href: "/orders" },
     totals.in_progress > 0 && { text: `${totals.in_progress} upload${totals.in_progress === 1 ? " is" : "s are"} processing`, href: "/orders" },
@@ -142,7 +144,7 @@ export default function DashboardPage() {
 
         {/* Money (Dashboard::Money). */}
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          <StatCard size="lg" label="Total Open Value (Sale)" info={<>Value of Deere orders <b>not yet delivered</b>: Firm and Order orders of the latest upload and manual orders, without a &quot;Delivered to Deere&quot; (Outbound) status. Value = Qty × Unit Price ÷ 100 (Deere prices are per 100 pcs), in USD. Forecast is not counted.</>} icon={<BoxIcon size={16} />} tint="violet" href="/orders"
+          <StatCard size="lg" label="Total Open Value (Sale)" info={<>Value of Deere orders <b>not yet delivered</b>: Firm and Order orders of the latest upload and manual orders, without a &quot;Delivered to Deere&quot; (Outbound) status. Value = Qty × Unit Price ÷ 100 (Deere prices are per 100 pcs), in USD. Forecast is not counted.</>} icon={<BoxIcon size={16} />} tint="violet" href={OPEN_ORDERS}
                     value={formatMoney(sale.amount, sale.currency)}
                     detail={`${ordersText(sale.orders, sale.without_price)} not yet delivered to Deere`} />
           <StatCard size="lg" label="Total Open Value (Supplier)" info={<>Value of the vendor POs generated in the app whose order has <b>no status yet</b> (not received at SASH Faridabad). Value = PO quantity × the vendor&apos;s unit price. Shown per currency, as there is no exchange rate.</>} icon={<TruckIcon size={16} />} tint="amber"
@@ -156,13 +158,13 @@ export default function DashboardPage() {
 
         {/* Operations (Dashboard::Overview). */}
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard label="Open orders" info={<>Firm and Order orders <b>not yet delivered to Deere</b>, counted as the Orders page lists them (a combined order counts once). The amount is their value in USD.</>} icon={<FileIcon size={16} />} tint="neutral" href="/orders"
+          <StatCard label="Open orders" info={<>Firm and Order orders <b>not yet delivered to Deere</b>, counted as the Orders page lists them (a combined order counts once). The amount is their value in USD.</>} icon={<FileIcon size={16} />} tint="neutral" href={OPEN_ORDERS}
                     value={formatCount(kpis.open.count)} detail={`${usd(kpis.open.value, true)} · Firm and Order`} />
-          <StatCard label="Shipping in 30 days" info={<>Open orders with a <b>ship date from today to 30 days ahead</b>, and their value. They are listed in Next shipments.</>} icon={<CalendarIcon size={16} />} tint="violet"
+          <StatCard label="Shipping in 30 days" href={`${OPEN_ORDERS}&timing=next30`} info={<>Open orders with a <b>ship date from today to 30 days ahead</b>, and their value. They are listed in Next shipments.</>} icon={<CalendarIcon size={16} />} tint="violet"
                     value={formatCount(kpis.due_30.count)} detail={`${usd(kpis.due_30.value, true)} due by ${formatDate(addDays(30))}`} />
-          <StatCard label="Past ship date" info={<>Open orders whose <b>ship date has passed</b> and that are not yet marked delivered to Deere, and their value.</>} icon={<AlertIcon size={16} />} tint="dec" tone={kpis.overdue.count ? "bad" : undefined}
+          <StatCard label="Past ship date" href={`${OPEN_ORDERS}&timing=overdue`} info={<>Open orders whose <b>ship date has passed</b> and that are not yet marked delivered to Deere, and their value.</>} icon={<AlertIcon size={16} />} tint="dec" tone={kpis.overdue.count ? "bad" : undefined}
                     value={formatCount(kpis.overdue.count)} detail={`${usd(kpis.overdue.value, true)} not yet delivered`} />
-          <StatCard label="PO coverage" info={<>Share of the <b>open order value that already has a vendor PO</b> (Generate PO). Below: open orders with a Qty and no PO yet.</>} icon={<CheckIcon size={16} />} tint="aqua"
+          <StatCard label="PO coverage" href={`${OPEN_ORDERS}&po=none`} info={<>Share of the <b>open order value that already has a vendor PO</b> (Generate PO). Below: open orders with a Qty and no PO yet.</>} icon={<CheckIcon size={16} />} tint="aqua"
                     value={`${kpis.po_coverage.percent.toLocaleString("en-US", { maximumFractionDigits: 1 })}%`}
                     detail={`${plural(kpis.po_coverage.without_po.count, "open order")} without a vendor PO`}>
             <Progress percent={kpis.po_coverage.percent} />
@@ -200,7 +202,7 @@ export default function DashboardPage() {
             <TopParts items={overview.top_parts} total={Number(kpis.open.value)} onOpenOrder={setOrder} />
           </Card>
           <Card title="Next shipments" info={<>The next <b>8 open orders to ship</b> within 30 days, overdue first, with their status and whether a vendor PO has been generated.</>} description="Open orders shipping in the next 30 days, overdue first"
-                action={<Link href="/orders" className="shrink-0 text-sm text-ink-muted hover:text-ink">All orders →</Link>}>
+                action={<Link href={`${OPEN_ORDERS}&timing=overdue,next30`} className="shrink-0 text-sm text-ink-muted hover:text-ink">All orders →</Link>}>
             <Upcoming items={overview.upcoming} onOpenOrder={setOrder} />
           </Card>
         </div>
@@ -292,13 +294,15 @@ function Progress({ percent }: { percent: number }) {
   );
 }
 
-// Each status step with its number of open orders, their value and a bar against the largest step.
+// Each status step with its number of open orders, their value and a bar against the largest step; a step opens its
+// orders on the Orders page.
 function Pipeline({ items }: { items: DashboardOverview["pipeline"] }) {
   const max = Math.max(1, ...items.map((i) => i.count));
   return (
-    <ol className="space-y-4">
+    <ol className="-mx-2 space-y-1">
       {items.map((item, i) => (
         <li key={item.status}>
+          <Link href={`${OPEN_ORDERS}&status=${item.status}`} className="block rounded-md px-2 py-1.5 transition-colors hover:bg-neutral-50">
           <div className="mb-1.5 flex items-baseline justify-between gap-3 text-sm">
             <span className="flex min-w-0 items-center gap-2">
               <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-2xs font-semibold text-ink-muted">{i + 1}</span>
@@ -311,6 +315,7 @@ function Pipeline({ items }: { items: DashboardOverview["pipeline"] }) {
                  style={{ width: `${Math.max((item.count / max) * 100, item.count ? 2 : 0)}%` }} />
           </div>
           <p className="mt-1 text-xs text-ink-faint">{STATUS[item.status].hint}</p>
+          </Link>
         </li>
       ))}
     </ol>
@@ -328,16 +333,26 @@ function Ageing({ items }: { items: DashboardOverview["ageing"] }) {
                title={`${AGE[item.band].label}: ${plural(item.count, "order")}`} />
         ) : null)}
       </div>
-      <ul className="mt-5 divide-y divide-neutral-100">
-        {items.map((item) => (
-          <li key={item.band} className="flex items-center gap-3 py-2.5 text-sm">
-            <span aria-hidden className={`h-2.5 w-2.5 shrink-0 rounded-sm ${AGE[item.band].color}`} />
-            <span className="min-w-0 flex-1 truncate text-ink">{AGE[item.band].label}</span>
-            <span className="tabular text-ink">{formatCount(item.count)}</span>
-            <span className="tabular w-16 text-right text-xs text-ink-muted">{usd(item.value, true)}</span>
-            <span className="tabular w-10 text-right text-xs text-ink-muted">{total ? Math.round((item.count / total) * 100) : 0}%</span>
-          </li>
-        ))}
+      <ul className="-mx-2 mt-5 divide-y divide-neutral-100">
+        {items.map((item) => {
+          const row = (
+            <>
+              <span aria-hidden className={`h-2.5 w-2.5 shrink-0 rounded-sm ${AGE[item.band].color}`} />
+              <span className="min-w-0 flex-1 truncate text-ink">{AGE[item.band].label}</span>
+              <span className="tabular text-ink">{formatCount(item.count)}</span>
+              <span className="tabular w-16 text-right text-xs text-ink-muted">{usd(item.value, true)}</span>
+              <span className="tabular w-10 text-right text-xs text-ink-muted">{total ? Math.round((item.count / total) * 100) : 0}%</span>
+            </>
+          );
+          // Each colour group opens its orders (the Age group filter); the uncoloured rest has no filter.
+          return (
+            <li key={item.band}>
+              {item.band === "none"
+                ? <span className="flex items-center gap-3 px-2 py-2.5 text-sm">{row}</span>
+                : <Link href={`${OPEN_ORDERS}&age=${item.band}`} className="-mx-0 flex items-center gap-3 rounded-md px-2 py-2.5 text-sm transition-colors hover:bg-neutral-50">{row}</Link>}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
