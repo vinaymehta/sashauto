@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
-import type { DashboardOverview, DateAmount, PipelineStatus, Stats } from "@/lib/types";
+import type { DashboardOrder, DashboardOverview, DateAmount, OrderRow, PipelineStatus, ProductVendor, Stats } from "@/lib/types";
+import { OrderDetailPanel } from "@/components/orders/history-row";
 import { formatCount, formatDate, formatQty } from "@/lib/format";
 import { groupByPeriod, PeriodToggle, type Period } from "@/components/charts/month-bars";
 import { TimeChart } from "@/components/charts/time-chart";
@@ -13,6 +14,8 @@ import { Button } from "@/components/ui/button";
 import { Alert, EmptyState } from "@/components/ui/feedback";
 import { PageHeader } from "@/components/ui/panel";
 import { InfoTip } from "@/components/ui/info-tip";
+import { Sheet } from "@/components/ui/sheet";
+import { formatMoq, formatPrice } from "@/components/vendors/vendor-products-panel";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TINTS, type Tint } from "@/components/ui/tint";
 
@@ -83,7 +86,9 @@ function StatCard({ label, value, extra, detail, icon, tint, href, size = "md", 
 }
 
 export default function DashboardPage() {
-  const { data, error, loading } = useApi<Stats>("/api/stats");
+  const { data, error, loading, reload } = useApi<Stats>("/api/stats");
+  // Order whose Order details panel is open (from Next shipments or a part's open orders).
+  const [order, setOrder] = useState<DashboardOrder | null>(null);
 
   const header = (
     <PageHeader
@@ -191,17 +196,23 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid gap-5 xl:grid-cols-2">
-          <Card title="Top parts by open value" info={<>The <b>8 parts with the most open value</b>, with their open orders and quantity, and their share of the total open value.</>} description="Parts with the most Firm and Order value not yet delivered">
-            <TopParts items={overview.top_parts} total={Number(kpis.open.value)} />
+          <Card title="Top parts by open value" info={<>The <b>8 parts with the most open value</b>, with their open orders and quantity, and their share of the total open value. Click a part for its details: open orders and vendors.</>} description="Parts with the most Firm and Order value not yet delivered">
+            <TopParts items={overview.top_parts} total={Number(kpis.open.value)} onOpenOrder={setOrder} />
           </Card>
           <Card title="Next shipments" info={<>The next <b>8 open orders to ship</b> within 30 days, overdue first, with their status and whether a vendor PO has been generated.</>} description="Open orders shipping in the next 30 days, overdue first"
                 action={<Link href="/orders" className="shrink-0 text-sm text-ink-muted hover:text-ink">All orders →</Link>}>
-            <Upcoming items={overview.upcoming} />
+            <Upcoming items={overview.upcoming} onOpenOrder={setOrder} />
           </Card>
         </div>
 
         <SpendChart points={ytd.by_date} yearStart={ytd.from} />
       </div>
+      {order && (
+        // The Orders page's panel; it loads the order itself (only these fields are needed to start).
+        <OrderDetailPanel key={`${order.manual ? "m" : "r"}${order.id}`} onClose={() => setOrder(null)} onPlaced={reload} onDeleted={() => { setOrder(null); reload(); }}
+                          row={{ id: order.id, manual: order.manual, po_number: order.po_number, po_line_number: order.po_line_number,
+                                 part_number: order.part_number, order_type: order.order_type, ship_date: order.ship_date, qty: order.qty } as OrderRow} />
+      )}
     </>
   );
 }
@@ -332,47 +343,129 @@ function Ageing({ items }: { items: DashboardOverview["ageing"] }) {
   );
 }
 
-function TopParts({ items, total }: { items: DashboardOverview["top_parts"]; total: number }) {
+// Each part opens its detail panel (PartPanel).
+function TopParts({ items, total, onOpenOrder }: { items: DashboardOverview["top_parts"]; total: number; onOpenOrder: (order: DashboardOrder) => void }) {
+  const [open, setOpen] = useState<DashboardOverview["top_parts"][number] | null>(null);
   if (items.length === 0) return <Empty>No open orders.</Empty>;
   const max = Math.max(1, ...items.map((p) => Number(p.value)));
   return (
-    <ul className="-mx-6 divide-y divide-neutral-100 border-t border-line">
-      {items.map((p, i) => (
-        <li key={p.part_number} className="flex items-center gap-4 px-6 py-3">
-          <span className="tabular w-5 shrink-0 text-xs font-semibold text-ink-faint">{i + 1}</span>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate font-medium text-ink">{p.part_number}</span>
-            <span className="block truncate text-xs text-ink-muted" title={p.description ?? undefined}>
-              {p.description ?? "—"} · {plural(p.orders, "order")} · {formatQty(p.qty)} pcs
-            </span>
-            <span className="mt-1.5 block h-1.5 overflow-hidden rounded-full bg-neutral-100">
-              <span className="block h-full rounded-full bg-tint-violet-ink" style={{ width: `${(Number(p.value) / max) * 100}%` }} />
-            </span>
-          </span>
-          <span className="shrink-0 text-right">
-            <span className="tabular block font-semibold text-ink">{usd(p.value, true)}</span>
-            <span className="tabular block text-xs text-ink-muted">{total ? Math.round((Number(p.value) / total) * 100) : 0}% of open</span>
-          </span>
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul className="-mx-4 divide-y divide-neutral-100 border-t border-line sm:-mx-6">
+        {items.map((p, i) => (
+          <li key={p.part_number}>
+            <button type="button" onClick={() => setOpen(p)} aria-haspopup="dialog"
+                    className={`flex w-full items-center gap-4 px-4 py-3 text-left transition-colors hover:bg-neutral-50 sm:px-6 ${open?.part_number === p.part_number ? "bg-tint-violet/40" : ""}`}>
+              <span className="tabular w-5 shrink-0 text-xs font-semibold text-ink-faint">{i + 1}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-medium text-ink">{p.part_number}</span>
+                <span className="block truncate text-xs text-ink-muted" title={p.description ?? undefined}>
+                  {p.description ?? "—"} · {plural(p.orders, "order")} · {formatQty(p.qty)} pcs
+                </span>
+                <span className="mt-1.5 block h-1.5 overflow-hidden rounded-full bg-neutral-100">
+                  <span className="block h-full rounded-full bg-tint-violet-ink" style={{ width: `${(Number(p.value) / max) * 100}%` }} />
+                </span>
+              </span>
+              <span className="shrink-0 text-right">
+                <span className="tabular block font-semibold text-ink">{usd(p.value, true)}</span>
+                <span className="tabular block text-xs text-ink-muted">{total ? Math.round((Number(p.value) / total) * 100) : 0}% of open</span>
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {open && <PartPanel part={open} total={total} onClose={() => setOpen(null)} onOpenOrder={(o) => { setOpen(null); onOpenOrder(o); }} />}
+    </>
   );
 }
 
-function Upcoming({ items }: { items: DashboardOverview["upcoming"] }) {
-  if (items.length === 0) return <Empty>Nothing ships in the next 30 days.</Empty>;
+// Side panel of one part from Top parts: what is open (value, orders, quantity), its MOQ and Deere's price, every
+// open order, and the vendors that supply it with their price and MOQ.
+function PartPanel({ part, total, onClose, onOpenOrder }: {
+  part: DashboardOverview["top_parts"][number]; total: number; onClose: () => void; onOpenOrder: (order: DashboardOrder) => void;
+}) {
+  const vendors = useApi<{ data: ProductVendor[] }>(part.product_id ? `/api/products/${part.product_id}/vendors` : null);
+  const overdue = part.open_orders.filter((o) => o.overdue);
+  const stats: [string, ReactNode][] = [
+    ["Open value", <>{usd(part.value)}<span className="ml-1 text-xs font-normal text-ink-muted">{total ? Math.round((Number(part.value) / total) * 100) : 0}% of all open</span></>],
+    ["Open orders", <>{formatCount(part.orders)}{overdue.length > 0 && <span className="ml-1 text-xs font-medium text-age-red-ink">{formatCount(overdue.length)} overdue</span>}</>],
+    ["Open quantity", `${formatQty(part.qty)} pcs`],
+    ["MOQ", part.moq ? formatQty(part.moq) : "—"],
+    ["Deere price", part.customer_price ? <>{usd(Number(part.customer_price))}<span className="ml-1 text-xs font-normal text-ink-muted">/ 100 pcs</span></> : "—"],
+  ];
   return (
-    <ul className="-mx-6 divide-y divide-neutral-100 border-t border-line">
+    <Sheet open wide onClose={onClose} title={part.part_number} description={part.description ?? "Part details"} icon={<BoxIcon size={18} />}>
+      <div className="space-y-4">
+        <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line shadow-card sm:grid-cols-3 lg:grid-cols-5">
+          {stats.map(([label, value]) => (
+            <div key={label} className="bg-white px-4 py-3">
+              <dt className="text-xs text-ink-muted">{label}</dt>
+              <dd className="tabular mt-0.5 font-semibold text-ink">{value}</dd>
+            </div>
+          ))}
+        </dl>
+
+        <section className="overflow-hidden rounded-lg border border-line bg-white shadow-card">
+          <header className="flex items-center justify-between border-b border-neutral-100 px-5 py-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-muted">Open orders</h3>
+            <span className="text-xs text-ink-muted">{plural(part.open_orders.length, "order")} · ship date order</span>
+          </header>
+          <OrderList items={part.open_orders} showPart={false} onOpen={onOpenOrder} />
+        </section>
+
+        <section className="overflow-hidden rounded-lg border border-line bg-white shadow-card">
+          <header className="flex items-center justify-between border-b border-neutral-100 px-5 py-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-muted">Vendors</h3>
+            {vendors.data && <span className="text-xs text-ink-muted">{plural(vendors.data.data.length, "vendor")}</span>}
+          </header>
+          {vendors.error ? (
+            <p className="px-5 py-4 text-sm text-dec">{vendors.error.message}</p>
+          ) : !part.product_id ? (
+            <p className="px-5 py-6 text-center text-sm text-ink-muted">This part is not in Products.</p>
+          ) : !vendors.data ? (
+            <p className="px-5 py-6 text-center text-sm text-ink-muted">Loading…</p>
+          ) : vendors.data.data.length === 0 ? (
+            <p className="px-5 py-6 text-center text-sm text-ink-muted">No vendor is linked to this part yet.</p>
+          ) : (
+            <ul className="divide-y divide-neutral-100">
+              {vendors.data.data.map((v) => (
+                <li key={v.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-5 py-3 text-sm">
+                  <span className="min-w-0 flex-1 font-medium text-ink">{v.vendor_name}</span>
+                  <span className="text-ink-muted">MOQ <span className="tabular font-medium text-ink">{formatMoq(v) ?? "—"}</span></span>
+                  <span className="tabular font-semibold text-ink">{formatPrice(v) ?? "No price"}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+    </Sheet>
+  );
+}
+
+function Upcoming({ items, onOpenOrder }: { items: DashboardOverview["upcoming"]; onOpenOrder: (order: DashboardOrder) => void }) {
+  if (items.length === 0) return <Empty>Nothing ships in the next 30 days.</Empty>;
+  return <div className="-mx-4 border-t border-line sm:-mx-6"><OrderList items={items} onOpen={onOpenOrder} /></div>;
+}
+
+// Open orders, one line each: ship date (overdue in red), part and PO, status and PO tags, value and quantity. A line
+// opens the order's details (`onOpen`).
+function OrderList({ items, showPart = true, onOpen }: { items: DashboardOrder[]; showPart?: boolean; onOpen: (order: DashboardOrder) => void }) {
+  return (
+    <ul className="divide-y divide-neutral-100">
       {items.map((o) => {
         const [day, month, year] = formatDate(o.ship_date).split(" ");
         return (
-          <li key={`${o.manual ? "m" : "r"}${o.id}`} className="flex items-center gap-4 px-6 py-3">
+          <li key={`${o.manual ? "m" : "r"}${o.id}`}>
+            <button type="button" onClick={() => onOpen(o)} aria-haspopup="dialog"
+                    className="flex w-full items-center gap-4 px-4 py-3 text-left transition-colors hover:bg-neutral-50 sm:px-6">
             <span className={`tabular w-16 shrink-0 text-sm font-semibold leading-tight ${o.overdue ? "text-age-red-ink" : "text-ink"}`}>
               {day} {month}
               <span className="block text-2xs font-medium uppercase tracking-wider">{o.overdue ? "Overdue" : year}</span>
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block truncate font-medium text-ink">{o.part_number} <span className="font-normal text-ink-muted">· PO {o.po_number}/{o.po_line_number}</span></span>
+              <span className="block truncate font-medium text-ink">
+                {showPart ? <>{o.part_number} <span className="font-normal text-ink-muted">· PO {o.po_number}/{o.po_line_number}</span></> : <>PO {o.po_number}/{o.po_line_number}</>}
+              </span>
               <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
                 <span className="rounded bg-neutral-100 px-1.5 py-0.5 font-medium text-ink-muted">{STATUS[o.status].label}</span>
                 {o.po
@@ -385,6 +478,7 @@ function Upcoming({ items }: { items: DashboardOverview["upcoming"] }) {
               <span className="tabular block font-semibold text-ink">{usd(o.value, true)}</span>
               <span className="tabular block text-xs text-ink-muted">{formatQty(o.qty)} pcs</span>
             </span>
+            </button>
           </li>
         );
       })}

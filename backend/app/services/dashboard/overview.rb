@@ -11,7 +11,8 @@ module Dashboard
   #   pipeline   open orders by their furthest status mark: none, received, dispatched, inbound
   #   ageing     open orders by age group (days since the Firm Date, Ageing::Rules)
   #   outlook    by ship date from the start of this month: Firm + Order value and Forecast value (the graph groups it)
-  #   top_parts  the eight parts with the most open value
+  #   top_parts  the eight parts with the most open value, each with its product (id, MOQ, customer price) and its open
+  #              orders (for the part's detail panel)
   #   upcoming   the next open orders to ship (overdue first), with their status and whether a PO exists
   class Overview
     TYPES = %w[Firm Order].freeze
@@ -38,7 +39,7 @@ module Dashboard
         pipeline: STATUSES.map { |s| bucket(open.select { |o| (status[o.key] || "none") == s }).merge(status: s) },
         ageing: ageing(open),
         outlook: outlook(orders),
-        top_parts: top_parts(open),
+        top_parts: top_parts(open, status, placed),
         upcoming: upcoming(open, status, placed)
       }
     end
@@ -132,21 +133,28 @@ module Dashboard
       end
     end
 
-    def top_parts(open)
-      descriptions = Product.where(part_number: open.map(&:part_number).uniq).pluck(:part_number, :description).to_h
-      open.group_by(&:part_number)
-          .map { |part, list| { part_number: part, description: descriptions[part], orders: list.size,
-                                qty: Serializers.qty(list.sum(BigDecimal("0"), &:qty)), value: list.sum(BigDecimal("0"), &:value) } }
-          .sort_by { |p| -p[:value] }.first(8)
-          .map { |p| p.merge(value: money(p[:value])) }
+    def top_parts(open, status, placed)
+      top = open.group_by(&:part_number).sort_by { |_, list| -list.sum(BigDecimal("0"), &:value) }.first(8)
+      products = Product.where(part_number: top.map(&:first)).index_by(&:part_number)
+      top.map do |part, list|
+        product = products[part]
+        { part_number: part, description: product&.description, orders: list.size,
+          qty: Serializers.qty(list.sum(BigDecimal("0"), &:qty)), value: money(list.sum(BigDecimal("0"), &:value)),
+          product_id: product&.id, moq: Serializers.qty(product && (product.moq_sets || product.moq)),
+          customer_price: Serializers.qty(product&.customer_price),
+          open_orders: list.sort_by { |o| [ o.ship_date, o.po_number ] }.map { |o| order_json(o, status, placed) } }
+      end
     end
 
     def upcoming(open, status, placed)
-      open.select { |o| o.ship_date <= @today + 30 && o.qty.positive? }.sort_by { |o| [ o.ship_date, o.po_number ] }.first(8).map do |o|
-        { id: o.id, manual: o.manual, po_number: o.po_number, po_line_number: o.po_line_number, part_number: o.part_number,
-          order_type: o.order_type, ship_date: o.ship_date, qty: Serializers.qty(o.qty), value: money(o.value),
-          status: status[o.key] || "none", po: placed.include?(o.key), overdue: o.ship_date < @today }
-      end
+      open.select { |o| o.ship_date <= @today + 30 && o.qty.positive? }.sort_by { |o| [ o.ship_date, o.po_number ] }.first(8)
+          .map { |o| order_json(o, status, placed) }
+    end
+
+    def order_json(order, status, placed)
+      { id: order.id, manual: order.manual, po_number: order.po_number, po_line_number: order.po_line_number,
+        part_number: order.part_number, order_type: order.order_type, ship_date: order.ship_date, qty: Serializers.qty(order.qty),
+        value: money(order.value), status: status[order.key] || "none", po: placed.include?(order.key), overdue: order.ship_date < @today }
     end
 
     def bucket(list)

@@ -284,6 +284,10 @@ export interface MoneyTotal { amount: string; orders: number; without_price: num
 // Dashboard operations figures (Dashboard::Overview), from the current order data. A bucket is a number of orders and
 // their value (USD, Qty × Unit Price ÷ 100).
 export interface OrderBucket { count: number; value: string }
+export interface DashboardOrder {
+  id: number; manual: boolean; po_number: string; po_line_number: string; part_number: string; order_type: OrderType;
+  ship_date: string; qty: string; value: string; status: PipelineStatus; po: boolean; overdue: boolean;
+}
 export type PipelineStatus = "none" | "received" | "dispatched" | "inbound";
 export interface DashboardOverview {
   kpis: { open: OrderBucket; due_30: OrderBucket; overdue: OrderBucket;
@@ -291,9 +295,10 @@ export interface DashboardOverview {
   pipeline: (OrderBucket & { status: PipelineStatus })[];
   ageing: (OrderBucket & { band: "red" | "yellow" | "green" | "none" })[];
   outlook: { date: string; firm: string; forecast: string }[];
-  top_parts: { part_number: string; description: string | null; orders: number; qty: string; value: string }[];
-  upcoming: { id: number; manual: boolean; po_number: string; po_line_number: string; part_number: string; order_type: OrderType;
-              ship_date: string; qty: string; value: string; status: PipelineStatus; po: boolean; overdue: boolean }[];
+  // product_id / moq (sets) / customer_price (per 100 pcs): the part on the Products page; open_orders: its open orders.
+  top_parts: { part_number: string; description: string | null; orders: number; qty: string; value: string;
+               product_id: number | null; moq: string | null; customer_price: string | null; open_orders: DashboardOrder[] }[];
+  upcoming: DashboardOrder[];
 }
 export interface DateAmount { date: string; amount: string }
 
