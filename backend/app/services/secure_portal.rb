@@ -40,12 +40,12 @@ class SecurePortal
     supplier = Selenium::WebDriver::Support::Select.new(supplier_el)
     second_value = supplier.options[1].attribute('value')
     unless supplier.first_selected_option.attribute('value') == second_value
-      supplier.select_by(:value, second_value) # onchange -> selectSupplier(..., 'refresh') reloads the form
+      choose_option(supplier_el, second_value) # onchange -> selectSupplier(..., 'refresh') reloads the form
       wait_for_form_refresh(supplier_el)
     end
     puts "Supplier: -> #{selected_text('supplierNum')}"
 
-    Selenium::WebDriver::Support::Select.new(@driver.find_element(id: 'type')).select_by(:value, 'All')
+    choose_option(@driver.find_element(id: 'type'), 'All')
     puts "Type: -> #{selected_text('type')}"
 
     FileUtils.mkdir_p(DOWNLOAD_DIR)
@@ -167,6 +167,30 @@ class SecurePortal
     @wait.until { @driver.execute_script('return document.readyState') == 'complete' }
     @wait.until { @driver.find_elements(id: 'type').any? }
     sleep 3
+  end
+
+  # Picks an option of a <select>. Waits up to 15s for it to be visible and picks it like a user; when Chrome still
+  # refuses (ElementNotInteractableError: the portal hides the real <select> behind its own dropdown, which broke most
+  # scheduled runs), logs the <select>'s state and sets the value with JavaScript, firing the change event the page
+  # listens to (its onchange).
+  def choose_option(select_el, value)
+    begin
+      Selenium::WebDriver::Wait.new(timeout: 15).until { select_el.displayed? }
+    rescue Selenium::WebDriver::Error::TimeoutError
+      nil # still hidden: the fallback below handles it
+    end
+    Selenium::WebDriver::Support::Select.new(select_el).select_by(:value, value)
+  rescue Selenium::WebDriver::Error::ElementNotInteractableError
+    state = @driver.execute_script(<<~JS, select_el)
+      const s = arguments[0], st = getComputedStyle(s), r = s.getBoundingClientRect(), n = s.nextElementSibling;
+      return `display=${st.display} visibility=${st.visibility} size=${Math.round(r.width)}x${Math.round(r.height)} ` +
+             `next=${n ? n.tagName + '.' + n.className : 'none'} ready=${document.readyState}`;
+    JS
+    puts "#{select_el.attribute('id')}: not clickable (#{state}); setting it with JavaScript"
+    @driver.execute_script(<<~JS, select_el, value)
+      arguments[0].value = arguments[1];
+      arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
+    JS
   end
 
   def stale?(element)
