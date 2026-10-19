@@ -1,5 +1,5 @@
 <%= "Address changes detected" %>
-<%= @batch.original_filename %> · uploaded by <%= @batch.uploaded_by.name %> on <%= @batch.completed_at.utc.strftime("%-d %b %Y, %H:%M UTC") %>
+<%= @batch.original_filename %> · uploaded by <%= @batch.uploaded_by.name %> on <%= @batch.completed_at.in_time_zone.strftime("%-d %b %Y, %H:%M IST") %>
 
 <%= @total %> existing order row(s) changed Ship To Address compared with the previous upload.
 

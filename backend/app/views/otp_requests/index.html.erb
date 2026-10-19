@@ -19,7 +19,7 @@
             <div>
               <p class="text-sm font-semibold text-gray-900"><%= req['label'] %></p>
               <p class="text-xs text-gray-500 mt-1"><%= req['message'] %></p>
-              <p class="text-[11px] text-gray-400 mt-1">Requested <%= Time.iso8601(req['requested_at']).localtime.strftime('%b %d, %H:%M:%S') rescue req['requested_at'] %></p>
+              <p class="text-[11px] text-gray-400 mt-1">Requested <%= Time.iso8601(req['requested_at']).in_time_zone.strftime('%b %d, %H:%M:%S IST') rescue req['requested_at'] %></p>
             </div>
             <% if req['status'] == 'submitted' %>
               <span class="text-[11px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">Code submitted, verifying…</span>

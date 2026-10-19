@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, ApiError } from "@/lib/api";
 import type { DeliveryKind, OrderDeliveryInfo, OrderRow, Role } from "@/lib/types";
-import { formatDate, formatDateTime, formatQty } from "@/lib/format";
+import { formatDate, formatDateTime, formatQty, todayIst } from "@/lib/format";
 import { BoxIcon, CheckIcon, HistoryIcon, MapPinIcon, TrashIcon, TruckIcon } from "../icons";
 import { useToast } from "../toast";
 import { useDismiss } from "../use-dismiss";
@@ -48,7 +48,7 @@ function StatusPill({ kind }: { kind: DeliveryKind | "none" }) {
   );
 }
 
-const today = () => new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in local time
+const today = () => todayIst(); // YYYY-MM-DD in IST
 
 // The step before this one (statuses go in route order), or undefined for the first.
 function previousStep(kind: DeliveryKind) {

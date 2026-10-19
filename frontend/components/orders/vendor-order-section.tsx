@@ -176,7 +176,7 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
               <input type="checkbox" checked={checked} onChange={() => toggle(v.vendor_id)} aria-label={`Select ${v.vendor_name}`}
                      className="h-4 w-4 accent-[var(--color-accent)]" />
               <span className="min-w-0">
-                <span className="block truncate font-medium text-ink">{v.vendor_name}</span>
+                <span className="block break-words font-medium text-ink">{v.vendor_name}</span>
                 <span className="block text-xs text-ink-muted">
                   {price ? `${price} / ${unit === "pcs" ? "pc" : pack > 1 ? `set of ${pack}` : "pc"}` : formatPrice(v) ?? "No price"}
                   {moq !== null && ` · MOQ ${formatQty(moq)} ${unit === "pcs" || pack <= 1 ? "pcs" : "sets"}`}

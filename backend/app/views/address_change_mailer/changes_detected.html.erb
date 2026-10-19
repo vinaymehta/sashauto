@@ -1,7 +1,7 @@
 <div>
   <h1 style="font-size:20px;font-weight:700;margin:0 0 4px;color:#1d2636;">Address changes detected</h1>
   <p style="margin:0 0 16px;color:#737373;">
-    <%= @batch.original_filename %> · uploaded by <%= @batch.uploaded_by.name %> on <%= @batch.completed_at.utc.strftime("%-d %b %Y, %H:%M UTC") %>
+    <%= @batch.original_filename %> · uploaded by <%= @batch.uploaded_by.name %> on <%= @batch.completed_at.in_time_zone.strftime("%-d %b %Y, %H:%M IST") %>
   </p>
   <p style="margin:0 0 12px;color:#171717;">
     <strong><%= @total %></strong> existing order row<%= "s" unless @total == 1 %> changed Ship To Address compared with the previous upload.

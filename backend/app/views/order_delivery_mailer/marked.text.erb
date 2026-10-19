@@ -1,5 +1,5 @@
 <%= @delivery.kind == "inbound" ? "Inbound" : "Outbound" %>: <%= @delivery.label %>
-Marked by <%= @delivery.marked_by.name %> on <%= @delivery.created_at.utc.strftime("%-d %b %Y, %H:%M UTC") %>.
+Marked by <%= @delivery.marked_by.name %> on <%= @delivery.created_at.in_time_zone.strftime("%-d %b %Y, %H:%M IST") %>.
 
 PO Number: <%= @delivery.po_number %>
 PO Line Number: <%= @delivery.po_line_number %>

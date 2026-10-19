@@ -1,5 +1,5 @@
-// Time graphs of the dashboard: values per date grouped into weeks or months (`groupByPeriod`), drawn as vertical,
-// optionally stacked bars (`StackedBars`).
+// Time graphs of the dashboard: values per date grouped into weeks or months (`groupByPeriod`), drawn by TimeChart,
+// with the Month / 6 months / Year switch (`PeriodToggle`).
 
 export type Period = "month" | "6m" | "year";
 export const PERIODS: { key: Period; label: string }[] = [
@@ -61,62 +61,13 @@ export function groupByPeriod(points: { date: string; values: number[] }[], peri
 // Month / 6 months / Year switch for a graph.
 export function PeriodToggle({ value, onChange }: { value: Period; onChange: (period: Period) => void }) {
   return (
-    <div role="radiogroup" aria-label="Period" className="inline-flex shrink-0 rounded-md border border-line bg-neutral-50 p-0.5 text-xs font-medium">
+    <div role="radiogroup" aria-label="Period" className="inline-flex shrink-0 self-start rounded-md border border-line bg-neutral-50 p-0.5 text-xs font-medium">
       {PERIODS.map((p) => (
         <button key={p.key} type="button" role="radio" aria-checked={value === p.key} onClick={() => onChange(p.key)}
                 className={`rounded px-2.5 py-1 transition-colors ${value === p.key ? "bg-white text-ink shadow-[0_1px_2px_rgba(0,0,0,0.08)]" : "text-ink-muted hover:text-ink"}`}>
           {p.label}
         </button>
       ))}
-    </div>
-  );
-}
-
-// Vertical bars, stacked when there are several series (bottom first): the bar's total on top, its label and sublabel
-// underneath, each series' value in the tooltip, and a legend when there are several series. Scrolls sideways when
-// the bars do not fit.
-export function StackedBars({ items, series, format, exact }: {
-  items: Bar[];
-  series: { label: string; color: string }[];
-  format: (value: number) => string;
-  exact?: (value: number) => string;
-}) {
-  const totals = items.map((i) => i.values.reduce((a, v) => a + v, 0));
-  const max = Math.max(1, ...totals);
-  const full = exact ?? format;
-  return (
-    <div>
-      {series.length > 1 && (
-        <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-muted">
-          {series.map((s) => (
-            <span key={s.label} className="inline-flex items-center gap-1.5"><span aria-hidden className={`h-2.5 w-2.5 rounded-sm ${s.color}`} />{s.label}</span>
-          ))}
-        </div>
-      )}
-      <div className="overflow-x-auto">
-        <ul className="flex h-64 min-w-full items-end gap-2" style={{ minWidth: `${items.length * 3.5}rem` }}>
-          {items.map((item, i) => {
-            const total = totals[i]!;
-            const title = [item.title, ...(series.length > 1 ? series.map((s, j) => `${s.label}: ${full(item.values[j] ?? 0)}`) : []), `Total: ${full(total)}`].join("\n");
-            return (
-              <li key={item.key} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1" title={title}>
-                <span className={`tabular text-xs font-medium ${item.tone === "bad" ? "text-age-red-ink" : "text-ink"}`}>{total ? format(total) : ""}</span>
-                <div className="flex w-full max-w-12 flex-col-reverse overflow-hidden rounded-t-md transition-[height] duration-500"
-                     style={{ height: `${Math.max((total / max) * 100, total ? 2 : 1)}%` }}>
-                  {total ? series.map((s, j) => {
-                    const v = item.values[j] ?? 0;
-                    return v ? <div key={s.label} className={item.tone === "bad" ? "bg-age-red-ink" : s.color} style={{ height: `${(v / total) * 100}%` }} /> : null;
-                  }) : <div className="h-full bg-neutral-100" />}
-                </div>
-                <span className={`mt-1 text-center text-xs leading-tight ${item.tone === "bad" ? "font-medium text-age-red-ink" : "text-ink-muted"}`}>
-                  {item.label}
-                  {item.sublabel && <span className="block text-2xs">{item.sublabel}</span>}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
     </div>
   );
 }

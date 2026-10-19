@@ -2,7 +2,7 @@
 <div>
   <h1 style="font-size:20px;font-weight:700;margin:0 0 4px;color:#1d2636;"><%= @delivery.kind == "inbound" ? "Inbound" : "Outbound" %>: <%= @delivery.label %></h1>
   <p style="margin:0 0 20px;color:#737373;">
-    Marked by <%= @delivery.marked_by.name %> on <%= @delivery.created_at.utc.strftime("%-d %b %Y, %H:%M UTC") %>.
+    Marked by <%= @delivery.marked_by.name %> on <%= @delivery.created_at.in_time_zone.strftime("%-d %b %Y, %H:%M IST") %>.
   </p>
   <table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;font-size:14px;">
     <% [ [ "PO Number", @delivery.po_number ], [ "PO Line Number", @delivery.po_line_number ], [ "Part Number", @delivery.part_number ],

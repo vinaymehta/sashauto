@@ -26,7 +26,7 @@ module Notifications
 
     def subject(batch, kind, count)
       "#{SUBJECTS.fetch(kind)}: #{count} order row#{'s' unless count == 1} " \
-        "(upload of #{batch.completed_at.utc.strftime('%-d %b %Y, %H:%M UTC')})"
+        "(upload of #{batch.completed_at.in_time_zone.strftime('%-d %b %Y, %H:%M IST')})"
     end
 
     # Hands a committed outbox record to Sidekiq. If Redis is unavailable the record stays pending

@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import type { DashboardOverview, DateAmount, PipelineStatus, Stats } from "@/lib/types";
 import { formatCount, formatDate, formatQty } from "@/lib/format";
-import { groupByPeriod, PeriodToggle, StackedBars, type Period } from "@/components/charts/month-bars";
+import { groupByPeriod, PeriodToggle, type Period } from "@/components/charts/month-bars";
+import { TimeChart } from "@/components/charts/time-chart";
 import { PieChart } from "@/components/charts/pie-chart";
 import { AlertIcon, BoxIcon, CalendarIcon, CheckIcon, FileIcon, TruckIcon, UploadIcon } from "@/components/icons";
 import { useApi } from "@/components/use-api";
@@ -42,15 +43,16 @@ function Card({ title, description, info, action, children, className = "" }: {
   title: string; description?: string; info?: ReactNode; action?: ReactNode; children: ReactNode; className?: string;
 }) {
   return (
-    <section className={`flex flex-col overflow-hidden rounded-lg border border-line bg-surface shadow-card ${className}`}>
-      <header className="flex items-start justify-between gap-3 px-6 pb-4 pt-6">
-        <div>
+    // The header's action (e.g. the period switch) goes under the title when the card itself is narrow (container query).
+    <section className={`@container flex flex-col overflow-hidden rounded-lg border border-line bg-surface shadow-card ${className}`}>
+      <header className="flex flex-col gap-3 px-4 pb-4 pt-5 sm:px-6 sm:pt-6 @xl:flex-row @xl:items-start @xl:justify-between">
+        <div className="min-w-0">
           <h2 className="flex items-center gap-1.5 text-lg font-semibold text-ink">{title}{info && <InfoTip label={`About ${title}`}>{info}</InfoTip>}</h2>
           {description && <p className="mt-0.5 text-sm text-ink-muted">{description}</p>}
         </div>
         {action}
       </header>
-      <div className="flex-1 px-6 pb-6">{children}</div>
+      <div className="flex-1 px-4 pb-5 sm:px-6 sm:pb-6">{children}</div>
     </section>
   );
 }
@@ -65,7 +67,7 @@ function StatCard({ label, value, extra, detail, icon, tint, href, size = "md", 
     <>
       <div className="flex items-center gap-2 text-sm font-medium text-ink-muted">
         <span aria-hidden className={`flex h-7 w-7 items-center justify-center rounded-md ${TINTS[tint].chip}`}>{icon}</span>
-        <span className="min-w-0 flex-1 truncate">{label}</span>
+        <span className="min-w-0 flex-1 leading-tight">{label}</span>
         {info && <InfoTip label={`About ${label}`}>{info}</InfoTip>}
       </div>
       <p className={`tabular mt-3 font-bold tracking-tight ${size === "lg" ? "text-3xl" : "text-2xl"} ${tone === "bad" ? "text-age-red-ink" : "text-neutral-900"}`}>{value}</p>
@@ -74,7 +76,7 @@ function StatCard({ label, value, extra, detail, icon, tint, href, size = "md", 
       {children}
     </>
   );
-  const className = `block rounded-lg border border-line bg-gradient-to-b ${TINTS[tint].wash} via-white to-white px-6 py-5 shadow-card`;
+  const className = `block rounded-lg border border-line bg-gradient-to-b ${TINTS[tint].wash} via-white to-white px-5 py-5 shadow-card sm:px-6`;
   return href
     ? <Link href={href} className={`${className} transition-all duration-200 hover:-translate-y-0.5 hover:border-neutral-300`}>{body}</Link>
     : <div className={className}>{body}</div>;
@@ -134,7 +136,7 @@ export default function DashboardPage() {
         )}
 
         {/* Money (Dashboard::Money). */}
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <StatCard size="lg" label="Total Open Value (Sale)" info={<>Value of Deere orders <b>not yet delivered</b>: Firm and Order orders of the latest upload and manual orders, without a &quot;Delivered to Deere&quot; (Outbound) status. Value = Qty × Unit Price ÷ 100 (Deere prices are per 100 pcs), in USD. Forecast is not counted.</>} icon={<BoxIcon size={16} />} tint="violet" href="/orders"
                     value={formatMoney(sale.amount, sale.currency)}
                     detail={`${ordersText(sale.orders, sale.without_price)} not yet delivered to Deere`} />
@@ -148,7 +150,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Operations (Dashboard::Overview). */}
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard label="Open orders" info={<>Firm and Order orders <b>not yet delivered to Deere</b>, counted as the Orders page lists them (a combined order counts once). The amount is their value in USD.</>} icon={<FileIcon size={16} />} tint="neutral" href="/orders"
                     value={formatCount(kpis.open.count)} detail={`${usd(kpis.open.value, true)} · Firm and Order`} />
           <StatCard label="Shipping in 30 days" info={<>Open orders with a <b>ship date from today to 30 days ahead</b>, and their value. They are listed in Next shipments.</>} icon={<CalendarIcon size={16} />} tint="violet"
@@ -204,29 +206,46 @@ export default function DashboardPage() {
   );
 }
 
-// Open Value (Sale) by ship date: this month by week, the next 6 or 12 months; orders already past their ship date
-// in an Overdue bar first.
+const SALE_COLOR = "#3b72e0";
+const FORECAST_COLOR = "#a5b8f0";
+const SPEND_COLOR = "#0f9f6e";
+const ahead = (period: Period) => (period === "month" ? "this month by week" : `next ${period === "6m" ? "6" : "12"} months`);
+
+// Open Value (Sale) by ship date: this month by week, the next 6 or 12 months. Open orders already past the period's
+// start (overdue) are shown apart, above the chart.
 function SaleChart({ points }: { points: DateAmount[] }) {
   const [period, setPeriod] = useState<Period>("6m");
-  const bars = groupByPeriod(points.map((p) => ({ date: p.date, values: [Number(p.amount)] })), period, { ahead: true, earlier: true, series: 1 });
+  const all = groupByPeriod(points.map((p) => ({ date: p.date, values: [Number(p.amount)] })), period, { ahead: true, earlier: true, series: 1 });
+  const overdue = all.find((b) => b.key === "earlier");
+  const bars = all.filter((b) => b.key !== "earlier");
   return (
-    <Card title="Open Value (Sale) by ship date" className="xl:col-span-2" info={<>Open order value (as in Total Open Value (Sale)) by <b>ship date</b>: this month by week, or the next 6 or 12 months by month. The red <b>Overdue</b> bar holds open orders whose ship date is before the period shown. Hover a bar for its exact amount.</>} action={<PeriodToggle value={period} onChange={setPeriod} />}
-          description={`Firm and Order orders not yet delivered to Deere, ${period === "month" ? "this month by week" : `next ${period === "6m" ? "6" : "12"} months`}; overdue first`}>
-      {points.length === 0 ? <Empty>No open orders.</Empty>
-        : <StackedBars items={bars} series={[{ label: "Open value", color: "bg-series-a" }]} format={(v) => usd(v, true)} exact={(v) => usd(v)} />}
+    <Card title="Open Value (Sale) by ship date" className="xl:col-span-2" action={<PeriodToggle value={period} onChange={setPeriod} />}
+          info={<>Open order value (as in Total Open Value (Sale)) by <b>ship date</b>: this month by week, or the next 6 or 12 months by month. <b>Overdue</b> is the value of open orders whose ship date is before the period shown. Hover the chart for exact amounts.</>}
+          description={`Firm and Order orders not yet delivered to Deere, ${ahead(period)}`}>
+      {points.length === 0 ? <Empty>No open orders.</Empty> : (
+        <>
+          {overdue && (
+            <p className="mb-3 inline-flex items-center gap-2 rounded-md bg-age-red px-2.5 py-1 text-xs text-age-red-ink">
+              <AlertIcon size={13} /><span><b className="tabular">{usd(overdue.values[0]!)}</b> overdue (ship date {overdue.sublabel})</span>
+            </p>
+          )}
+          <TimeChart items={bars} series={[{ label: "Open value", color: SALE_COLOR }]} format={(v) => usd(v, true)} exact={(v) => usd(v)} />
+        </>
+      )}
     </Card>
   );
 }
 
-// Demand outlook: confirmed (Firm + Order) and Forecast value by ship date, ahead.
+// Demand outlook: confirmed (Firm + Order) and Forecast value by ship date, ahead, stacked.
 function OutlookChart({ points }: { points: DashboardOverview["outlook"] }) {
   const [period, setPeriod] = useState<Period>("6m");
   const bars = groupByPeriod(points.map((p) => ({ date: p.date, values: [Number(p.firm), Number(p.forecast)] })), period, { ahead: true, series: 2 });
   return (
-    <Card title="Demand outlook" className="lg:col-span-2 xl:col-span-1" info={<>Value of Deere&apos;s orders by <b>ship date from this month on</b>: confirmed orders (Firm + Order) and <b>Forecast</b> stacked, including orders already delivered. Shows the demand coming up.</>} action={<PeriodToggle value={period} onChange={setPeriod} />}
-          description={`Confirmed orders and forecast by ship date, ${period === "month" ? "this month by week" : `next ${period === "6m" ? "6" : "12"} months`}`}>
-      <StackedBars items={bars} series={[{ label: "Firm + Order", color: "bg-tint-violet-ink" }, { label: "Forecast", color: "bg-tint-violet-ink/30" }]}
-                   format={(v) => usd(v, true)} exact={(v) => usd(v)} />
+    <Card title="Demand outlook" className="lg:col-span-2 xl:col-span-1" action={<PeriodToggle value={period} onChange={setPeriod} />}
+          info={<>Value of Deere&apos;s orders by <b>ship date from this month on</b>: confirmed orders (Firm + Order) and <b>Forecast</b> stacked, including orders already delivered. Shows the demand coming up.</>}
+          description={`Confirmed orders and forecast by ship date, ${ahead(period)}`}>
+      <TimeChart items={bars} series={[{ label: "Firm + Order", color: SALE_COLOR }, { label: "Forecast", color: FORECAST_COLOR }]}
+                 format={(v) => usd(v, true)} exact={(v) => usd(v)} />
     </Card>
   );
 }
@@ -236,9 +255,10 @@ function SpendChart({ points, yearStart }: { points: DateAmount[]; yearStart: st
   const [period, setPeriod] = useState<Period>("year");
   const bars = groupByPeriod(points.map((p) => ({ date: p.date, values: [Number(p.amount)] })), period, { yearStart, series: 1 });
   return (
-    <Card title="Customer Spend with SASH" info={<>Deere&apos;s Firm and Order order value by <b>ship date</b>: this month by week, the last 6 months, or this financial year by month (adds up to YTD Customer Spend).</>} action={<PeriodToggle value={period} onChange={setPeriod} />}
+    <Card title="Customer Spend with SASH" action={<PeriodToggle value={period} onChange={setPeriod} />}
+          info={<>Deere&apos;s Firm and Order order value by <b>ship date</b>: this month by week, the last 6 months, or this financial year by month (adds up to YTD Customer Spend).</>}
           description={`Firm and Order orders by ship date, ${period === "year" ? `financial year from ${formatDate(yearStart)}` : period === "6m" ? "last 6 months" : "this month by week"}`}>
-      <StackedBars items={bars} series={[{ label: "Spend", color: "bg-series-b" }]} format={(v) => usd(v, true)} exact={(v) => usd(v)} />
+      <TimeChart items={bars} series={[{ label: "Spend", color: SPEND_COLOR }]} format={(v) => usd(v, true)} exact={(v) => usd(v)} />
     </Card>
   );
 }

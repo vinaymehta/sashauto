@@ -43,7 +43,8 @@ module Backend
     # Skip views, helpers and assets when generating a new resource.
     config.api_only = false
 
-    config.time_zone = "UTC"
+    # Every time the app shows or writes (emails, PDFs, dates such as "today") is India time; the database keeps UTC.
+    config.time_zone = "Asia/Kolkata"
     config.active_job.queue_adapter = :sidekiq
 
     # The Next.js frontend proxies /api/* to this app, so the browser talks to a

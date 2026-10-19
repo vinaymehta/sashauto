@@ -1,5 +1,7 @@
+// Times are shown in India time (IST) for every viewer, as in the emails and PDFs.
+export const TIME_ZONE = "Asia/Kolkata";
 const dateTime = new Intl.DateTimeFormat("en-GB", {
-  year: "numeric", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit",
+  year: "numeric", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: TIME_ZONE,
 });
 const date = new Intl.DateTimeFormat("en-GB", { year: "numeric", month: "short", day: "2-digit", timeZone: "UTC" });
 const integer = new Intl.NumberFormat("en-US");
@@ -14,9 +16,9 @@ export function formatDate(value: string | null | undefined) {
   return value ? date.format(new Date(`${value}T00:00:00Z`)) : "—";
 }
 
-const dateOnly = new Intl.DateTimeFormat("en-GB", { year: "numeric", month: "short", day: "numeric" });
+const dateOnly = new Intl.DateTimeFormat("en-GB", { year: "numeric", month: "short", day: "numeric", timeZone: TIME_ZONE });
 
-// Date part of a timestamp in the viewer's time zone, e.g. "29 Sept 2026".
+// Date part of a timestamp in IST, e.g. "29 Sept 2026".
 export function formatDateOnly(value: string | null | undefined) {
   return value ? dateOnly.format(new Date(value)) : "—";
 }
@@ -59,8 +61,13 @@ export function formatRelative(value: string | null | undefined) {
   return formatDateTime(value);
 }
 
-const shortDate = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" });
-const shortTime = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit" });
+const shortDate = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: TIME_ZONE });
+const shortTime = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: TIME_ZONE });
+
+// Today's date in IST, as YYYY-MM-DD.
+export function todayIst(now: Date = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: TIME_ZONE }).format(now);
+}
 
 // Compact two-part label for an upload, e.g. ["29 Sept", "16:05"] (chart axes).
 export function formatUploadParts(value: string) {

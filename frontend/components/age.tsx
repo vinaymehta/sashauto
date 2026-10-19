@@ -1,9 +1,10 @@
+import { todayIst } from "@/lib/format";
 import type { FilterGroup } from "./ui/filter-menu";
 
 // Age group of an order row = days since its Firm Date:
 // 30-59 green, 60-89 yellow, 90 or more red; under 30 days, or no Firm Date (Forecast never has one), is uncoloured.
 // Same rule as the server (Ageing::Rules) and the ageing email.
-// The server filters with the same rule (param `age`), using the browser's date sent as `today`.
+// The server filters with the same rule (param `age`), using today's IST date sent as `today`.
 export type AgeGroup = "green" | "yellow" | "red" | null;
 
 export const AGE_ROW: Record<Exclude<AgeGroup, null>, string> = {
@@ -28,17 +29,17 @@ export const AGE_FILTER: FilterGroup = {
   ],
 };
 
-// Today's date in the browser, as YYYY-MM-DD (sent to the server so filter and colours agree).
+// Today's date in IST, as YYYY-MM-DD (sent to the server so filter and colours agree).
 export function todayParam(today: Date = new Date()) {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+  return todayIst(today);
 }
 
 export function ageGroup(firmDate: string | null | undefined, today: Date = new Date()): AgeGroup {
   if (!firmDate) return null;
   const [y, m, d] = firmDate.split("-").map(Number);
   const firm = Date.UTC(y!, m! - 1, d!);
-  const now = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  const [ty, tm, td] = todayIst(today).split("-").map(Number);
+  const now = Date.UTC(ty!, tm! - 1, td!);
   const daysSince = Math.round((now - firm) / 86_400_000);
   if (daysSince >= 90) return "red";
   if (daysSince >= 60) return "yellow";
