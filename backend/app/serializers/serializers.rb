@@ -68,7 +68,8 @@ module Serializers
     vendor.slice(:id, :name, :code, :vendor_type, :salutation, :first_name, :last_name, :company_name, :email, :phone, :mobile,
                  :language, :address, :gst, :gst_treatment, :place_of_supply, :pan, :tax_preference, :currency, :payment_terms,
                  :lead_days, :tax_officer_address, :portal_enabled, :remarks, :created_at, :updated_at)
-          .merge(gst_rate: qty(vendor.gst_rate), product_count: product_count || (vendor.has_attribute?(:product_count) ? vendor[:product_count] : vendor.vendor_products.count))
+          .merge(gst_rate: qty(vendor.gst_rate), product_count: product_count || (vendor.has_attribute?(:product_count) ? vendor[:product_count] : vendor.vendor_products.count),
+                 available_count: vendor.has_attribute?(:available_count) ? vendor[:available_count] : vendor.vendor_products.where("available_qty > 0").count)
   end
 
   def vendor_order_placement(placement)
@@ -101,7 +102,9 @@ module Serializers
                :price_text, :updated_at)
         .merge(part_number: item.product.part_number, commodity_type: item.product.commodity_type,
                pack_size: item.pack_size, moq: qty(item.moq), moq_sets: qty(item.moq_sets), weight_kg: qty(item.weight_kg),
-               price_amount: qty(item.price_amount), set_price_amount: qty(item.set_price_amount))
+               price_amount: qty(item.price_amount), set_price_amount: qty(item.set_price_amount),
+               available: item.available, available_qty: qty(item.available_qty), available_changed_at: item.available_changed_at,
+               available_changed_by: item.available_changed_by&.name, vendor_name: item.vendor.name)
   end
 
   def moq_alert(alert)

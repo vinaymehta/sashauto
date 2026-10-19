@@ -99,9 +99,10 @@ export function VendorFormPanel({ vendor, onClose, onSaved }: { vendor?: Vendor;
     }
   }
 
-  const row = "grid gap-1.5 sm:grid-cols-[11rem_1fr] sm:items-center sm:gap-4";
+  // Labels beside the fields when the form is wide enough, above them in a narrow panel (container query on the form).
+  const row = "grid gap-1.5 @xl:grid-cols-[11rem_minmax(0,1fr)] @xl:items-center @xl:gap-4";
   const label = "text-sm font-medium text-ink";
-  const fieldError = (key: keyof Form) => errors[key] && <p className="text-sm font-medium text-dec sm:col-start-2">{errors[key]}</p>;
+  const fieldError = (key: keyof Form) => errors[key] && <p className="text-sm font-medium text-dec @xl:col-start-2">{errors[key]}</p>;
 
   return (
     <Sheet
@@ -117,7 +118,8 @@ export function VendorFormPanel({ vendor, onClose, onSaved }: { vendor?: Vendor;
         </>
       }
     >
-      <form onSubmit={save} className="space-y-4 rounded-lg border border-line bg-white px-5 py-4 shadow-card">
+      {/* Inputs and selects may shrink below their natural width, so nothing overflows the panel sideways. */}
+      <form onSubmit={save} className="@container space-y-4 rounded-lg border border-line bg-white px-5 py-4 shadow-card [&_input]:min-w-0 [&_select]:min-w-0">
         {error && <p className="rounded-md bg-age-red px-3 py-2 text-sm text-age-red-ink">{error}</p>}
 
         <div className={row}>
@@ -135,7 +137,7 @@ export function VendorFormPanel({ vendor, onClose, onSaved }: { vendor?: Vendor;
 
         <div className={row}>
           <label htmlFor="vendor-first-name" className={label}>Contact Person</label>
-          <span className="grid gap-2 sm:grid-cols-[7rem_1fr_1fr]">
+          <span className="grid gap-2 @md:grid-cols-[8.5rem_minmax(0,1fr)_minmax(0,1fr)]">
             <Select aria-label="Salutation" {...text("salutation")}>
               <option value="">Salutation</option>
               {SALUTATIONS.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -173,7 +175,7 @@ export function VendorFormPanel({ vendor, onClose, onSaved }: { vendor?: Vendor;
 
         <div className={row}>
           <label htmlFor="vendor-phone" className={label}>Contact No</label>
-          <span className="grid gap-2 sm:grid-cols-2">
+          <span className="grid gap-2 @md:grid-cols-2">
             <Input id="vendor-phone" type="tel" maxLength={200} placeholder="Contact No" {...text("phone")} />
             <Input aria-label="Mobile" type="tel" maxLength={200} placeholder="Mobile" {...text("mobile")} />
           </span>
@@ -182,7 +184,7 @@ export function VendorFormPanel({ vendor, onClose, onSaved }: { vendor?: Vendor;
 
         <div className={row}>
           <label htmlFor="vendor-language" className={label}>Language</label>
-          <Select id="vendor-language" className="sm:w-60" {...text("language")}>
+          <Select id="vendor-language" className="@md:w-60" {...text("language")}>
             {[...new Set([form.language, ...LANGUAGES])].filter(Boolean).map((l) => <option key={l} value={l}>{l}</option>)}
           </Select>
         </div>
@@ -214,7 +216,7 @@ export function VendorFormPanel({ vendor, onClose, onSaved }: { vendor?: Vendor;
             </div>
             <div className={row}>
               <label htmlFor="vendor-pan" className={label}>PAN</label>
-              <Input id="vendor-pan" maxLength={10} className="uppercase sm:w-60" {...text("pan")} />
+              <Input id="vendor-pan" maxLength={10} className="uppercase @md:w-60" {...text("pan")} />
             </div>
             <div className={row}>
               <label htmlFor="vendor-gst-rate" className={label}>GST Rate (%)</label>
@@ -238,7 +240,7 @@ export function VendorFormPanel({ vendor, onClose, onSaved }: { vendor?: Vendor;
             </div>
             <div className={row}>
               <label htmlFor="vendor-currency" className={label}>Currency</label>
-              <Select id="vendor-currency" className="sm:w-60" {...text("currency")}>
+              <Select id="vendor-currency" className="@md:w-60" {...text("currency")}>
                 {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
               </Select>
             </div>

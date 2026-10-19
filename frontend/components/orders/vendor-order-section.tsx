@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import type { OrderUnit, ProductVendor, VendorOrderInfo, VendorOrderPlacementInfo, VendorOrderState } from "@/lib/types";
+import type { EmailDraft, OrderUnit, ProductVendor, VendorOrderInfo, VendorOrderPlacementInfo, VendorOrderState } from "@/lib/types";
 import { formatDate, formatDateOnly, formatDateTime, formatQty } from "@/lib/format";
-import { AlertIcon, DownloadIcon, FileIcon } from "../icons";
+import { AlertIcon, ChevronDownIcon, DownloadIcon, FileIcon, MailIcon } from "../icons";
 import { useSession } from "../session";
 import { useApi } from "../use-api";
 import { useToast } from "../toast";
@@ -13,11 +13,12 @@ import { Alert, Spinner } from "../ui/feedback";
 import { PdfViewer } from "../ui/pdf-viewer";
 import { DatePicker } from "../ui/date-picker";
 import { formatAmount, formatPrice } from "../vendors/vendor-products-panel";
+import { CopyButton } from "../ui/copy-button";
 
 const QTY = /^\d+(\.\d{1,3})?$/;
 // A vendor's ship date defaults to this many days before the order's ship date (time to ship to the customer).
 // It can be changed per vendor.
-const VENDOR_LEAD_DAYS = 60;
+const VENDOR_LEAD_DAYS = 120;
 function defaultVendorShipDate(orderShipDate: string) {
   const [y, m, d] = orderShipDate.split("-").map(Number);
   return new Date(y!, m! - 1, d! - VENDOR_LEAD_DAYS).toLocaleDateString("en-CA");
@@ -41,40 +42,43 @@ export function VendorOrderSection({ orderId, manual = false, onPlaced }: { orde
   const state = data?.data;
 
   return (
-    <section className="mt-4 overflow-hidden rounded-lg border border-line bg-white shadow-card">
-      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-100 px-5 py-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-muted">Vendor order</h3>
-        {state && (
-          <span className="text-xs text-ink-muted">
-            Order Qty <span className="tabular font-semibold text-ink">{state.order.qty !== null ? formatQty(state.order.qty) : "—"}</span>
-            {state.order.combined ? <> (combined from {state.order.combined} orders)</> : null}
-            {state.placements.length > 0 && <>{" · "}Ordered <span className="tabular font-semibold text-ink">{formatQty(state.order.ordered)}</span>
-              {" · "}Open <span className={`tabular font-semibold ${Number(state.order.remaining) > 0 ? "text-dec" : "text-inc"}`}>{formatQty(state.order.remaining)}</span></>}
-            {" · "}MOQ <span className="tabular font-semibold text-ink">{state.moq !== null ? formatQty(state.moq) : "—"}</span>
-          </span>
+    <>
+      <section className="mt-4 overflow-hidden rounded-lg border border-line bg-white shadow-card">
+        <header className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-100 px-5 py-3">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-muted">Vendor order</h3>
+          {state && (
+            <span className="text-xs text-ink-muted">
+              Order Qty <span className="tabular font-semibold text-ink">{state.order.qty !== null ? formatQty(state.order.qty) : "—"}</span>
+              {state.order.combined ? <> (combined from {state.order.combined} orders)</> : null}
+              {state.placements.length > 0 && <>{" · "}Ordered <span className="tabular font-semibold text-ink">{formatQty(state.order.ordered)}</span>
+                {" · "}Open <span className={`tabular font-semibold ${Number(state.order.remaining) > 0 ? "text-dec" : "text-inc"}`}>{formatQty(state.order.remaining)}</span></>}
+              {" · "}MOQ <span className="tabular font-semibold text-ink">{state.moq !== null ? formatQty(state.moq) : "—"}</span>
+            </span>
+          )}
+        </header>
+        {error ? (
+          <div className="p-4"><Alert title="Could not load the vendor order">{error.message}</Alert></div>
+        ) : loading && !state ? (
+          <div className="flex justify-center py-8"><Spinner /></div>
+        ) : !state ? null : (
+          <>
+            {state.placements.map((p) => <PlacedOrders key={p.id} state={state} placement={p} />)}
+            {state.can_place ? (
+              <AllocationForm key={state.order.remaining} state={state} path={path} onPlaced={() => { reload(); onPlaced?.(); }} />
+            ) : state.placements.length === 0 ? (
+              <p className="px-5 py-6 text-sm text-ink-muted">
+                {state.order.qty === null || Number(state.order.qty) <= 0
+                  ? "This order has no Qty to place with vendors."
+                  : state.vendors.length === 0 ? "No vendor is linked to this part." : "No PO generated yet."}
+              </p>
+            ) : Number(state.order.remaining) <= 0 ? (
+              <p className="border-t border-neutral-100 px-5 py-3 text-sm font-medium text-inc">Fully ordered.</p>
+            ) : null}
+          </>
         )}
-      </header>
-      {error ? (
-        <div className="p-4"><Alert title="Could not load the vendor order">{error.message}</Alert></div>
-      ) : loading && !state ? (
-        <div className="flex justify-center py-8"><Spinner /></div>
-      ) : !state ? null : (
-        <>
-          {state.placements.map((p) => <PlacedOrders key={p.id} state={state} placement={p} />)}
-          {state.can_place ? (
-            <AllocationForm key={state.order.remaining} state={state} path={path} onPlaced={() => { reload(); onPlaced?.(); }} />
-          ) : state.placements.length === 0 ? (
-            <p className="px-5 py-6 text-sm text-ink-muted">
-              {state.order.qty === null || Number(state.order.qty) <= 0
-                ? "This order has no Qty to place with vendors."
-                : state.vendors.length === 0 ? "No vendor is linked to this part." : "No PO generated yet."}
-            </p>
-          ) : Number(state.order.remaining) <= 0 ? (
-            <p className="border-t border-neutral-100 px-5 py-3 text-sm font-medium text-inc">Fully ordered.</p>
-          ) : null}
-        </>
-      )}
-    </section>
+      </section>
+      {state && state.placements.length > 0 && <EmailDrafts placements={state.placements} />}
+    </>
   );
 }
 
@@ -92,11 +96,8 @@ function unitInfo(v: ProductVendor, unit: OrderUnit, fallbackMoq: { sets: string
 function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; path: string; onPlaced: () => void }) {
   const notify = useToast();
   const [alloc, setAlloc] = useState<Record<number, Allocation>>({});
-  const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [preview, setPreview] = useState<{ vendorId: number; url: string; kind: DraftKind } | null>(null);
-  const [previewing, setPreviewing] = useState<string | null>(null); // `${kind}-${vendorId}` being made
 
   if (state.vendors.length === 0) {
     return <p className="px-5 py-6 text-sm text-ink-muted">No vendor is linked to this part. Link one on the Vendors page to generate its PO.</p>;
@@ -118,7 +119,7 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
     return valid(a) && moq !== null && milli(a.qty) < milli(moq);
   });
   // A PO can order part of the Qty; the rest stays open for a later PO.
-  const ready = selected.length > 0 && invalid.length === 0 && total > 0 && remaining >= 0;
+  const ready = selected.length > 0 && invalid.length === 0 && total > 0 && remaining >= 0 && datesSet;
 
   // Selecting a vendor starts it with the sets not yet allocated (editable, in sets).
   function toggle(vendorId: number) {
@@ -147,122 +148,18 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
   }));
 
   async function place() {
-    if (!datesSet) return;
     setBusy(true);
     setError(null);
     try {
       const res = await api.post<{ warnings: { message: string }[] }>(path, { allocations: allocationsBody() });
       notify(`${selected.length} PO${selected.length === 1 ? "" : "s"} generated. The PDF${selected.length === 1 ? " is" : "s are"} saved.`);
       if (res.warnings.length) notify(`Below MOQ: ${res.warnings.map((w) => w.message).join(" ")}`, "error");
-      setConfirming(false);
       onPlaced();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not generate the PO.");
     } finally {
       setBusy(false);
     }
-  }
-
-  const describe = (v: ProductVendor) => {
-    const a = alloc[v.vendor_id]!;
-    const { pack } = unitInfo(v, a.unit, fallbackMoq);
-    return a.unit === "pcs" ? `${formatQty(a.qty)} pcs` : pack > 1 ? `${formatQty(a.qty)} sets (${formatQty(String(Number(a.qty) * pack))} pcs)` : formatQty(a.qty);
-  };
-
-  // DRAFT purchase order (`po`) or Intimation Letter (`letter`) of one vendor (not saved): shown in the viewer, or
-  // (`download`) saved as a file.
-  async function draftPdf(vendorId: number, download = false, kind: DraftKind = "po") {
-    setPreviewing(`${kind}-${vendorId}`);
-    setError(null);
-    try {
-      const action = kind === "letter" ? "preview_letter" : "preview";
-      const blob = await api.postBlob(`${path.split("?")[0]}/${action}${path.includes("?") ? `?${path.split("?")[1]}` : ""}`, {
-        vendor_id: vendorId, allocations: allocationsBody(),
-      });
-      const url = URL.createObjectURL(blob);
-      if (download) {
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `${kind === "letter" ? "intimation-letter" : "purchase-order"}-draft-${state.vendors.find((v) => v.vendor_id === vendorId)?.vendor_name ?? vendorId}.pdf`;
-        link.click();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-      } else {
-        setPreview((old) => { if (old) URL.revokeObjectURL(old.url); return { vendorId, url, kind }; });
-      }
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not make the PDF.");
-    } finally {
-      setPreviewing(null);
-    }
-  }
-
-  // Review step, in the same panel: each vendor's quantity, ship date and PDF preview or download, then Generate PO
-  // (or Back).
-  if (confirming) {
-    return (
-      <div>
-        <div className="space-y-3 px-5 py-4">
-          <p className="text-sm font-semibold text-ink">Review {selected.length} vendor order{selected.length === 1 ? "" : "s"}</p>
-          {error && <Alert>{error}</Alert>}
-          <ul className="divide-y divide-neutral-100 overflow-hidden rounded-lg border border-line">
-            {selected.map((v) => {
-              const a = alloc[v.vendor_id]!;
-              return (
-                <li key={v.vendor_id} className="space-y-3 px-4 py-3">
-                  <span className="flex flex-wrap items-end justify-between gap-4">
-                    <span className="min-w-0">
-                      <span className="block truncate font-medium text-ink">{v.vendor_name}</span>
-                      <span className="tabular block text-sm text-ink-muted">{describe(v)}</span>
-                    </span>
-                    <span className="text-sm">
-                      <span className="mb-1 block text-xs font-medium text-ink-muted">Ship date</span>
-                      <DatePicker value={a.ship_date} invalid={!a.ship_date} aria-label={`Ship date for ${v.vendor_name}`} className="w-44"
-                                  onChange={(day) => { setPreview(null); setAlloc((current) => ({ ...current, [v.vendor_id]: { ...current[v.vendor_id]!, ship_date: day } })); }} />
-                    </span>
-                  </span>
-                  {/* The two documents generated for this vendor, each in its own card (drafts until Generate PO). */}
-                  <span className="grid gap-3 sm:grid-cols-2">
-                    <DocCard title="Purchase Order" subtitle="Draft">
-                      <Button size="sm" onClick={() => draftPdf(v.vendor_id)} disabled={previewing !== null || !a.ship_date}>
-                        <FileIcon size={14} className="text-ink-muted" />{previewing === `po-${v.vendor_id}` ? "Making…" : "Preview"}
-                      </Button>
-                      <Button size="sm" onClick={() => draftPdf(v.vendor_id, true)} disabled={previewing !== null || !a.ship_date}>
-                        <DownloadIcon size={14} className="text-ink-muted" />Download
-                      </Button>
-                    </DocCard>
-                    <DocCard title="Intimation Letter" subtitle="Draft">
-                      <Button size="sm" onClick={() => draftPdf(v.vendor_id, false, "letter")} disabled={previewing !== null}>
-                        <FileIcon size={14} className="text-ink-muted" />{previewing === `letter-${v.vendor_id}` ? "Making…" : "Preview"}
-                      </Button>
-                      <Button size="sm" onClick={() => draftPdf(v.vendor_id, true, "letter")} disabled={previewing !== null}>
-                        <DownloadIcon size={14} className="text-ink-muted" />Download
-                      </Button>
-                    </DocCard>
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-          <p className="text-sm text-ink-muted">
-            Order ship date: <span className="font-medium text-ink">{formatDate(state.order.ship_date)}</span>. Each vendor&apos;s ship date is set
-            {` ${VENDOR_LEAD_DAYS}`} days earlier by default; change it if needed. The purchase order shows it as Required By.
-          </p>
-          {!datesSet && <p className="text-sm text-dec">Choose a ship date for each vendor.</p>}
-          <p className="text-sm text-ink-muted">
-            Generating saves each vendor&apos;s PO and Intimation Letter as PDFs. Tick &quot;Order placed&quot; once you have sent them to the vendor. After
-            generating, the allocation and dates are locked.
-          </p>
-        </div>
-        <div className="flex justify-end gap-2 border-t border-neutral-100 bg-neutral-50 px-5 py-3">
-          <Button size="sm" variant="ghost" onClick={() => { setPreview(null); setConfirming(false); }} disabled={busy}>Back</Button>
-          <Button size="sm" variant="primary" onClick={place} disabled={busy || !datesSet}>{busy ? "Generating…" : "Generate PO"}</Button>
-        </div>
-        {preview && (
-          <PdfViewer url={preview.url} onClose={() => setPreview(null)}
-                     title={`${preview.kind === "letter" ? "Intimation Letter" : "Purchase order"} preview · ${state.vendors.find((v) => v.vendor_id === preview.vendorId)?.vendor_name ?? ""} (draft, not saved)`} />
-        )}
-      </div>
-    );
   }
 
   return (
@@ -275,7 +172,7 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
           const { pack, price, moq } = unitInfo(v, unit, fallbackMoq);
           const bad = checked && !valid(a);
           return (
-            <li key={v.vendor_id} className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-5 py-2.5 text-sm">
+            <li key={v.vendor_id} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 px-5 py-2.5 text-sm">
               <input type="checkbox" checked={checked} onChange={() => toggle(v.vendor_id)} aria-label={`Select ${v.vendor_name}`}
                      className="h-4 w-4 accent-[var(--color-accent)]" />
               <span className="min-w-0">
@@ -299,6 +196,13 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
                   </select>
                 ) : <span className="w-[3.25rem] text-xs text-ink-muted">pcs</span>}
               </span>
+              {checked && (
+                <span className="col-start-2 col-end-4 flex flex-wrap items-center justify-end gap-2">
+                  <span className="text-xs font-medium text-ink-muted">Vendor ship date</span>
+                  <DatePicker value={a.ship_date} invalid={!a.ship_date} aria-label={`Ship date for ${v.vendor_name}`} className="w-44"
+                              onChange={(day) => setAlloc((current) => ({ ...current, [v.vendor_id]: { ...current[v.vendor_id]!, ship_date: day } }))} />
+                </span>
+              )}
             </li>
           );
         })}
@@ -329,9 +233,15 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
           </p>
         )}
         {invalid.length > 0 && <p className="text-xs text-dec">Enter a quantity greater than 0 (up to 3 decimals) for each selected vendor.</p>}
-        <div className="flex justify-end pt-1">
-          <Button variant="primary" size="sm" disabled={!ready} onClick={() => { setError(null); setConfirming(true); }}>
-            Generate PO
+        {!datesSet && <p className="text-xs text-dec">Choose a ship date for each selected vendor.</p>}
+        {error && <Alert>{error}</Alert>}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+          <span className="text-xs text-ink-muted">
+            Vendor ship date: {VENDOR_LEAD_DAYS} days before the order&apos;s ship date ({formatDate(state.order.ship_date)}) unless changed; the PO shows
+            it as Required By. Generating saves each vendor&apos;s PO and Intimation Letter (PDFs) and locks the allocation; the email draft is made from them when you open it.
+          </span>
+          <Button variant="primary" size="sm" disabled={!ready || busy} onClick={place}>
+            {busy ? "Generating…" : "Generate PO"}
           </Button>
         </div>
       </div>
@@ -360,9 +270,9 @@ function PlacedOrders({ state, placement }: { state: VendorOrderState; placement
             </span>
             <span className="tabular font-semibold text-ink">{formatQty(vo.qty)} {vo.unit === "pcs" || state.pack_size <= 1 ? "pcs" : "sets"}</span>
             {/* The saved PO and Intimation Letter, each in its own card, and the admin's "Order placed" tick once they
-                were sent to the vendor. */}
+                were sent to the vendor (the emails are in the Email draft section below). */}
             <span className="col-span-2 grid gap-3 sm:grid-cols-2">
-              <DocCard title="Purchase Order" subtitle={vo.number}>
+              <DocCard title="Purchase Order">
                 <button type="button" onClick={() => setViewing({ id: vo.id, number: vo.number, kind: "po" })} className={fileButton}>
                   <FileIcon size={13} className="text-ink-muted" />View
                 </button>
@@ -370,7 +280,7 @@ function PlacedOrders({ state, placement }: { state: VendorOrderState; placement
                   <DownloadIcon size={13} className="text-ink-muted" />Download
                 </a>
               </DocCard>
-              <DocCard title="Intimation Letter" subtitle={`For ${vo.number}`}>
+              <DocCard title="Intimation Letter">
                 <button type="button" onClick={() => setViewing({ id: vo.id, number: vo.number, kind: "letter" })} className={fileButton}>
                   <FileIcon size={13} className="text-ink-muted" />View
                 </button>
@@ -399,6 +309,68 @@ function PlacedOrders({ state, placement }: { state: VendorOrderState; placement
         <span className="tabular font-semibold text-ink">{formatQty(placement.ordered_qty)}</span> of {formatQty(placement.order_qty)} · locked, cannot be edited
       </p>
     </div>
+  );
+}
+
+// Below the Vendor order section: the email to send each vendor with its generated PO (the app never sends it). One
+// row per vendor PO; clicking it opens the email (To, Subject, message) with Copy for the message.
+function EmailDrafts({ placements }: { placements: VendorOrderPlacementInfo[] }) {
+  return (
+    <section className="mt-4 overflow-hidden rounded-lg border border-line bg-white shadow-card">
+      <header className="border-b border-neutral-100 px-5 py-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-muted">Email draft</h3>
+      </header>
+      <ul className="divide-y divide-neutral-100">
+        {placements.flatMap((p) => p.vendor_orders).map((vo) => <EmailDraftRow key={vo.id} order={vo} />)}
+      </ul>
+    </section>
+  );
+}
+
+function EmailDraftRow({ order }: { order: VendorOrderInfo }) {
+  const [open, setOpen] = useState(false);
+  // Loaded the first time the row is opened.
+  const { data, error, loading } = useApi<{ data: EmailDraft }>(open ? `/api/vendor_orders/${order.id}/email` : null);
+  const draft = data?.data;
+
+  return (
+    <li>
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open}
+              className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm hover:bg-neutral-50">
+        <MailIcon size={15} className="shrink-0 text-tint-violet-ink" />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate font-medium text-ink">{order.vendor_name}</span>
+          <span className="block truncate text-xs text-ink-muted">PO {order.number}</span>
+        </span>
+        <ChevronDownIcon size={16} className={`shrink-0 text-ink-muted transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="border-t border-neutral-100 bg-neutral-50/60 px-5 py-3">
+          {error ? (
+            <Alert title="Could not load the email">{error.message}</Alert>
+          ) : loading || !draft ? (
+            <div className="flex justify-center py-4"><Spinner /></div>
+          ) : (
+            <div className="overflow-hidden rounded-lg border border-line bg-white">
+              <dl className="divide-y divide-neutral-100 border-b border-line text-sm">
+                <div className="grid grid-cols-[5rem_minmax(0,1fr)] gap-3 px-4 py-2">
+                  <dt className="text-ink-muted">To</dt>
+                  <dd className="break-words text-ink">{draft.to.join(", ") || <span className="text-ink-faint">No email address on file for this vendor</span>}</dd>
+                </div>
+                <div className="grid grid-cols-[5rem_minmax(0,1fr)] gap-3 px-4 py-2">
+                  <dt className="text-ink-muted">Subject</dt>
+                  <dd className="break-words text-ink">{draft.subject}</dd>
+                </div>
+              </dl>
+              <div className="flex items-start justify-between gap-3 px-4 py-3">
+                <pre className="min-w-0 flex-1 whitespace-pre-wrap break-words font-sans text-sm leading-6 text-ink">{draft.body}</pre>
+                <CopyButton text={draft.body} small />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </li>
   );
 }
 
@@ -436,13 +408,10 @@ function OrderPlacedTick({ order }: { order: VendorOrderInfo }) {
 }
 
 // One document of a vendor order (the purchase order or the Intimation Letter) with its buttons.
-function DocCard({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
+function DocCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <span className="flex flex-col gap-2 rounded-lg border border-line bg-white px-3 py-2.5 shadow-card">
-      <span className="flex items-baseline justify-between gap-2">
-        <span className="flex items-center gap-1.5 text-sm font-semibold text-ink"><FileIcon size={14} className="text-tint-violet-ink" />{title}</span>
-        <span className="truncate text-xs text-ink-muted" title={subtitle}>{subtitle}</span>
-      </span>
+    <span className="flex flex-col gap-5 rounded-lg border border-line bg-white px-3 py-2.5 shadow-card">
+      <span className="flex items-center gap-1.5 border-b border-neutral-100 pb-3 text-sm font-semibold text-ink"><FileIcon size={14} className="text-tint-violet-ink" />{title}</span>
       <span className="flex flex-wrap items-center gap-2">{children}</span>
     </span>
   );

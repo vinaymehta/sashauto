@@ -39,10 +39,20 @@ module Ageing
 
     # The rows of `scope` in any of `bands` on `today`. Works for any table with PO Number, Part Number, Type,
     # PO Line Number and Ship Date (order rows, snapshot rows, quantity changes): the Firm Date is found by order key.
-    def in_bands(scope, bands, today)
+    # `combined_ids`: order rows that start a combined order (Orders::Combiner); they use the combined order's own Firm
+    # Date, as the Orders page shows it. `manual_column`: the scope has a `manual` column (the Orders list), whose
+    # manual orders are never combined.
+    def in_bands(scope, bands, today, combined_ids: [], manual_column: false)
       dates = bands.map { |band| OrderFirmDate.where(firm_on: firm_date_range(band, today)) }.reduce(:or)
-      scope.where.not(order_type: "Forecast")
-           .where("#{Orders::FirmDates.key_sql(scope.quoted_table_name)} IN (#{dates.select(:order_key).to_sql})")
+      table = scope.quoted_table_name
+      key = Orders::FirmDates.key_sql(table)
+      firm_key = if combined_ids.any?
+        anchor = "#{table}.id IN (#{combined_ids.map { |id| Integer(id) }.join(',')})#{" AND NOT #{table}.manual" if manual_column}"
+        "CASE WHEN #{anchor} THEN #{Orders::FirmDates.combined_key_sql(key)} ELSE #{key} END"
+      else
+        key
+      end
+      scope.where.not(order_type: "Forecast").where("#{firm_key} IN (#{dates.select(:order_key).to_sql})")
     end
   end
 end

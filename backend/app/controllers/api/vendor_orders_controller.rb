@@ -65,6 +65,11 @@ module Api
                                                                             type: "application/pdf", disposition: "inline"
     end
 
+    # The email to send a vendor with its generated PO (the app does not send it): { to, subject, body }.
+    def email
+      render json: { data: VendorOrders::EmailDraft.for_order(VendorOrder.find(params[:id])) }
+    end
+
     # The saved Intimation Letter of a vendor order.
     def letter
       vendor_order = VendorOrder.find(params[:id])

@@ -18,7 +18,11 @@ module Dashboard
         trend: trend,
         composition: latest ? composition(latest) : nil,
         top_changes: top_changes,
-        recent_uploads: UploadBatch.includes(:uploaded_by).order(created_at: :desc, id: :desc).limit(6).map { |b| Serializers.upload_batch(b) }
+        recent_uploads: UploadBatch.includes(:uploaded_by).order(created_at: :desc, id: :desc).limit(6).map { |b| Serializers.upload_batch(b) },
+        # Executive figures: open sale and supplier values, and this financial year's customer spend (Dashboard::Money).
+        money: Money.call,
+        # Open orders, pipeline, ageing, outlook, top parts and upcoming shipments (Dashboard::Overview).
+        overview: Overview.call
       }
     end
 

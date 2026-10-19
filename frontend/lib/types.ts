@@ -266,7 +266,36 @@ export interface Stats {
   } | null;
   top_changes: { version: number | null; upload_id?: number; completed_at?: string; changes: QuantityChange[] };
   recent_uploads: UploadSummary[];
+  // Executive figures (amounts as decimal strings). Sale values are Qty × Unit Price ÷ 100 in USD; supplier values are
+  // per currency (no exchange rate). without_price: orders left out because they have no price.
+  // by_date: value per ship date (the graphs group it by week or month); by_vendor: open supplier value per vendor
+  // and currency; series_from: first date of the spend series.
+  money: {
+    open_sale: MoneyTotal & { by_date: DateAmount[] };
+    open_supplier: { by_currency: { currency: string; amount: string }[]; orders: number; without_price: number;
+                     by_vendor: { vendor: string; currency: string; amount: string }[] };
+    ytd_customer_spend: MoneyTotal & { from: string; to: string; series_from: string; by_date: DateAmount[] };
+  };
+  overview: DashboardOverview;
 }
+
+export interface MoneyTotal { amount: string; orders: number; without_price: number; currency: string }
+
+// Dashboard operations figures (Dashboard::Overview), from the current order data. A bucket is a number of orders and
+// their value (USD, Qty × Unit Price ÷ 100).
+export interface OrderBucket { count: number; value: string }
+export type PipelineStatus = "none" | "received" | "dispatched" | "inbound";
+export interface DashboardOverview {
+  kpis: { open: OrderBucket; due_30: OrderBucket; overdue: OrderBucket;
+          po_coverage: { percent: number; covered: OrderBucket; without_po: OrderBucket } };
+  pipeline: (OrderBucket & { status: PipelineStatus })[];
+  ageing: (OrderBucket & { band: "red" | "yellow" | "green" | "none" })[];
+  outlook: { date: string; firm: string; forecast: string }[];
+  top_parts: { part_number: string; description: string | null; orders: number; qty: string; value: string }[];
+  upcoming: { id: number; manual: boolean; po_number: string; po_line_number: string; part_number: string; order_type: OrderType;
+              ship_date: string; qty: string; value: string; status: PipelineStatus; po: boolean; overdue: boolean }[];
+}
+export interface DateAmount { date: string; amount: string }
 
 export interface OrderRow {
   id: number;
@@ -352,12 +381,22 @@ export interface ScheduleGroup {
   below_moq: boolean;
   placed: boolean;
   candidate_ids: number[];
+  firm_date?: string | null; // the day the combined order reached the MOQ (null while below it)
 }
 
 export interface RelatedItem {
   value: string;
   types: OrderType[];
   rows: number;
+}
+
+// Cards above the Orders table (current order data): open Firm / Order orders not yet delivered to Deere, those with no
+// vendor PO yet, those still below the MOQ, and those 90+ days since their Firm Date.
+export interface OrdersSummary {
+  open: number;
+  po_pending: number;
+  below_moq: number;
+  aged: number;
 }
 
 export interface OrdersPage {
@@ -400,6 +439,7 @@ export interface Vendor {
   portal_enabled: boolean;
   remarks: string | null;
   product_count: number;
+  available_count: number; // parts with an "Available Parts" quantity (pieces the vendor has now)
   created_at: string;
   updated_at: string;
 }
@@ -426,6 +466,12 @@ export interface VendorProduct {
   price_note: string | null;
   price_text: string | null; // as written in the vendor file
   updated_at: string;
+  // "Available" tick: the vendor can supply this part now (the manager's check list), and who / when it last changed.
+  available: boolean;
+  available_qty: string | null; // "Available Parts": pieces the vendor has available now
+  available_changed_at: string | null;
+  available_changed_by: string | null;
+  vendor_name: string;
 }
 
 export interface ProductVendor {
@@ -476,6 +522,13 @@ export interface VendorOrderPlacementInfo {
   placed_by: string | null;
   placed_at: string;
   vendor_orders: VendorOrderInfo[];
+}
+
+// The email to send a vendor with its PO (the app never sends it): shown to copy, or downloaded as an .eml file.
+export interface EmailDraft {
+  to: string[];
+  subject: string;
+  body: string;
 }
 
 export interface VendorOrderWarning { vendor_order_id?: number; vendor_id: number; vendor_name: string; message: string }

@@ -1,9 +1,9 @@
 module Orders
   # The Firm Date of an order, kept by order key so later uploads keep it. Two sources:
   # - the file's own "Firm Date" column (import): the base file gives the Firm Date of its orders, and wins;
-  # - otherwise the day the order, or the combined order it starts (Orders::Combiner), first reached the part's MOQ
-  #   (record), e.g. orders that are new after the base file. Kept even when the Qty drops again.
-  # Forecast orders never get a Firm Date.
+  # - otherwise the day the order first reached the part's MOQ (record), e.g. orders that are new after the base file.
+  # A combined order (Orders::Combiner) always gets the day it reached the MOQ, whatever the file's dates of its orders
+  # (kept under combined_key). Kept even when the Qty drops again. Forecast orders never get a Firm Date.
   module FirmDates
     module_function
 
@@ -42,6 +42,17 @@ module Orders
       now = Time.current
       OrderFirmDate.insert_all(missing.map { |key| { order_key: key, firm_on: today, created_at: now, updated_at: now } },
                                unique_by: :order_key)
+    end
+
+    # Key of a combined order's own Firm Date (the day it reached the MOQ), apart from the file's Firm Date of its first
+    # order (stored under that order's key).
+    def combined_key(anchor_key)
+      Digest::SHA256.hexdigest([ "combined", anchor_key ].join(OrderRows::Normalizer::KEY_SEPARATOR))
+    end
+
+    # combined_key in SQL, from an order key expression.
+    def combined_key_sql(key_sql)
+      "encode(sha256(convert_to('combined' || chr(31) || (#{key_sql}), 'UTF8')), 'hex')"
     end
 
     # order key => Firm Date

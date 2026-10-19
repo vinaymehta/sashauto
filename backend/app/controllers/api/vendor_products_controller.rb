@@ -2,13 +2,13 @@ module Api
   # The parts of one vendor, with that vendor's details for each. Changes are admin-only.
   class VendorProductsController < ApplicationController
     FIELDS = %i[sash_part vendor_part description pack_size moq moq_sets weight_kg price_amount set_price_amount
-                price_currency price_note].freeze
+                price_currency price_note available_qty].freeze
 
     before_action -> { require_role(:admin) }, except: :index
     before_action :load_vendor
 
     def index
-      scope = @vendor.vendor_products.joins(:product).includes(:product).order("products.part_number", :id)
+      scope = @vendor.vendor_products.joins(:product).includes(:product, :vendor, :available_changed_by).order("products.part_number", :id)
       if params[:q].present?
         term = "%#{VendorProduct.sanitize_sql_like(params[:q].to_s.strip.first(100))}%"
         scope = scope.where("products.part_number ILIKE :t OR vendor_products.sash_part ILIKE :t OR " \
@@ -32,6 +32,16 @@ module Api
       item = @vendor.vendor_products.find(params[:id])
       item.assign_attributes(attributes)
       save(item, "vendor_product.updated", :ok)
+    end
+
+    # "Available" tick of one part (the vendor can supply it now): PATCH { available: true | false }.
+    def availability
+      item = @vendor.vendor_products.includes(:product).find(params[:id])
+      available = ActiveModel::Type::Boolean.new.cast(params.require(:available))
+      item.update!(available: available, available_changed_at: Time.current, available_changed_by: current_user)
+      audit(available ? "vendor_product.marked_available" : "vendor_product.unmarked_available", subject: item,
+            vendor_id: @vendor.id, part_number: item.product.part_number)
+      render json: { data: Serializers.vendor_product(item) }
     end
 
     def destroy

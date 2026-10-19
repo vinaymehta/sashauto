@@ -270,7 +270,8 @@ function CombinedTr({ group, members, expanded, description, onToggle }: {
   group: ScheduleGroup; members: OrderRow[]; expanded: boolean; description: string | null; onToggle: () => void;
 }) {
   const anchor = members.find((m) => m.id === group.anchor_id) ?? members[0]!;
-  const merged: OrderRow = { ...anchor, qty: group.total };
+  // The combined order's own Firm Date (the day it reached the MOQ), not its first order's.
+  const merged: OrderRow = { ...anchor, qty: group.total, firm_date: group.firm_date ?? null };
   const first = members[0]?.ship_date;
   const last = members[members.length - 1]?.ship_date;
   return (

@@ -12,8 +12,8 @@ module Orders
   class Combiner
     Row = Data.define(:id, :group_key, :part_number, :po_number, :po_line_number, :order_type, :ship_date, :qty)
     # anchor_id => Group; hidden: ids of the non-anchor members (not listed on their own); open: anchor ids of
-    # orders (single or combined) whose Qty is still below the MOQ; firm: id => order key of every order (single or
-    # combined, not Forecast) at or above the MOQ. manual_ids: members added by hand; removed_ids: orders taken out of it.
+    # orders (single or combined) whose Qty is still below the MOQ; firm: id => Firm Date key of every order (single or
+    # combined, not Forecast) at or above the MOQ (a combined order's own key, FirmDates.combined_key). manual_ids: members added by hand; removed_ids: orders taken out of it.
     Group = Data.define(:anchor_id, :members, :total, :moq, :manual_ids, :removed_ids) do
       def combined? = members.size > 1
       def below_moq? = total < moq
@@ -22,7 +22,7 @@ module Orders
 
     COLUMNS = %i[id group_key part_number po_number po_line_number order_type ship_date qty].freeze
     # Part of the cache key: raise it when Group or Result change, so results cached in the old shape are not read.
-    CACHE_VERSION = 4
+    CACHE_VERSION = 5
 
     def self.call(batch_id)
       return Result.new(groups: {}, hidden: Set.new, open: Set.new, firm: {}) if batch_id.nil?
@@ -109,7 +109,9 @@ module Orders
       end
       hidden = built.values.flat_map { |g| g.members.map(&:id) - [ g.anchor_id ] }.to_set
       # Forecast orders never get a Firm Date (the orders of a combined order share the Type).
-      firm = built.values.reject { |g| g.below_moq? || g.members.first.order_type == "Forecast" }.to_h { |g| [ g.anchor_id, keys[g.anchor_id] ] }
+      firm = built.values.reject { |g| g.below_moq? || g.members.first.order_type == "Forecast" }.to_h do |g|
+        [ g.anchor_id, g.combined? ? FirmDates.combined_key(keys[g.anchor_id]) : keys[g.anchor_id] ]
+      end
       rows.each do |row|
         next if built.key?(row.id) || hidden.include?(row.id) || row.order_type == "Forecast"
 

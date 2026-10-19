@@ -110,11 +110,12 @@ class ApplicationController < ActionController::Base
   # under 30 days or no Firm Date has no group. "Today" is the browser's date (param `today`,
   # within a day of the server's) so filters match the colours the user sees; otherwise the server date.
   # Several groups can be selected (age=green,red): rows in any of them.
-  def filter_by_age(scope)
+  # `combined_ids` / `manual_column`: see Ageing::Rules.in_bands (the Orders list).
+  def filter_by_age(scope, combined_ids: [], manual_column: false)
     groups = multi_param(:age, AGE_GROUPS)
     return scope if groups.empty?
 
-    Ageing::Rules.in_bands(scope, groups, request_today)
+    Ageing::Rules.in_bands(scope, groups, request_today, combined_ids: combined_ids, manual_column: manual_column)
   end
 
   # A filter with several selected values, sent comma-separated (type=Order,Firm). Values are trimmed and

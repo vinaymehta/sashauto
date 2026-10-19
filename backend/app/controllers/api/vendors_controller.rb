@@ -7,15 +7,19 @@ module Api
                  portal_enabled remarks].freeze
 
     SORTS = {
-      "name" => "vendors.name", "product_count" => "product_count", "updated_at" => "vendors.updated_at"
+      "name" => "vendors.name", "product_count" => "product_count", "available_count" => "available_count",
+      "updated_at" => "vendors.updated_at"
     }.freeze
+    # Each vendor's number of parts, and of parts with an "Available Parts" quantity (pieces it has now).
+    COUNT_COLUMNS = [ "vendors.*", "(SELECT COUNT(*) FROM vendor_products vp WHERE vp.vendor_id = vendors.id) AS product_count",
+                      "(SELECT COUNT(*) FROM vendor_products vp WHERE vp.vendor_id = vendors.id AND vp.available_qty > 0) AS available_count" ].freeze
 
     before_action -> { require_role(:admin) }, except: %i[index show]
     rate_limit to: 20, within: 1.hour, only: :import, store: RATE_LIMIT_STORE, by: -> { current_user&.id || request.remote_ip },
                with: -> { render_error "Too many imports in a short time. Try again later.", :too_many_requests }
 
     def index
-      scope = Vendor.select("vendors.*", "(SELECT COUNT(*) FROM vendor_products vp WHERE vp.vendor_id = vendors.id) AS product_count")
+      scope = Vendor.select(*COUNT_COLUMNS)
       if params[:q].present?
         term = "%#{Vendor.sanitize_sql_like(params[:q].to_s.strip.first(100))}%"
         # Vendor name, or any of its parts (Part Number, SASH Part, Vendor Part).
@@ -102,7 +106,7 @@ module Api
     end
 
     def find_vendor
-      Vendor.select("vendors.*", "(SELECT COUNT(*) FROM vendor_products vp WHERE vp.vendor_id = vendors.id) AS product_count")
+      Vendor.select(*COUNT_COLUMNS)
             .find(params[:id])
     end
 

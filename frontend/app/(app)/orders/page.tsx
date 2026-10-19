@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { createContext, memo, Suspense, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
-import type { Dashboard, OrderRow, OrdersPage, Role, UploadChoice, UploadDetail } from "@/lib/types";
+import type { Dashboard, OrderRow, OrdersPage, OrdersSummary, Role, UploadChoice, UploadDetail } from "@/lib/types";
 import { formatCount, formatDate, formatQty } from "@/lib/format";
-import { AlertIcon, ArrowUpDownIcon, MapPinIcon, TableIcon } from "@/components/icons";
+import { AlertIcon, ArrowUpDownIcon, FileIcon, HistoryIcon, MapPinIcon, TableIcon } from "@/components/icons";
 import { AddressChangesTable } from "@/components/address-changes-table";
 import { ChangesTable } from "@/components/changes-table";
 import { MoqAlertsTable } from "@/components/moq-alerts-table";
@@ -15,7 +15,7 @@ import { OrderActions, UploadPicker } from "@/components/orders/orders-menu";
 import { DeliveryCell } from "@/components/orders/delivery-cell";
 import { OpenOrderContext, OrderDetailsLink } from "@/components/orders/order-details-modal";
 import { RelatedLink } from "@/components/orders/related-popover";
-import { VersionKpis } from "@/components/upload-summary";
+import { Kpi } from "@/components/upload-summary";
 import { useSession } from "@/components/session";
 import { AGE_FILTER, AgeLegend, ageRowProps, todayParam } from "@/components/age";
 import { useApi, useDebounced } from "@/components/use-api";
@@ -204,6 +204,11 @@ function OrdersView() {
     upload_id: uploadId ?? undefined,
   });
 
+  // Cards above the table (current order data only).
+  const summary = useApi<OrdersSummary>(uploadId === null ? "/api/orders/summary" : null, { today: todayParam() });
+  const reloadSummary = summary.reload;
+  const refresh = useCallback(() => { reload(); reloadSummary(); }, [reload, reloadSummary]);
+
   // useApi keeps the previous response while a new page loads, so the option lists and columns never empty.
   const facets = data?.facets ?? null;
 
@@ -213,6 +218,7 @@ function OrdersView() {
     { key: "ship_date", label: "Ship date", type: "date-range", options: [] },
     { key: "commodity_type", label: "Commodity Type", options: (facets?.commodity_types ?? []).map((v) => ({ value: v, label: v })) },
     AGE_FILTER,
+    { key: "po", label: "Vendor PO", options: [{ value: "none", label: "No PO yet" }, { value: "generated", label: "PO generated" }] },
     // Fulfilled orders (delivered to Deere) are hidden unless chosen here.
     { key: "status", label: "Status", options: [
       { value: "none", label: "No status" }, { value: "received", label: "Received" }, { value: "dispatched", label: "Dispatched" },
@@ -286,13 +292,13 @@ function OrdersView() {
   const onFinished = useCallback((upload: UploadDetail) => {
     if (upload.status === "completed") {
       setUploadId(null);
-      reload();
+      refresh();
       reloadDashboard();
       reloadUploads();
       setPanel(null);
     }
-  }, [reload, reloadDashboard, reloadUploads]);
-  const onManualSaved = () => { reload(); reloadDashboard(); };
+  }, [refresh, reloadDashboard, reloadUploads]);
+  const onManualSaved = () => { refresh(); reloadDashboard(); };
 
   function chooseUpload(id: number | null) {
     setUploadId(id);
@@ -328,10 +334,19 @@ function OrdersView() {
           </Alert>
         </div>
       )}
-      {shown && (
-        <div className="mb-6">
-          <VersionKpis upload={shown} onOpen={(target) => { setChangeFilter(target.direction); setTab(target.tab); }} />
-        </div>
+      {/* What needs doing on the current orders; clicking a card filters the table or opens its tab. */}
+      {summary.data && uploadId === null && (
+        <dl className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <Kpi label="Open orders" value={formatCount(summary.data.open)} hint="Firm and Order, not yet delivered to Deere" icon={<TableIcon size={16} />}
+               tint="violet" onClick={() => { setTab("orders"); list.clearFilters(); list.setFilter("type", "Firm,Order"); }} />
+          <Kpi label="PO to generate" value={formatCount(summary.data.po_pending)} hint="Open orders with a Qty and no vendor PO yet"
+               icon={<FileIcon size={16} />} tint="amber"
+               onClick={() => { setTab("orders"); list.clearFilters(); list.setFilter("type", "Firm,Order"); list.setFilter("po", "none"); }} />
+          <Kpi label="Below MOQ" value={formatCount(summary.data.below_moq)} hint="Open orders still below the part's MOQ" icon={<AlertIcon size={16} />}
+               tint="dec" onClick={tabs.some((t) => t.key === "moq") ? () => setTab("moq") : undefined} />
+          <Kpi label="90+ days since Firm Date" value={formatCount(summary.data.aged)} hint="Open orders in the red age group" icon={<HistoryIcon size={16} />}
+               tint="dec" onClick={() => { setTab("orders"); list.clearFilters(); list.setFilter("age", "red"); }} />
+        </dl>
       )}
 
       <div className="flex items-center overflow-x-auto border-b border-line">
@@ -385,7 +400,7 @@ function OrdersView() {
               <tbody>
                 {data.data.map((row) => (
                   <OrderTr key={rowKey(row)} row={row} columns={COLUMNS} open={selectedKey === rowKey(row)} today={today}
-                           role={role} onChanged={reload} />
+                           role={role} onChanged={refresh} />
                 ))}
               </tbody>
             </Table>

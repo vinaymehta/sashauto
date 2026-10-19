@@ -9,6 +9,7 @@ import { PencilIcon, TruckIcon } from "@/components/icons";
 import { formatMoq, formatPrice } from "@/components/vendors/vendor-products-panel";
 import { DtpImportButton } from "@/components/vendors/dtp-import";
 import { ImportIssuesPanel, useOpenImportIssues } from "@/components/vendors/import-issues";
+import { AvailablePartsPanel } from "@/components/products/available-parts";
 import { Tabs } from "@/components/ui/tabs";
 import { useSession } from "@/components/session";
 import { useToast } from "@/components/toast";
@@ -54,8 +55,8 @@ function ProductsView() {
   const clearAll = () => { list.clearFilters(); setSearch(""); };
   const sortProps = { sort: list.sort, direction: list.direction, onSort: list.toggleSort };
   const [viewing, setViewing] = useState<Product | null>(null);
-  // The list, or the Import issues tab (problems from vendor file imports).
-  const [view, setView] = useState<"list" | "issues">("list");
+  // The list, the Available parts tab (vendor-wise check list) or the Import issues tab (problems from vendor file imports).
+  const [view, setView] = useState<"list" | "available" | "issues">("list");
   const issues = useOpenImportIssues();
   const onImported = (r: VendorImportResult) => { reload(); issues.reload(); if (r.issues) setView("issues"); };
 
@@ -69,12 +70,15 @@ function ProductsView() {
       <div className="flex items-center border-b border-line">
         <Tabs active={view} onChange={setView} tabs={[
           { key: "list" as const, label: "Products", count: data?.meta.total ?? null },
+          { key: "available" as const, label: "Available parts" },
           { key: "issues" as const, label: "Import issues", count: issues.count },
         ]} />
       </div>
 
       {view === "issues" ? (
         <div className="mt-4"><ImportIssuesPanel canEdit={isAdmin} onChanged={() => { reload(); issues.reload(); }} /></div>
+      ) : view === "available" ? (
+        <div className="mt-4"><AvailablePartsPanel /></div>
       ) : (
       <div className="mt-4"><Panel flush>
         <ListToolbar summary={data ? `${formatCount(data.meta.total)} product${data.meta.total === 1 ? "" : "s"}` : ""}>

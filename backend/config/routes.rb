@@ -43,6 +43,7 @@ Rails.application.routes.draw do
       resources :deliveries, only: :create, controller: :order_deliveries
       resources :merges, only: %i[create destroy], controller: :order_merges
       collection do
+        get :summary
         get :by_po
         get :by_part
       end
@@ -55,12 +56,17 @@ Rails.application.routes.draw do
       member do
         get :pdf
         get :letter
+        get :email
       end
     end
     resources :vendors, only: %i[index show create update destroy] do
       post :import, on: :collection
-      resources :products, only: %i[index create update destroy], controller: :vendor_products
+      resources :products, only: %i[index create update destroy], controller: :vendor_products do
+        patch :availability, on: :member
+      end
     end
+    # Every vendor's parts with their "Available" tick, vendor-wise (Products page, Available parts tab).
+    resources :available_parts, only: :index
     resources :products, only: %i[index create update] do
       get :vendors, on: :member
     end

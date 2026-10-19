@@ -42,9 +42,9 @@ module Api
       # Every imported row of the upload (not only the current row of each PO + Part + Type).
       dataset = dataset(batch)
       columns = source_columns(batch)
-      scope = filter(search(dataset, (params[:search].presence || params[:q]).to_s.strip.first(100)))
       # Orders inside a combined order (Orders::Combiner) are listed under its first order, not on their own.
       combined = Orders::Combiner.call(batch&.id)
+      scope = filter(search(dataset, (params[:search].presence || params[:q]).to_s.strip.first(100)), combined)
       scope = scope.where("order_rows.manual OR order_rows.id NOT IN (?)", combined.hidden.to_a) if combined.hidden.any?
       scope, sort, direction = apply_sort(scope, sorts_for(columns), default: DEFAULT_SORT)
       # Manual orders are always listed first; each part keeps the chosen sort.
@@ -62,13 +62,16 @@ module Api
       ship_to_locations, commodity_types = facets(batch, dataset)
       ordered = ordered_by_key(rows)
       deliveries = deliveries_by_key(rows)
-      firm_dates = Orders::FirmDates.for_keys(rows.map { |row| placement_key(row) })
+      # A combined order's row shows the combined order's Firm Date (the day it reached the MOQ).
+      # (By position: an imported row and a manual order can share an id.)
+      firm_keys = rows.map { |row| firm_key(row, combined) }
+      firm_dates = Orders::FirmDates.for_keys(firm_keys)
       render json: {
-        data: rows.map do |row|
+        data: rows.each_with_index.map do |row, i|
           key = placement_key(row)
           Serializers.order_row(row, source: true).merge(placed: ordered.key?(key), ordered_qty: Serializers.qty(ordered[key]),
                                                          deliveries: deliveries.fetch(key, {}),
-                                                         firm_date: firm_dates[key], **combined_info(row, combined))
+                                                         firm_date: firm_dates[firm_keys[i]], **combined_info(row, combined))
         end,
         meta: meta.merge(sort: sort, direction: direction),
         # Every Excel column of the upload, in file order; `key` is the sort key.
@@ -77,6 +80,31 @@ module Api
                            latest: current_view? },
         # Values present in the current data, for the filter panel.
         facets: { ship_to_locations: ship_to_locations, commodity_types: commodity_types }
+      }
+    end
+
+    # Cards above the Orders table, for the current order data (latest upload + manual orders), counting the orders as
+    # listed (a combined order once). open: Firm / Order orders not yet delivered to Deere (outbound); po_pending: open
+    # ones with a Qty and no PO generated yet; below_moq: open ones (single or combined) still below the MOQ; aged:
+    # open ones 90+ days since their Firm Date (age group red, on the browser's `today`).
+    def summary
+      batch = UploadBatch.latest_completed
+      combined = Orders::Combiner.call(batch&.id)
+      rows = OrderRow.where(upload_batch_id: batch&.id, order_type: %w[Firm Order]).where.not(id: combined.hidden.to_a)
+                     .pluck(:id, :group_key, :po_line_number, :ship_date, :qty)
+                     .map { |id, g, line, ship, qty| [ id, Digest::SHA256.hexdigest([ g, line, ship.iso8601 ].join(OrderRows::Normalizer::KEY_SEPARATOR)), qty, false ] }
+      rows += ManualOrder.active.where(order_type: %w[Firm Order]).pluck(:id, :qty)
+                         .map { |id, qty| [ id, VendorOrderPlacement.order_key(ManualOrder.new(id: id)), qty, true ] }
+      delivered = OrderDelivery.active.where(kind: "outbound", order_key: rows.map { |r| r[1] }).distinct.pluck(:order_key).to_set
+      open = rows.reject { |_, key, *| delivered.include?(key) }
+      placed = VendorOrderPlacement.where(order_key: open.map { |r| r[1] }).distinct.pluck(:order_key).to_set
+      imported_ids = open.reject(&:last).map(&:first)
+      render json: {
+        open: open.size,
+        po_pending: open.count { |_, key, qty, _| qty.to_d.positive? && !placed.include?(key) },
+        below_moq: (combined.open & imported_ids.to_set).size,
+        aged: Ageing::Rules.in_bands(OrderRow.where(id: imported_ids), [ "red" ], request_today,
+                                     combined_ids: combined.groups.values.select(&:combined?).map(&:anchor_id)).count
       }
     end
 
@@ -165,7 +193,15 @@ module Api
       { anchor_id: group.anchor_id, member_ids: group.members.map(&:id), manual_ids: group.manual_ids, removed_ids: group.removed_ids,
         total: Serializers.qty(group.total), moq: Serializers.qty(group.moq), below_moq: group.below_moq?,
         placed: VendorOrderPlacement.exists?(order_key: VendorOrderPlacement.order_key(anchor)),
+        # The combined order's Firm Date: the day it reached the MOQ (its orders keep their own).
+        firm_date: OrderFirmDate.find_by(order_key: Orders::FirmDates.combined_key(VendorOrderPlacement.order_key(anchor)))&.firm_on,
         candidate_ids: current_user.admin? ? Orders::Merges.candidates(anchor, combined).map(&:id) : [] }
+    end
+
+    # Key of a listed row's Firm Date: the combined order's own key when the row starts a combined order.
+    def firm_key(row, combined)
+      key = placement_key(row)
+      !row[:manual] && combined.groups[row.id]&.combined? ? Orders::FirmDates.combined_key(key) : key
     end
 
     # Placement key of a listed row (an imported row, or a manual order listed with `manual`).
@@ -283,7 +319,7 @@ module Api
       OrderDelivery.active.where(kind: "outbound").exists? || params[:status].present? ||
         (params[:search].presence || params[:q].presence).present? ||
         params[:type].present? || params[:ship_to].present? || params[:commodity_type].present? ||
-        params[:ship_date_from].present? || params[:ship_date_to].present? || params[:age].present?
+        params[:ship_date_from].present? || params[:ship_date_to].present? || params[:age].present? || params[:po].present?
     end
 
     # SORTS plus the Excel columns without a typed column, sorted by their imported value
@@ -307,7 +343,8 @@ module Api
     end
 
     # Exact-match filters (several values each) plus an inclusive ship date range (ISO dates; invalid dates are ignored).
-    def filter(scope)
+    # `combined`: the upload's combined orders, whose first rows are aged by the combined order's Firm Date.
+    def filter(scope, combined)
       # Each filter accepts several values (comma-separated).
       types = multi_param(:type, OrderRows::Normalizer::ORDER_TYPES)
       ship_tos = multi_param(:ship_to)
@@ -315,13 +352,26 @@ module Api
       scope = scope.where(order_type: types) if types.any?
       scope = scope.where(ship_to_location: ship_tos) if ship_tos.any?
       scope = scope.where(commodity_type: commodities) if commodities.any?
-      scope = filter_by_age(scope)
+      scope = filter_by_age(scope, combined_ids: combined.groups.values.select(&:combined?).map(&:anchor_id), manual_column: true)
       scope = filter_by_status(scope)
+      scope = filter_by_po(scope)
       from = iso_date(params[:ship_date_from])
       to = iso_date(params[:ship_date_to])
       scope = scope.where(ship_date: from..) if from
       scope = scope.where(ship_date: ..to) if to
       scope
+    end
+
+    # Vendor PO filter (po=none,generated): orders with a Qty and no PO generated yet, or with at least one PO.
+    def filter_by_po(scope)
+      values = multi_param(:po, %w[none generated])
+      return scope if values.empty? || values.size == 2
+
+      # The order's placement key (VendorOrderPlacement.order_key) in SQL: by id for manual orders.
+      key = "CASE WHEN order_rows.manual THEN encode(sha256(convert_to('manual' || chr(31) || order_rows.id::text, 'UTF8')), 'hex') " \
+            "ELSE #{Orders::FirmDates.key_sql('order_rows')} END"
+      placed = "EXISTS (SELECT 1 FROM vendor_order_placements p WHERE p.order_key = #{key})"
+      values == [ "none" ] ? scope.where("NOT #{placed} AND order_rows.qty > 0") : scope.where(placed)
     end
 
     def iso_date(value)

@@ -109,14 +109,15 @@ export default function VendorsPage() {
           <div className={`transition-opacity duration-200 ${loading ? "opacity-50" : ""}`}>
             {/* The list shows who the vendor is; everything else is in its details panel (View). */}
             {/* Columns share the width in proportion to their content, so the gaps between them stay even on any screen;
-                the table scrolls sideways below 1080px. Action fits the View, Edit and Delete icons in one line. */}
-            <Table fixed minWidth="min-w-[1080px]">
+                the table scrolls sideways below 1180px. Action fits the View, Edit and Delete icons in one line. */}
+            <Table fixed minWidth="min-w-[1180px]">
               <colgroup>
-                <col className="w-[30%]" />
-                <col className="w-[10%]" />
-                <col className="w-[22%]" />
-                <col className="w-[16%]" />
-                <col className="w-[10%]" />
+                <col className="w-[26%]" />
+                <col className="w-[9%]" />
+                <col className="w-[19%]" />
+                <col className="w-[14%]" />
+                <col className="w-[9%]" />
+                <col className="w-[11%]" />
                 <col className="w-[12%]" />
               </colgroup>
               <thead>
@@ -126,6 +127,7 @@ export default function VendorsPage() {
                   <Th>Contact No</Th>
                   <Th>Place of Supply</Th>
                   <SortTh label="Products" sortKey="product_count" align="center" {...sortProps} />
+                  <SortTh label="Available Parts" sortKey="available_count" align="center" {...sortProps} />
                   <Th align="center">Action</Th>
                 </tr>
               </thead>
@@ -138,6 +140,9 @@ export default function VendorsPage() {
                     <Td className="truncate tabular text-ink-muted" title={v.phone ?? v.mobile ?? undefined}>{v.phone ?? v.mobile ?? dash}</Td>
                     <Td className="truncate text-ink-muted">{v.place_of_supply ?? dash}</Td>
                     <Td align="center" className="tabular">{formatCount(v.product_count)}</Td>
+                    <Td align="center" className="tabular" title={`${formatCount(v.available_count)} of ${formatCount(v.product_count)} parts have Available Parts`}>
+                      {v.available_count ? <span className="font-semibold text-inc">{formatCount(v.available_count)}</span> : dash}
+                    </Td>
                     <Td align="center" className="space-x-1" onClick={(e) => e.stopPropagation()}>
                       <button type="button" className={iconButton} onClick={() => setViewing(v)} aria-label={`View ${v.name}`} title="View vendor details">
                         <EyeIcon size={16} />

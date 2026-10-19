@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { Currency, Vendor, VendorProduct } from "@/lib/types";
-import { formatQty } from "@/lib/format";
-import { PencilIcon, PlusIcon, TrashIcon, TruckIcon } from "../icons";
+import { formatDateTime, formatQty } from "@/lib/format";
+import { CheckIcon, PencilIcon, PlusIcon, TrashIcon, TruckIcon } from "../icons";
 import { useApi, useDebounced } from "../use-api";
 import { useToast } from "../toast";
 import { Button } from "../ui/button";
@@ -55,6 +55,38 @@ export function formatMoq(item: { moq: string | null; moq_sets?: string | null; 
 
 const iconButton = "inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-neutral-100 hover:text-ink";
 
+// "Available" tick of a vendor part (the vendor can supply it now): a checkbox for admins, a ✓ for others. The tooltip
+// says who changed it last and when. `onChanged` gets the saved part.
+export function AvailableTick({ item, canEdit, onChanged }: { item: VendorProduct; canEdit: boolean; onChanged: (item: VendorProduct) => void }) {
+  const notify = useToast();
+  const [saving, setSaving] = useState(false);
+  const title = item.available_changed_at
+    ? `${item.available ? "Ticked" : "Unticked"}${item.available_changed_by ? ` by ${item.available_changed_by}` : ""} on ${formatDateTime(item.available_changed_at)}`
+    : "Not ticked yet";
+
+  async function toggle() {
+    setSaving(true);
+    try {
+      const res = await api.patch<{ data: VendorProduct }>(`/api/vendors/${item.vendor_id}/products/${item.id}/availability`, { available: !item.available });
+      onChanged(res.data);
+    } catch (err) {
+      notify(err instanceof ApiError ? err.message : "Could not save.", "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!canEdit) {
+    return item.available
+      ? <span title={title} className="inline-flex text-inc"><CheckIcon size={16} /><span className="sr-only">Available</span></span>
+      : <span title={title} className="text-neutral-300">—</span>;
+  }
+  return (
+    <input type="checkbox" checked={item.available} disabled={saving} onChange={toggle} title={title}
+           aria-label={`${item.part_number} available from ${item.vendor_name}`} className="h-4 w-4 cursor-pointer accent-[var(--color-accent)]" />
+  );
+}
+
 // Side panel listing the parts of one vendor. Admins can add, edit and remove parts inside the panel.
 export function VendorProductsPanel({ vendor, canEdit, onClose, onChanged }: {
   vendor: Vendor; canEdit: boolean; onClose: () => void; onChanged: () => void;
@@ -98,7 +130,9 @@ export function VendorProductsPanel({ vendor, canEdit, onClose, onChanged }: {
       wide
       onClose={onClose}
       title={vendor.name}
-      description={data ? `${items.length} part${items.length === 1 ? "" : "s"}${q ? " match" : ""} from this vendor.` : "Parts from this vendor."}
+      description={data
+        ? `${items.length} part${items.length === 1 ? "" : "s"}${q ? " match" : ""} from this vendor · ${items.filter((i) => i.available).length} available.`
+        : "Parts from this vendor."}
       icon={<TruckIcon size={18} />}
     >
       <section className="overflow-hidden rounded-lg border border-line bg-white shadow-card">
@@ -120,21 +154,27 @@ export function VendorProductsPanel({ vendor, canEdit, onClose, onChanged }: {
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="text-2xs font-bold uppercase tracking-wider text-neutral-600">
-                  {["Part Number", "SASH Part", "Vendor Part", "Description", "Pack", "MOQ", "Weight (kg)", "Vendor Price", ...(canEdit ? ["Action"] : [])].map((h) => (
+                  {["Available", "Part Number", "SASH Part", "Vendor Part", "Description", "Pack", "MOQ", "Available Parts", "Weight (kg)", "Vendor Price", ...(canEdit ? ["Action"] : [])].map((h) => (
                     <th key={h} className={`h-9 whitespace-nowrap border-b border-neutral-200 bg-neutral-50 px-4 ${
-                      ["Pack", "MOQ", "Weight (kg)", "Vendor Price"].includes(h) ? "text-right" : h === "Action" ? "text-center" : "text-left"}`}>{h}</th>
+                      ["Pack", "MOQ", "Available Parts", "Weight (kg)", "Vendor Price"].includes(h) ? "text-right" : h === "Action" || h === "Available" ? "text-center" : "text-left"}`}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {items.map((item) => (
                   <tr key={item.id} className="transition-colors hover:bg-neutral-50">
+                    <td className="h-11 border-b border-neutral-100 px-4 text-center">
+                      <AvailableTick item={item} canEdit={canEdit} onChanged={() => reload()} />
+                    </td>
                     <td className="h-11 whitespace-nowrap border-b border-neutral-100 px-4 font-medium text-ink">{item.part_number}</td>
                     <td className="whitespace-nowrap border-b border-neutral-100 px-4">{item.sash_part ?? dash}</td>
                     <td className="whitespace-nowrap border-b border-neutral-100 px-4">{item.vendor_part ?? dash}</td>
                     <td className="max-w-72 truncate border-b border-neutral-100 px-4 text-ink-muted" title={item.description ?? undefined}>{item.description ?? dash}</td>
                     <td className="tabular whitespace-nowrap border-b border-neutral-100 px-4 text-right">{item.pack_size > 1 ? `${item.pack_size} pcs` : dash}</td>
                     <td className="tabular whitespace-nowrap border-b border-neutral-100 px-4 text-right">{formatMoq(item) ?? dash}</td>
+                    <td className="tabular whitespace-nowrap border-b border-neutral-100 px-4 text-right font-medium">
+                      {item.available_qty !== null ? `${formatQty(item.available_qty)} pcs` : dash}
+                    </td>
                     <td className="tabular whitespace-nowrap border-b border-neutral-100 px-4 text-right">{item.weight_kg !== null ? formatQty(item.weight_kg) : dash}</td>
                     <td className="tabular whitespace-nowrap border-b border-neutral-100 px-4 text-right font-medium">{formatPrice(item) ?? dash}</td>
                     {canEdit && (
@@ -176,7 +216,7 @@ function VendorProductForm({ vendor, item, onBack, onClose, onSaved }: {
     part_number: item?.part_number ?? "", sash_part: item?.sash_part ?? "", vendor_part: item?.vendor_part ?? "",
     description: item?.description ?? "", pack_size: String(item?.pack_size ?? 1), moq_sets: item?.moq_sets ?? "", moq: item?.moq ?? "",
     weight_kg: item?.weight_kg ?? "", set_price_amount: item?.set_price_amount ?? "", price_amount: item?.price_amount ?? "",
-    price_currency: item?.price_currency ?? "INR", price_note: item?.price_note ?? "",
+    price_currency: item?.price_currency ?? "INR", price_note: item?.price_note ?? "", available_qty: item?.available_qty ?? "",
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -222,6 +262,7 @@ function VendorProductForm({ vendor, item, onBack, onClose, onSaved }: {
     if (values.set_price_amount.trim() && !NUMBER.test(values.set_price_amount.trim())) next.set_price_amount = "Enter a number, or leave blank.";
     if (values.weight_kg.trim() && !NUMBER.test(values.weight_kg.trim())) next.weight_kg = "Enter a number, or leave blank.";
     if (values.price_amount.trim() && !NUMBER.test(values.price_amount.trim())) next.price_amount = "Enter a number, or leave blank.";
+    if (values.available_qty.trim() && !NUMBER.test(values.available_qty.trim())) next.available_qty = "Enter a number of pieces, or leave blank.";
     setErrors(next);
     return Object.keys(next).length === 0;
   }
@@ -285,6 +326,9 @@ function VendorProductForm({ vendor, item, onBack, onClose, onSaved }: {
           <div className="grid grid-cols-2 gap-4">
             {field("pack_size", "Pieces per set", { inputMode: "numeric", onChange: setPack })}
             {field("weight_kg", "Per Pc Weight (kg)", { inputMode: "decimal" })}
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            {field("available_qty", "Available Parts (pcs)", { inputMode: "decimal", placeholder: "Pieces the vendor has now" })}
           </div>
           <div className="grid grid-cols-2 gap-4">
             {field("moq_sets", packOf(values) > 1 ? "MOQ (sets)" : "MOQ", { inputMode: "decimal", onChange: linked("moq_sets") })}

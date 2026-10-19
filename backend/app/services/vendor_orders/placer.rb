@@ -84,19 +84,24 @@ module VendorOrders
     end
 
     def preview(vendor_id)
-      product = Product.find_by(part_number: @row.part_number)
-      links = product ? product.vendor_products.includes(:vendor).index_by(&:vendor_id) : {}
-      line = parse(links).find { |l| l[:vendor_id] == vendor_id }
-      raise Invalid, "Select this vendor and enter its quantity first." unless line
-
-      link = links.fetch(vendor_id)
+      product, link, line = draft_line(vendor_id)
       PdfBuilder.preview(vendor: link.vendor, product: product, link: link, qty: line[:qty], unit: line[:unit],
                          unit_price: line[:unit] == "pcs" ? link.price_amount : link.set_price_amount,
                          required_by: line[:ship_date] || default_ship_date, prepared_by: @user.name)
     end
 
     # Vendors ship this many days before the order's ship date, unless a date is chosen.
-    VENDOR_LEAD_DAYS = 60
+    VENDOR_LEAD_DAYS = 120
+
+    # [product, vendor link, allocation line] of one vendor of the allocation.
+    def draft_line(vendor_id)
+      product = Product.find_by(part_number: @row.part_number)
+      links = product ? product.vendor_products.includes(:vendor).index_by(&:vendor_id) : {}
+      line = parse(links).find { |l| l[:vendor_id] == vendor_id }
+      raise Invalid, "Select this vendor and enter its quantity first." unless line
+
+      [ product, links.fetch(vendor_id), line ]
+    end
 
     def default_ship_date
       @row.ship_date - VENDOR_LEAD_DAYS

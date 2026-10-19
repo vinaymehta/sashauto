@@ -1,0 +1,148 @@
+require "bigdecimal"
+
+module Dashboard
+  # Operations figures of the dashboard, from the current order data (the latest upload and active manual orders),
+  # counting orders as the Orders page lists them: a combined order (Orders::Combiner) once, valued at all of its rows.
+  # Open = a Firm or Order order not yet delivered to Deere (no active outbound mark). Values are Qty × Unit Price ÷ 100
+  # (USD), as in Dashboard::Money.
+  #
+  #   kpis       open orders, due in the next 30 days, overdue (ship date passed), PO coverage (share of the open value
+  #              with a vendor PO generated)
+  #   pipeline   open orders by their furthest status mark: none, received, dispatched, inbound
+  #   ageing     open orders by age group (days since the Firm Date, Ageing::Rules)
+  #   outlook    by ship date from the start of this month: Firm + Order value and Forecast value (the graph groups it)
+  #   top_parts  the eight parts with the most open value
+  #   upcoming   the next open orders to ship (overdue first), with their status and whether a PO exists
+  class Overview
+    TYPES = %w[Firm Order].freeze
+    STATUSES = %w[none received dispatched inbound].freeze
+    # One listed order: its anchor row (or manual order), every row's value summed, and the keys of its marks.
+    Order = Data.define(:id, :manual, :key, :firm_key, :po_number, :po_line_number, :part_number, :order_type, :ship_date, :qty, :value)
+
+    def self.call(today: Time.find_zone!(AppConfig.ageing_time_zone).today)
+      new(today).call
+    end
+
+    def initialize(today)
+      @today = today
+    end
+
+    def call
+      orders = listed_orders
+      firm = orders.select { |o| TYPES.include?(o.order_type) }
+      status = statuses(firm.map(&:key))
+      open = firm.reject { |o| status[o.key] == "outbound" }
+      placed = VendorOrderPlacement.where(order_key: open.map(&:key)).distinct.pluck(:order_key).to_set
+      {
+        kpis: kpis(open, placed),
+        pipeline: STATUSES.map { |s| bucket(open.select { |o| (status[o.key] || "none") == s }).merge(status: s) },
+        ageing: ageing(open),
+        outlook: outlook(orders),
+        top_parts: top_parts(open),
+        upcoming: upcoming(open, status, placed)
+      }
+    end
+
+    private
+
+    # Every order of the current data, combined orders folded into their first order.
+    def listed_orders
+      batch = UploadBatch.latest_completed
+      return manual_orders unless batch
+
+      combined = Orders::Combiner.call(batch.id)
+      anchor_of = combined.groups.values.select(&:combined?).flat_map { |g| g.members.map { |m| [ m.id, g.anchor_id ] } }.to_h
+      rows = OrderRow.where(upload_batch_id: batch.id)
+                     .pluck(:id, :group_key, :po_number, :po_line_number, :part_number, :order_type, :ship_date, :qty, Arel.sql("source_data->>'Unit Price'"))
+      prices = price_lookup(rows.map { |r| r[4] })
+      values = rows.to_h { |r| [ r[0], value(r[7], r[8], prices[r[4]]) ] }
+      groups = rows.group_by { |r| anchor_of[r[0]] || r[0] }
+      groups.map do |anchor_id, members|
+        row = members.find { |r| r[0] == anchor_id }
+        key = Digest::SHA256.hexdigest([ row[1], row[3], row[6].iso8601 ].join(OrderRows::Normalizer::KEY_SEPARATOR))
+        Order.new(id: anchor_id, manual: false, key: key, firm_key: members.size > 1 ? Orders::FirmDates.combined_key(key) : key,
+                  po_number: row[2], po_line_number: row[3], part_number: row[4], order_type: row[5], ship_date: row[6],
+                  qty: members.sum { |m| m[7].to_d }, value: members.filter_map { |m| values[m[0]] }.sum(BigDecimal("0")))
+      end + manual_orders
+    end
+
+    def manual_orders
+      list = ManualOrder.active.pluck(:id, :po_number, :po_line_number, :part_number, :order_type, :ship_date, :qty, Arel.sql("source_data->>'Unit Price'"))
+      prices = price_lookup(list.map { |m| m[3] })
+      list.map do |id, po, line, part, type, ship, qty, price|
+        key = VendorOrderPlacement.order_key(ManualOrder.new(id: id))
+        Order.new(id: id, manual: true, key: key, firm_key: key, po_number: po, po_line_number: line, part_number: part, order_type: type,
+                  ship_date: ship, qty: qty.to_d, value: value(qty, price, prices[part]) || BigDecimal("0"))
+      end
+    end
+
+    # order key => furthest active status mark.
+    def statuses(keys)
+      kinds = OrderDelivery::KINDS
+      OrderDelivery.active.where(order_key: keys).pluck(:order_key, :kind).group_by(&:first)
+                   .transform_values { |marks| marks.map(&:last).max_by { |k| kinds.index(k) } }
+    end
+
+    def kpis(open, placed)
+      covered = open.select { |o| placed.include?(o.key) }
+      total = open.sum(BigDecimal("0"), &:value)
+      {
+        open: bucket(open),
+        due_30: bucket(open.select { |o| o.ship_date >= @today && o.ship_date <= @today + 30 }),
+        overdue: bucket(open.select { |o| o.ship_date < @today }),
+        po_coverage: { percent: total.positive? ? (covered.sum(BigDecimal("0"), &:value) / total * 100).round(1).to_f : 0.0,
+                       covered: bucket(covered), without_po: bucket(open.reject { |o| placed.include?(o.key) || o.qty.zero? }) }
+      }
+    end
+
+    def ageing(open)
+      dates = Orders::FirmDates.for_keys(open.map(&:firm_key))
+      bands = open.group_by { |o| Ageing::Rules.band_for(dates[o.firm_key], @today) || "none" }
+      %w[red yellow green none].map { |band| bucket(bands.fetch(band, [])).merge(band: band) }
+    end
+
+    def outlook(orders)
+      start = @today.beginning_of_month
+      orders.select { |o| o.ship_date >= start }.group_by(&:ship_date).sort.map do |date, list|
+        firm, forecast = list.partition { |o| TYPES.include?(o.order_type) }
+        { date: date, firm: money(firm.sum(BigDecimal("0"), &:value)), forecast: money(forecast.sum(BigDecimal("0"), &:value)) }
+      end
+    end
+
+    def top_parts(open)
+      descriptions = Product.where(part_number: open.map(&:part_number).uniq).pluck(:part_number, :description).to_h
+      open.group_by(&:part_number)
+          .map { |part, list| { part_number: part, description: descriptions[part], orders: list.size,
+                                qty: Serializers.qty(list.sum(BigDecimal("0"), &:qty)), value: list.sum(BigDecimal("0"), &:value) } }
+          .sort_by { |p| -p[:value] }.first(8)
+          .map { |p| p.merge(value: money(p[:value])) }
+    end
+
+    def upcoming(open, status, placed)
+      open.select { |o| o.ship_date <= @today + 30 && o.qty.positive? }.sort_by { |o| [ o.ship_date, o.po_number ] }.first(8).map do |o|
+        { id: o.id, manual: o.manual, po_number: o.po_number, po_line_number: o.po_line_number, part_number: o.part_number,
+          order_type: o.order_type, ship_date: o.ship_date, qty: Serializers.qty(o.qty), value: money(o.value),
+          status: status[o.key] || "none", po: placed.include?(o.key), overdue: o.ship_date < @today }
+      end
+    end
+
+    def bucket(list)
+      { count: list.size, value: money(list.sum(BigDecimal("0"), &:value)) }
+    end
+
+    # Qty × price per 100 pcs ÷ 100: the order's own Unit Price, else the part's customer price; nil without either.
+    def value(qty, price_text, fallback)
+      text = price_text.to_s.delete(",").strip
+      price = text.match?(/\A\d+(\.\d+)?\z/) ? BigDecimal(text) : fallback
+      price && qty.to_d * price / 100
+    end
+
+    def price_lookup(parts)
+      Product.where(part_number: parts.uniq).pluck(:part_number, :customer_price).to_h
+    end
+
+    def money(value)
+      value.round(2).to_s("F")
+    end
+  end
+end

@@ -5,6 +5,8 @@ export interface BarItem {
   label: string;
   value: number;
   hint?: string;
+  /** The value as written, instead of `format(value)` (e.g. an amount in its own currency). */
+  display?: string;
   /** Tailwind background class for the bar, e.g. "bg-type-order". Defaults to neutral. */
   color?: string;
   /** Optional icon shown before the label (required when the colour is a status colour). */
@@ -13,7 +15,8 @@ export interface BarItem {
 
 // Horizontal magnitude bars, each labelled with its value and share. Every bar is directly
 // labelled, so identity never depends on colour alone.
-export function BarList({ items, total }: { items: BarItem[]; total?: number }) {
+// `format`: how values are written (counts by default).
+export function BarList({ items, total, format = formatCount }: { items: BarItem[]; total?: number; format?: (value: number) => string }) {
   const max = Math.max(1, ...items.map((i) => i.value));
   const sum = total ?? items.reduce((a, i) => a + i.value, 0);
   return (
@@ -26,7 +29,7 @@ export function BarList({ items, total }: { items: BarItem[]; total?: number }) 
               <span className="truncate">{item.label}</span>
             </span>
             <span className="tabular shrink-0 text-ink">
-              {formatCount(item.value)}
+              {item.display ?? format(item.value)}
               <span className="ml-1.5 text-xs text-ink-muted">{sum ? Math.round((item.value / sum) * 100) : 0}%</span>
             </span>
           </div>

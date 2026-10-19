@@ -8,7 +8,7 @@ import { TINTS, type Tint } from "./ui/tint";
 // ─── Shared KPI building block ───────────────────────────────────────────────
 
 // `onClick`: the card opens the related tab (shown as a clickable card).
-function Kpi({ label, value, tone, hint, icon, tint = "neutral", onClick }: {
+export function Kpi({ label, value, tone, hint, icon, tint = "neutral", onClick }: {
   label: string; value: ReactNode; tone?: "up" | "down"; hint?: string; icon: ReactNode; tint?: Tint; onClick?: () => void;
 }) {
   const color = tone === "up" ? "text-inc" : tone === "down" ? "text-dec" : "text-neutral-900";
