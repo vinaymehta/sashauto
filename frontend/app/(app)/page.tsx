@@ -126,7 +126,6 @@ export default function DashboardPage() {
   const attention = [
     overview.kpis.overdue.count > 0 && { text: `${plural(overview.kpis.overdue.count, "open order")} past the ship date`, href: `${OPEN_ORDERS}&timing=overdue` },
     totals.open_conflicts > 0 && { text: `${totals.open_conflicts} Commodity Type conflict${totals.open_conflicts === 1 ? "" : "s"} to review`, href: "/products?conflicts=open" },
-    totals.emails_failed > 0 && { text: `${totals.emails_failed} email${totals.emails_failed === 1 ? "" : "s"} failed to send`, href: "/orders" },
     totals.in_progress > 0 && { text: `${totals.in_progress} upload${totals.in_progress === 1 ? " is" : "s are"} processing`, href: "/orders" },
   ].filter(Boolean) as { text: string; href: string }[];
 

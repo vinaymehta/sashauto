@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Alert, EmptyState } from "@/components/ui/feedback";
 import { ListToolbar } from "@/components/ui/list-toolbar";
 import { PageHeader } from "@/components/ui/panel";
+import { BusinessPicker } from "@/components/business-switch";
 import { SearchInput } from "@/components/ui/search-input";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { FilterChips, FilterMenu, type FilterGroup } from "@/components/ui/filter-menu";
@@ -238,7 +239,7 @@ function OrdersView() {
     { section: "Dates", key: "ship_date", label: "Ship date", type: "date-range", options: [] },
     { section: "Dates", key: "firm_date", label: "Firm date", type: "date-range", options: [] },
     { ...AGE_FILTER, section: "Dates" },
-    { section: "Purchasing", key: "po", label: "Vendor PO", options: [{ value: "none", label: "No PO yet" }, { value: "generated", label: "PO generated" }] },
+    { section: "Purchasing", key: "po", label: "Vendor PO", options: [{ value: "none", label: "No PO yet" }, { value: "generated", label: "PO generated" }, { value: "no_qty", label: "No Qty (nothing to order)" }] },
     { section: "Purchasing", key: "vendor", label: "Vendor", options: (facets?.vendors ?? []).map((v) => ({ value: String(v.id), label: v.name })) },
     { section: "Purchasing", key: "moq", label: "MOQ", options: [{ value: "below", label: "Below MOQ" }, { value: "reached", label: "Reached MOQ" }] },
     { section: "Purchasing", key: "combined", label: "Combined", options: [{ value: "yes", label: "Combined orders" }, { value: "no", label: "Not combined" }] },
@@ -332,10 +333,14 @@ function OrdersView() {
     <>
       <PageHeader
         title="Orders"
-        actions={manager ? undefined : (
+        actions={(
           <div className="flex flex-wrap items-center gap-2">
+            {/* Which business's orders are shown (DTP, GMBH or both); the same choice as on the Dashboard. */}
+            <BusinessPicker />
+            {!manager && <>
             <UploadPicker uploads={uploads.data?.data ?? []} latestId={latest?.id} selectedId={uploadId} onSelect={chooseUpload} />
             <OrderActions downloadId={source?.upload_id} onUpload={() => setPanel("upload")} onCreate={admin ? () => setPanel("create") : undefined} />
+            </>}
           </div>
         )}
       />
@@ -360,7 +365,8 @@ function OrdersView() {
         <dl className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
           <Kpi label="Open orders" value={formatCount(summary.data.open)} hint="Firm and Order, not yet delivered to Deere" icon={<TableIcon size={16} />}
                tint="violet" onClick={() => { setTab("orders"); list.clearFilters(); list.setFilter("type", "Firm,Order"); }} />
-          <Kpi label="PO to generate" value={formatCount(summary.data.po_pending)} hint="Open orders with a Qty and no vendor PO yet"
+          <Kpi label="PO to generate" value={formatCount(summary.data.po_pending)}
+               hint={`Open orders with a Qty and no vendor PO yet · ${formatCount(summary.data.po_generated)} with a PO · ${formatCount(summary.data.no_qty)} without a Qty`}
                icon={<FileIcon size={16} />} tint="amber"
                onClick={() => { setTab("orders"); list.clearFilters(); list.setFilter("type", "Firm,Order"); list.setFilter("po", "none"); }} />
           <Kpi label="Below MOQ" value={formatCount(summary.data.below_moq)} hint="Open orders still below the part's MOQ" icon={<AlertIcon size={16} />}
@@ -391,7 +397,7 @@ function OrdersView() {
           <FilterMenu groups={filters} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
         </ListToolbar>
         <FilterChips groups={filters} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
-        <AgeLegend />
+        <AgeLegend value={list.filters.age} onChange={(v) => list.setFilter("age", v)} />
 
         {error ? (
           <div className="p-4"><Alert title="Could not load orders">{error.message}</Alert></div>

@@ -29,7 +29,7 @@ module Comparison
     # on its first (anchor) row with the combined Qty. new_alert: the previous upload had no alert for the same
     # PO + Part + Type.
     def self.imported_alerts(binds)
-      result = Orders::Combiner.call(binds[:current])
+      result = Orders::Combiner.call(binds[:current], cache: false) # the upload being processed (not committed yet)
       return [] if result.open.empty?
 
       groups = result.open.map { |id| result.groups.fetch(id) }

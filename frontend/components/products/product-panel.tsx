@@ -12,7 +12,7 @@ import { Button } from "../ui/button";
 import { ConfirmDialog } from "../ui/confirm-dialog";
 import { Alert, Spinner } from "../ui/feedback";
 import { Sheet } from "../ui/sheet";
-import { formatAmount } from "../vendors/price-format";
+import { formatAmount, formatCustomer } from "../vendors/price-format";
 
 type PartResponse = { product: Product; data: ProductVendor[]; customer_price: string | null; history: PriceChange[] };
 const NUMBER = /^\d+(\.\d{1,4})?$/;
@@ -43,7 +43,7 @@ export function ProductPanel({ productId, canEdit, edit = false, onClose, onSave
           <PartDetails product={product} canEdit={canEdit} edit={edit} onSaved={changed} />
           <CustomerPrice product={product} price={data.customer_price} canEdit={canEdit} onSaved={changed} />
           <Vendors product={product} items={data.data} canEdit={canEdit} onSaved={changed} />
-          <History history={data.history} />
+          <History history={data.history} currency={product.customer_currency ?? "USD"} />
         </div>
       ) : null}
     </Sheet>
@@ -149,6 +149,7 @@ function CustomerPrice({ product, price, canEdit, onSaved }: { product: Product;
   const [value, setValue] = useState(price ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const currency = product.customer_currency ?? "USD";
 
   async function save() {
     const v = value.trim();
@@ -176,7 +177,7 @@ function CustomerPrice({ product, price, canEdit, onSaved }: { product: Product;
         {editing ? (
           <div className="flex flex-wrap items-center gap-2">
             <span className="w-32"><input autoFocus aria-label="Customer price per 100 pcs" inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value)} className={inputClass} /></span>
-            <span className="text-sm text-ink-muted">per 100 pcs{NUMBER.test(value.trim()) && ` = ${money(String(Number(value) / 100), 2)} per piece`}</span>
+            <span className="text-sm text-ink-muted">{currency} per 100 pcs{NUMBER.test(value.trim()) && ` = ${formatCustomer(Number(value) / 100, currency)} per piece`}</span>
             <Button size="sm" variant="ghost" onClick={() => setEditing(false)} disabled={saving}>Cancel</Button>
             <Button size="sm" variant="primary" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
           </div>
@@ -184,8 +185,8 @@ function CustomerPrice({ product, price, canEdit, onSaved }: { product: Product;
           <p className="text-sm text-ink-muted">Not set yet. It is taken from the order file&apos;s Unit Price on the next upload.</p>
         ) : (
           <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <span><span className="tabular text-2xl font-bold text-ink">{money(String(Number(price) / 100), 2)}</span><span className="ml-1 text-sm text-ink-muted">per piece</span></span>
-            <span className="text-sm text-ink-muted">({money(price)} per 100 pcs, the order file&apos;s Unit Price)</span>
+            <span><span className="tabular text-2xl font-bold text-ink">{formatCustomer(Number(price) / 100, currency)}</span><span className="ml-1 text-sm text-ink-muted">per piece</span></span>
+            <span className="text-sm text-ink-muted">({formatCustomer(price, currency)} per 100 pcs, the order file&apos;s Unit Price)</span>
           </p>
         )}
       </div>
@@ -395,7 +396,7 @@ function VendorAddRow({ product, existing, onDone }: { product: Product; existin
 }
 
 // Price history of the part, customer and vendor prices in two tabs (newest first).
-function History({ history }: { history: PriceChange[] }) {
+function History({ history, currency }: { history: PriceChange[]; currency: string }) {
   const [tab, setTab] = useState<"customer" | "vendor">("customer");
   const shown = history.filter((h) => (h.kind === "customer") === (tab === "customer"));
   return (
@@ -419,8 +420,8 @@ function History({ history }: { history: PriceChange[] }) {
             return (
               <li key={h.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3 text-sm">
                 <span className="tabular text-ink">
-                  {before === null ? <span className="text-ink-muted">set to</span> : <span className="text-ink-muted line-through">{money(before)}</span>}
-                  {" "}<span className="font-semibold">{after === null ? "cleared" : money(after)}</span>
+                  {before === null ? <span className="text-ink-muted">set to</span> : <span className="text-ink-muted line-through">{customer ? formatCustomer(before, currency) : money(before)}</span>}
+                  {" "}<span className="font-semibold">{after === null ? "cleared" : customer ? formatCustomer(after, currency) : money(after)}</span>
                   <span className="ml-1 text-xs text-ink-muted">{customer ? "per 100 pcs" : `${h.currency ?? ""}${h.vendor_name ? ` · ${h.vendor_name}` : ""}`}</span>
                 </span>
                 <span className="ml-auto text-xs text-ink-muted">

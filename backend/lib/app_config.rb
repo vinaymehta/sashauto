@@ -42,9 +42,15 @@ module AppConfig
     }
   end
 
-  # Where orders are normally shipped; rows with any other Ship To are flagged and emailed (Orders::ShipTo).
-  def default_ship_to
-    setting("DEFAULT_SHIP_TO", "XPAC, 824 E 8TH ST, MILAN, IL 612643110")
+  # Where a business's orders are normally shipped; rows with any other Ship To are flagged and emailed (Orders::ShipTo).
+  DEFAULT_SHIP_TOS = {
+    "dtp" => "XPAC, 824 E 8TH ST, MILAN, IL 612643110",
+    "gmbh" => "John Deere GmbH & Co. KG, John-Deere-Strasse 2, Bruchsal, 08 76646"
+  }.freeze
+
+  def default_ship_to(business = "dtp")
+    business = business.to_s
+    setting(business == "dtp" ? "DEFAULT_SHIP_TO" : "DEFAULT_SHIP_TO_#{business.upcase}", DEFAULT_SHIP_TOS[business])
   end
 
   def admin_notification_emails

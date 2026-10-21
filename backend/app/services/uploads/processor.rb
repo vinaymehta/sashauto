@@ -110,7 +110,7 @@ module Uploads
 
     # Rows of the file shipped to an address other than the default Ship To (Orders::ShipTo).
     def ship_to_alert_count(rows)
-      default = Orders::ShipTo.default_key
+      default = Orders::ShipTo.default_key(@batch.business)
       rows.count { |row| Orders::ShipTo.other?(row[:source], default) }
     end
 

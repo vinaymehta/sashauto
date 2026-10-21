@@ -24,8 +24,11 @@ module Orders
     # Part of the cache key: raise it when Group or Result change, so results cached in the old shape are not read.
     CACHE_VERSION = 6
 
-    def self.call(batch_id)
+    # `cache: false` while the upload is still being processed: its rows are not committed yet, and a result cached
+    # then would outlive a rolled-back attempt (the retry would read row ids that no longer exist).
+    def self.call(batch_id, cache: true)
       return Result.new(groups: {}, hidden: Set.new, open: Set.new, firm: {}) if batch_id.nil?
+      return new(batch_id).call.tap { |result| FirmDates.record(batch_id, result) } unless cache
 
       # Cached per upload, MOQ state and merges (the rows of an upload never change; an MOQ edit or a merge gives a
       # new key). Firm Dates are recorded whenever the result changes.

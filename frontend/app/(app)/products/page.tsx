@@ -4,7 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import type { Paginated, Product, VendorImportResult } from "@/lib/types";
 import { formatCount } from "@/lib/format";
-import { formatAmount, formatMoq } from "@/components/vendors/price-format";
+import { formatAmount, formatCustomer, formatMoq } from "@/components/vendors/price-format";
 import { ProductPanel } from "@/components/products/product-panel";
 import { AddPartPanel } from "@/components/products/add-part-panel";
 import { PencilIcon, PlusIcon } from "@/components/icons";
@@ -59,7 +59,7 @@ function ProductsView() {
   const q = useDebounced(search.trim());
 
   const isAdmin = useSession().user?.role === "admin";
-  const { data, error, loading, reload } = useApi<Paginated<Product> & { facets?: { commodity_types: string[] } }>("/api/products", {
+  const { data, error, loading, reload } = useApi<Paginated<Product> & { facets?: { commodity_types: string[] }; customer_currency?: string }>("/api/products", {
     q, ...list.filters, sort: list.sort, direction: list.direction, page: list.page, per_page: list.perPage,
   });
   // Kept across reloads so the filter labels stay while the next page loads.
@@ -148,7 +148,7 @@ function ProductsView() {
         ) : null}
       </Panel></div>
       )}
-      {adding && <AddPartPanel onClose={() => setAdding(false)} onCreated={(p) => { setAdding(false); reload(); setViewing({ product: p, edit: false }); }} />}
+      {adding && <AddPartPanel currency={data?.customer_currency ?? "USD"} onClose={() => setAdding(false)} onCreated={(p) => { setAdding(false); reload(); setViewing({ product: p, edit: false }); }} />}
       {viewing && <ProductPanel key={`${viewing.product.id}:${viewing.edit}`} productId={viewing.product.id} edit={viewing.edit} canEdit={isAdmin} onClose={() => setViewing(null)} onSaved={reload} />}
     </>
   );
@@ -165,8 +165,7 @@ function ProductRow({ product, active, canEdit, onOpen }: { product: Product; ac
   const best = product.best_vendor_price;
   const moq = formatMoq(product);
   const sub = "block max-w-[13rem] truncate text-xs text-ink-muted sm:max-w-[12rem] md:max-w-[16rem]";
-  const customer = product.customer_price !== null
-    ? Number(Number(product.customer_price) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : null;
+  const customer = product.customer_price !== null ? formatCustomer(Number(product.customer_price) / 100, product.customer_currency) : null;
   return (
     <tr onClick={() => onOpen(false)} aria-haspopup="dialog" aria-expanded={active}
         className={`cursor-pointer align-middle transition-colors duration-150 hover:bg-neutral-50 [&>td]:h-14 [&>td]:py-2 ${active ? "shadow-[inset_3px_0_0_var(--color-accent)]" : ""}`}>

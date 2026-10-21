@@ -53,22 +53,42 @@ export function ageRowProps(firmDate: string | null | undefined, today: Date, ne
   return { className: `transition-colors duration-150 ${age ? AGE_ROW[age] : neutral}`, title: age ? AGE_TITLE[age] : undefined };
 }
 
-export function AgeLegend() {
-  const items: [string, string][] = [
-    ["bg-age-red border-age-red-ink/30", "90+ days since Firm Date"],
-    ["bg-age-yellow border-age-yellow-ink/30", "60–89 days"],
-    ["bg-age-green border-age-green-ink/30", "30–59 days"],
-    ["bg-white border-neutral-300", "Under 30 days or no Firm Date"],
+// The age colours. With `onChange`, each age group is a checkbox that filters the list (the same "age" filter as in the
+// Filter panel; `value` is its comma-separated groups); "Under 30 days" is only a colour key.
+export function AgeLegend({ value, onChange }: { value?: string; onChange?: (value: string) => void } = {}) {
+  const items: [AgeGroup | null, string, string][] = [
+    ["red", "bg-age-red border-age-red-ink/30", "90+ days since Firm Date"],
+    ["yellow", "bg-age-yellow border-age-yellow-ink/30", "60–89 days"],
+    ["green", "bg-age-green border-age-green-ink/30", "30–59 days"],
+    [null, "bg-white border-neutral-300", "Under 30 days or no Firm Date"],
   ];
+  const chosen = (value ?? "").split(",").filter(Boolean);
+  const toggle = (group: string) => {
+    const next = chosen.includes(group) ? chosen.filter((g) => g !== group) : [...chosen, group];
+    // In the filter's own order, so the value (and URL/cache key) is stable.
+    onChange!(AGE_FILTER.options.map((o) => o.value).filter((v) => next.includes(v)).join(","));
+  };
   return (
     <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 border-b border-line bg-white px-6 py-2.5 text-xs text-ink-muted">
       <span className="font-medium text-ink">Age</span>
-      {items.map(([swatch, label]) => (
-        <span key={label} className="inline-flex items-center gap-1.5">
-          <span aria-hidden className={`h-3 w-3 rounded-sm border ${swatch}`} />
-          {label}
-        </span>
-      ))}
+      {items.map(([group, swatch, label]) => {
+        if (!group || !onChange) {
+          return (
+            <span key={label} className="inline-flex items-center gap-1.5">
+              <span aria-hidden className={`h-3 w-3 rounded-sm border ${swatch}`} />
+              {label}
+            </span>
+          );
+        }
+        const on = chosen.includes(group);
+        return (
+          <label key={label} className={`inline-flex cursor-pointer select-none items-center gap-1.5 rounded px-1 py-0.5 transition-colors hover:bg-neutral-50 ${on ? "font-medium text-ink" : ""}`}>
+            <input type="checkbox" checked={on} onChange={() => toggle(group)} className="h-3.5 w-3.5 accent-[var(--color-accent)]" />
+            <span aria-hidden className={`h-3 w-3 rounded-sm border ${swatch}`} />
+            {label}
+          </label>
+        );
+      })}
     </div>
   );
 }

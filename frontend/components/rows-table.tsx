@@ -49,7 +49,7 @@ export function RowsTable({ uploadId }: { uploadId: number }) {
         <FilterMenu groups={filters} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
       </ListToolbar>
       <FilterChips groups={filters} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
-      <AgeLegend />
+      <AgeLegend value={list.filters.age} onChange={(v) => list.setFilter("age", v)} />
 
       {error ? (
         <div className="p-4"><Alert title="Could not load the rows">{error.message}</Alert></div>

@@ -156,6 +156,7 @@ export interface Product {
   moq_sets: string | null; // MOQ in sets — what order Qty is compared with
   moq_text: string | null; // MOQ as written in the vendor file
   customer_price: string | null; // customer's (Deere) Unit Price per 100 pcs, from the order file or edited
+  customer_currency?: Currency; // currency of customer_price (DTP's)
   weight_kg: string | null;
   source: "upload" | "manual";
   created_at: string;
@@ -408,6 +409,8 @@ export interface RelatedItem {
 export interface OrdersSummary {
   open: number;
   po_pending: number;
+  po_generated: number; // open orders with a vendor PO
+  no_qty: number; // open orders without a Qty (nothing to order) and no PO
   below_moq: number;
   aged: number;
 }

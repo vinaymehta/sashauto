@@ -63,7 +63,7 @@ export function ChangesTable({ uploadId, emptyDescription, manual = false, direc
         <FilterMenu groups={FILTERS} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
       </ListToolbar>
       <FilterChips groups={FILTERS} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
-      <AgeLegend />
+      <AgeLegend value={list.filters.age} onChange={(v) => list.setFilter("age", v)} />
 
       {error ? (
         <div className="p-4"><Alert title="Could not load changes">{error.message}</Alert></div>

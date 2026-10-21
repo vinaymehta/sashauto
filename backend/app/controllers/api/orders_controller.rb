@@ -110,6 +110,9 @@ module Api
       render json: {
         open: open.size,
         po_pending: open.count { |_, key, qty, _| qty.to_d.positive? && !placed.include?(key) },
+        # The rest of the open orders: with a vendor PO, or without a Qty (nothing to order).
+        po_generated: open.count { |_, key, *| placed.include?(key) },
+        no_qty: open.count { |_, key, qty, _| !qty.to_d.positive? && !placed.include?(key) },
         below_moq: (combined.open & imported_ids.to_set).size,
         aged: Ageing::Rules.in_bands(OrderRow.where(id: imported_ids), [ "red" ], request_today,
                                      combined_ids: combined.groups.values.select(&:combined?).map(&:anchor_id)).count
@@ -460,15 +463,19 @@ module Api
     end
 
     # Vendor PO filter (po=none,generated): orders with a Qty and no PO generated yet, or with at least one PO.
+    # Vendor PO: "none" (a Qty and no PO yet: PO to generate), "generated" (has a PO), "no_qty" (no Qty and no PO:
+    # nothing to order). Every order is in exactly one of them.
     def filter_by_po(scope)
-      values = multi_param(:po, %w[none generated])
-      return scope if values.empty? || values.size == 2
+      values = multi_param(:po, %w[none generated no_qty])
+      return scope if values.empty? || values.size == 3
 
       # The order's placement key (VendorOrderPlacement.order_key) in SQL: by id for manual orders.
       key = "CASE WHEN order_rows.manual THEN encode(sha256(convert_to('manual' || chr(31) || order_rows.id::text, 'UTF8')), 'hex') " \
             "ELSE #{Orders::FirmDates.key_sql('order_rows')} END"
       placed = "EXISTS (SELECT 1 FROM vendor_order_placements p WHERE p.order_key = #{key})"
-      values == [ "none" ] ? scope.where("NOT #{placed} AND order_rows.qty > 0") : scope.where(placed)
+      conditions = { "none" => "NOT #{placed} AND order_rows.qty > 0", "generated" => placed,
+                     "no_qty" => "NOT #{placed} AND (order_rows.qty IS NULL OR order_rows.qty <= 0)" }
+      scope.where(values.map { |value| "(#{conditions.fetch(value)})" }.join(" OR "))
     end
 
     def iso_date(value)

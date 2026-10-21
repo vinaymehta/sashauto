@@ -38,3 +38,11 @@ export function formatMoq(item: { moq: string | null; moq_sets?: string | null; 
   if (sets === null) return null;
   return `${formatQty(sets)} sets · ${formatQty(item.moq ?? String(Number(sets) * pack))} pcs`;
 }
+
+// Deere's (customer) price with its currency sign, e.g. "$0.16" (the sign, not "US$"). `currency`: the product's
+// customer_currency (DTP's, from Settings).
+export function formatCustomer(amount: string | number | null | undefined, currency: string = "USD", digits = 2) {
+  if (amount === null || amount === undefined || amount === "") return null;
+  return new Intl.NumberFormat("en-US", { style: "currency", currency, currencyDisplay: "narrowSymbol", minimumFractionDigits: digits, maximumFractionDigits: 4 })
+    .format(Number(amount));
+}

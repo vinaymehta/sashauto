@@ -138,8 +138,10 @@ module Serializers
       data[:manual] = row.has_attribute?(:manual) && row[:manual] ? true : false
       # Kept on the Orders page because of a delivery mark, though no longer in the latest upload.
       data[:kept] = row.has_attribute?(:kept) && row[:kept] ? true : false
-      # Shipped somewhere other than the default Ship To (Orders::ShipTo).
-      data[:other_ship_to] = Orders::ShipTo.other?(row.source_data)
+      # Shipped somewhere other than its business's default Ship To (Orders::ShipTo). The Orders list selects the
+      # business with the row; elsewhere it comes from the upload.
+      business = row.has_attribute?(:business) ? row[:business] : row.upload_batch&.business
+      data[:other_ship_to] = Orders::ShipTo.other?(row.source_data, Orders::ShipTo.default_key(business || "dtp"))
     elsif row.is_a?(ManualOrder)
       data.merge!(history_count: 0, source_row_number: nil, manual: true)
       data[:source_data] = row.source_data if source
@@ -153,7 +155,7 @@ module Serializers
     data = product.slice(:id, :part_number, :commodity_type, :source, :sash_part, :vendor_part, :description, :moq_text, :created_at,
                          :updated_at)
                   .merge(pack_size: product.pack_size, moq: qty(product.moq), moq_sets: qty(product.moq_sets), weight_kg: qty(product.weight_kg),
-                         customer_price: qty(product.customer_price))
+                         customer_price: qty(product.customer_price), customer_currency: AppConfig.business_currency("dtp"))
                   .merge(open_conflicts: open_conflicts.map { |c| product_conflict(c) })
     return data unless vendors
 

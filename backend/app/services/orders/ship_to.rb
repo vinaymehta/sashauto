@@ -1,6 +1,7 @@
 module Orders
-  # The Ship To of an order row, compared with the default address (DEFAULT_SHIP_TO in .env, normally
-  # "XPAC, 824 E 8TH ST, MILAN, IL 612643110"). Rows going anywhere else are flagged and emailed after each upload.
+  # The Ship To of an order row, compared with its business's default address (AppConfig.default_ship_to: DTP normally
+  # "XPAC, 824 E 8TH ST, MILAN, IL 612643110", GMBH "John Deere GmbH & Co. KG, John-Deere-Strasse 2, Bruchsal, 08 76646").
+  # Rows going anywhere else are flagged and emailed after each upload.
   module ShipTo
     module_function
 
@@ -17,8 +18,8 @@ module Orders
       text.to_s.upcase.gsub(/[^A-Z0-9]/, "")
     end
 
-    def default_key
-      key(AppConfig.default_ship_to)
+    def default_key(business = "dtp")
+      key(AppConfig.default_ship_to(business))
     end
 
     # True when the row has a Ship To and it is not the default address.

@@ -48,7 +48,7 @@ module Api
       conflicts = ProductConflict.open.includes(:upload_batch).where(product_id: products.map(&:id)).order(:created_at).group_by(&:product_id)
       vendors = VendorProduct.includes(:vendor).where(product_id: products.map(&:id)).group_by(&:product_id)
       render json: { data: products.map { |p| Serializers.product(p, open_conflicts: conflicts.fetch(p.id, []), vendors: vendors.fetch(p.id, [])) },
-                     meta: meta, facets: { commodity_types: Product.where.not(commodity_type: nil).distinct.order(:commodity_type).pluck(:commodity_type) } }
+                     meta: meta, customer_currency: AppConfig.business_currency("dtp"), facets: { commodity_types: Product.where.not(commodity_type: nil).distinct.order(:commodity_type).pluck(:commodity_type) } }
     end
 
     # The part panel: the product, the vendors supplying it with each vendor's price, MOQ and Available Parts, the
@@ -63,19 +63,27 @@ module Api
                      history: history.map { |change| Serializers.price_change(change) } }
     end
 
-    # A part added by the SASH team (Products → Add part): Part Number, details, pack, MOQ (sets) and customer price.
+    # A part added by the SASH team (Products → Add part): Part Number, details, pack, MOQ (sets) and customer price,
+    # with the vendor that supplies it (required) and that vendor's price per piece and MOQ (pieces).
     def create
+      vendor = Vendor.find_by(id: params[:vendor_id])
+      return render_error("Choose the vendor that supplies this part.", :unprocessable_content, details: { vendor_id: [ "is required" ] }) unless vendor
+
       product = Product.new(part_number: params.require(:part_number), commodity_type: params[:commodity_type].presence,
                             source: "manual", created_by: current_user, **details,
                             pack_size: params[:pack_size].presence || 1, moq_sets: params[:moq_sets].presence,
                             customer_price: params[:customer_price].presence)
       product.price_changed_by = current_user
-      if product.save
-        audit("product.created", subject: product, part_number: product.part_number, commodity_type: product.commodity_type)
-        render json: { data: Serializers.product(product) }, status: :created
-      else
-        render_validation_errors(product)
+      item = VendorProduct.new(vendor: vendor, price_amount: params[:vendor_price].presence, moq: params[:vendor_moq].presence,
+                               price_currency: vendor.currency.presence || "INR")
+      item.price_changed_by = current_user
+      saved = Product.transaction do
+        (product.save && (item.product = product) && item.save) || raise(ActiveRecord::Rollback)
       end
+      return render_validation_errors(product.errors.any? ? product : item) unless saved
+
+      audit("product.created", subject: product, part_number: product.part_number, commodity_type: product.commodity_type, vendor_id: vendor.id)
+      render json: { data: Serializers.product(product) }, status: :created
     rescue ActiveRecord::RecordNotUnique
       render_error "A product with this Part Number already exists.", :unprocessable_content
     end

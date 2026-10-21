@@ -2,8 +2,9 @@ module Products
   # Checks the Commodity Type of the upload's Part Numbers against existing products (products come from vendor
   # imports and manual entry; an order upload never creates one). An existing product's Commodity Type is never
   # overwritten: a blank one is filled in, a different one becomes an open ProductConflict.
-  # The customer price (the file's Unit Price, per 100 pcs) of each existing product is updated from the upload
-  # (the most common value of its rows); a change is kept in the price history.
+  # The customer price (the file's Unit Price, per 100 pcs) of each existing product is updated from a DTP upload
+  # (the most common value of its rows); a change is kept in the price history. A product has one customer price, DTP's:
+  # GMBH files are priced differently (per piece, another currency), so they never change it.
   class SyncFromUpload
     def self.call(batch, rows)
       new(batch, rows).call
@@ -24,7 +25,7 @@ module Products
       conflicts = []
 
       products.each do |product|
-        sync_customer_price(product)
+        sync_customer_price(product) if @batch.business == "dtp"
         values = @incoming.fetch(product.part_number)
         if product.commodity_type.nil?
           if values.size == 1

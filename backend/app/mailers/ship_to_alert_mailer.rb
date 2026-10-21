@@ -5,8 +5,8 @@ class ShipToAlertMailer < ApplicationMailer
   def alerts_detected
     @notification = params.fetch(:notification)
     @batch = @notification.upload_batch
-    @default = AppConfig.default_ship_to
-    default = Orders::ShipTo.default_key
+    @default = AppConfig.default_ship_to(@batch.business)
+    default = Orders::ShipTo.default_key(@batch.business)
     @rows = @batch.order_rows.order(:ship_date, :po_number, :po_line_number).select { |r| Orders::ShipTo.other?(r.source_data, default) }
     @total = @rows.size
     @rows = @rows.first(MAX_ROWS_IN_EMAIL)
