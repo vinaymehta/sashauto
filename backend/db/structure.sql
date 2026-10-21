@@ -2295,10 +2295,10 @@ CREATE INDEX index_snapshot_rows_on_batch_and_ship_date ON public.order_snapshot
 
 
 --
--- Name: index_upload_batches_on_business; Type: INDEX; Schema: public; Owner: -
+-- Name: index_upload_batches_on_business_and_version; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX index_upload_batches_on_business ON public.upload_batches USING btree (business);
+CREATE UNIQUE INDEX index_upload_batches_on_business_and_version ON public.upload_batches USING btree (business, version_number);
 
 
 --
@@ -2341,13 +2341,6 @@ CREATE INDEX index_upload_batches_on_status_and_created_at ON public.upload_batc
 --
 
 CREATE INDEX index_upload_batches_on_uploaded_by_id ON public.upload_batches USING btree (uploaded_by_id);
-
-
---
--- Name: index_upload_batches_on_version_number; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX index_upload_batches_on_version_number ON public.upload_batches USING btree (version_number);
 
 
 --
@@ -3020,6 +3013,7 @@ ALTER TABLE ONLY public.address_changes
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261021000004'),
 ('20261021000003'),
 ('20261021000002'),
 ('20261020000002'),
