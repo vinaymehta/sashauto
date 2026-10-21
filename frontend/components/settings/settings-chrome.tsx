@@ -8,43 +8,48 @@ import { BellIcon, BoxIcon, ChevronDownIcon, ChevronLeftIcon, FileIcon, KeyIcon,
 import { TINTS, type Tint } from "../ui/tint";
 import { useApi } from "../use-api";
 import { useDismiss } from "../use-dismiss";
+import { PortalSyncButton } from "./portal-sync";
 import { SETTINGS_CATEGORIES, SETTINGS_SECTIONS, sectionHref, type SettingsSection } from "./sections";
 
-export const CATEGORY_STYLE: Record<string, { icon: typeof BoxIcon; tint: Tint }> = {
-  Organization: { icon: BoxIcon, tint: "violet" },
-  Documents: { icon: FileIcon, tint: "amber" },
-  Notifications: { icon: BellIcon, tint: "aqua" },
-  Integrations: { icon: KeyIcon, tint: "dec" },
+// Each category's colour: its icon chip and wash (TINTS), a strong `line` (card top, current page) and a soft `soft`
+// (current page background, hover).
+// `top` / `left`: a coloured top or left border only (the other sides keep their own colour).
+export const CATEGORY_STYLE: Record<string, { icon: typeof BoxIcon; tint: Tint; top: string; left: string; soft: string; text: string }> = {
+  Organization: { icon: BoxIcon, tint: "violet", top: "border-t-tint-violet-ink", left: "border-l-tint-violet-ink", soft: "bg-tint-violet", text: "text-tint-violet-ink" },
+  Documents: { icon: FileIcon, tint: "amber", top: "border-t-tint-amber-ink", left: "border-l-tint-amber-ink", soft: "bg-tint-amber", text: "text-tint-amber-ink" },
+  Notifications: { icon: BellIcon, tint: "aqua", top: "border-t-tint-aqua-ink", left: "border-l-tint-aqua-ink", soft: "bg-tint-aqua", text: "text-tint-aqua-ink" },
+  Integrations: { icon: KeyIcon, tint: "dec", top: "border-t-dec", left: "border-l-dec", soft: "bg-dec-bg", text: "text-dec" },
 };
 
-// The company name shown under "All Settings" (the saved setting, else .env).
+// The company name shown under "Admin Settings" (the saved setting, else .env).
 function useCompanyName() {
   const { data } = useApi<{ data: AppSettingItem[] }>("/api/settings");
   const company = data?.data.find((i) => i.key === "COMPANY_NAME");
   return company?.value || company?.env_value || "SASH";
 }
 
-// Top bar of the settings window: (on a settings page) a back button to All Settings, the title with the company,
-// and a search over every settings page and field ("/" focuses it).
+// Top bar of the settings window: (on a settings page) a back button to Admin Settings, the title with the company,
+// a search over every settings page and field ("/" focuses it), and (on the main page) "Sync now" for the Deere portal.
 export function SettingsTopBar({ back = false }: { back?: boolean }) {
   const company = useCompanyName();
   return (
-    <div className="flex flex-col gap-3 border-b border-line bg-white px-4 py-3 sm:flex-row sm:items-center sm:px-6">
-      <div className="flex min-w-0 items-center gap-3">
-        <span aria-hidden className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${TINTS.violet.chip}`}><SettingsIcon size={18} /></span>
+    <div className="flex flex-col gap-3 border-b border-line bg-gradient-to-r from-tint-violet via-white to-tint-aqua/60 px-4 py-3 sm:flex-row sm:items-center sm:px-6">
+      <div className="flex shrink-0 items-center gap-3">
+        <span aria-hidden className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent text-white shadow-sm"><SettingsIcon size={18} /></span>
         {back && (
-          <Link href="/settings" aria-label="Back to All Settings" title="All Settings"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-line text-ink-muted hover:bg-neutral-50 hover:text-ink">
+          <Link href="/settings" aria-label="Back to Admin Settings" title="Admin Settings"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-line bg-white text-ink-muted hover:bg-neutral-50 hover:text-ink">
             <ChevronLeftIcon size={16} />
           </Link>
         )}
-        <div className="min-w-0">
-          <p className="text-lg font-semibold leading-tight text-ink">All Settings</p>
+        <div className="min-w-0 shrink-0">
+          <p className="whitespace-nowrap text-lg font-semibold leading-tight text-ink">Admin Settings</p>
           <p className="truncate text-xs text-ink-muted">{company}</p>
         </div>
       </div>
-      <div className="sm:mx-auto sm:w-full sm:max-w-md"><SettingsSearch /></div>
-      <div className="hidden w-48 sm:block" />
+      <div className="min-w-0 sm:mx-auto sm:w-full sm:max-w-md"><SettingsSearch /></div>
+      {/* "Sync now" on the main Admin Settings page only (not on the pages inside it). */}
+      {back ? <div className="hidden w-48 xl:block" /> : <div className="shrink-0"><PortalSyncButton /></div>}
     </div>
   );
 }
@@ -114,25 +119,31 @@ export function SettingsNav({ current }: { current: SettingsSection }) {
   return (
     <nav aria-label="Settings" className="space-y-0.5">
       <p className="px-3 pb-2 text-2xs font-semibold uppercase tracking-[0.12em] text-ink-faint">Settings</p>
-      {SETTINGS_CATEGORIES.map((category) => (
-        <div key={category}>
-          <button type="button" onClick={() => toggle(category)} aria-expanded={open.has(category)}
-                  className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-neutral-100 ${current.category === category ? "text-ink" : "text-ink-muted"}`}>
-            <ChevronDownIcon size={14} className={`shrink-0 transition-transform ${open.has(category) ? "" : "-rotate-90"}`} />
-            {category}
-          </button>
-          {open.has(category) && (
-            <div className="mb-1 space-y-0.5 pl-6">
-              {SETTINGS_SECTIONS.filter((s) => s.category === category).map((s) => (
-                <Link key={s.slug} href={sectionHref(s)} aria-current={s.slug === current.slug ? "page" : undefined}
-                      className={`block rounded-md px-3 py-2 text-sm transition-colors ${s.slug === current.slug ? "bg-accent font-medium text-white" : "text-ink-muted hover:bg-neutral-100 hover:text-ink"}`}>
-                  {s.title}
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
-      ))}
+      {SETTINGS_CATEGORIES.map((category) => {
+        const style = CATEGORY_STYLE[category]!;
+        const Icon = style.icon;
+        return (
+          <div key={category}>
+            <button type="button" onClick={() => toggle(category)} aria-expanded={open.has(category)}
+                    className={`flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left text-sm font-medium transition-colors hover:bg-white/80 ${current.category === category ? "text-ink" : "text-ink-muted"}`}>
+              <span aria-hidden className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md ${TINTS[style.tint].chip}`}><Icon size={13} /></span>
+              <span className="flex-1">{category}</span>
+              <ChevronDownIcon size={14} className={`shrink-0 text-ink-faint transition-transform ${open.has(category) ? "" : "-rotate-90"}`} />
+            </button>
+            {open.has(category) && (
+              <div className="mb-1 ml-5 space-y-0.5 border-l border-line pl-3">
+                {SETTINGS_SECTIONS.filter((s) => s.category === category).map((s) => (
+                  <Link key={s.slug} href={sectionHref(s)} aria-current={s.slug === current.slug ? "page" : undefined}
+                        className={`block rounded-md border-l-[3px] px-3 py-2 text-sm transition-colors ${s.slug === current.slug
+                          ? `${style.left} ${style.soft} font-semibold ${style.text}` : "border-transparent text-ink-muted hover:bg-white hover:text-ink"}`}>
+                    {s.title}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </nav>
   );
 }

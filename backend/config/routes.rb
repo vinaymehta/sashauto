@@ -65,9 +65,11 @@ Rails.application.routes.draw do
     end
     # Every vendor's parts with their "Available" tick, vendor-wise (Products page, Available parts tab).
     resources :available_parts, only: :index
-    # Business settings (Settings page, admins).
+    # Business settings (Admin Settings, admins).
     get "settings", to: "settings#index"
     patch "settings", to: "settings#update"
+    # Deere portal sync: status, and "Run sync now" (Admin Settings → Deere portal).
+    resource :portal_sync, only: %i[show create], controller: :portal_sync
     resources :products, only: %i[index create update] do
       get :vendors, on: :member
     end

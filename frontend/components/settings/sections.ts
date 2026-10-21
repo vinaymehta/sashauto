@@ -1,4 +1,4 @@
-// Settings pages, grouped in categories as on the All Settings page. `group` is the AppSetting group the page edits
+// Settings pages, grouped in categories as on the Admin Settings page. `group` is the AppSetting group the page edits
 // (backend AppSetting::DEFINITIONS); `href` links to another page instead (e.g. Users).
 export interface SettingsSection {
   slug: string;
@@ -9,7 +9,8 @@ export interface SettingsSection {
   href?: string;
 }
 
-export const SETTINGS_CATEGORIES = ["Organization", "Documents", "Notifications", "Integrations"] as const;
+// Integrations (Deere portal) is hidden for now; uncomment it here and its page below to show it again.
+export const SETTINGS_CATEGORIES = ["Organization", "Documents", "Notifications" /* , "Integrations" */] as const;
 
 export const SETTINGS_SECTIONS: SettingsSection[] = [
   { slug: "company", title: "Company profile", category: "Organization", group: "Company",
@@ -20,8 +21,8 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     description: "Export council registration, export period and signatory printed on the letter." },
   { slug: "notifications", title: "Alerts and Slack", category: "Notifications", group: "Notifications",
     description: "Who gets the alert emails, the default Ship To and the Slack webhook." },
-  { slug: "deere-portal", title: "Deere portal", category: "Integrations", group: "Deere portal",
-    description: "Portal login and the supplier to download for DTP and GMBH." },
+  // { slug: "deere-portal", title: "Deere portal", category: "Integrations", group: "Deere portal",
+  //   description: "Portal login and the supplier to download for DTP and GMBH." },
 ];
 
 export const sectionHref = (s: SettingsSection) => s.href ?? `/settings/${s.slug}`;

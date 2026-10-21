@@ -7,7 +7,7 @@ import { SETTINGS_CATEGORIES, SETTINGS_SECTIONS, sectionHref } from "@/component
 import { TINTS } from "@/components/ui/tint";
 import { Alert } from "@/components/ui/feedback";
 
-// All Settings: every settings page in cards by category; a page opens the settings window (/settings/[section]).
+// Admin Settings: every settings page in cards by category; a page opens the settings window (/settings/[section]).
 export default function SettingsPage() {
   const admin = useSession().user?.role === "admin";
   if (!admin) return <Alert title="Admins only">Only an admin can change the settings.</Alert>;
@@ -17,8 +17,8 @@ export default function SettingsPage() {
       <SettingsTopBar />
       <div className="px-4 py-6 sm:px-6 lg:px-10">
         <section className="rounded-xl border border-line bg-white p-5 shadow-card sm:p-7">
-          <h1 className="mb-5 text-lg font-semibold text-ink">App Settings</h1>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          <h1 className="mb-5 text-lg font-semibold text-ink">Admin Settings</h1>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {SETTINGS_CATEGORIES.map((category) => {
               const style = CATEGORY_STYLE[category]!;
               const Icon = style.icon;

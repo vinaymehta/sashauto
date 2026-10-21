@@ -148,8 +148,8 @@ function buildColumns(columns: { key: string; label: string }[], uploadId?: numb
     };
     // "Price per piece" (Unit Price ÷ 100) just before the file's Unit Price.
     if (label === "Unit Price") {
-      return [{ key: "price_per_piece", label: "Price per piece", header: "Price per piece (Unit Price ÷ 100)", align: "right", sortable: false, render: pricePerPiece },
-              { ...column, header: "Unit Price (Price per piece × 100)" }];
+      return [{ key: "price_per_piece", label: "Price per piece", header: "Price per piece", align: "right", sortable: false, render: pricePerPiece },
+              { ...column, header: "Unit Price (price per 100 pieces)" }];
     }
     // The file's own "Firm Date" column is shown as the Firm Date column below (with the date of orders it has none for).
     if (label.trim().toLowerCase() === "firm date") return [];

@@ -122,3 +122,6 @@ export const UsersIcon = (p: IconProps) => (
 export const KeyIcon = (p: IconProps) => (
   <Icon {...p}><circle cx="7.5" cy="15.5" r="4.5" /><path d="m10.7 12.3 9.8-9.8" /><path d="m17 6 3 3" /><path d="m15 8 2 2" /></Icon>
 );
+export const RefreshIcon = (p: IconProps) => (
+  <Icon {...p}><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16" /><path d="M3 21v-5h5" /><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8" /><path d="M21 3v5h-5" /></Icon>
+);

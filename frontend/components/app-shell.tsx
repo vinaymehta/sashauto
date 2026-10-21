@@ -20,7 +20,7 @@ const NAV = [
   { href: "/products", label: "Products", icon: BoxIcon, match: (p: string) => p.startsWith("/products") },
   { href: "/vendors", label: "Vendors", icon: TruckIcon, match: (p: string) => p.startsWith("/vendors") },
   { href: "/users", label: "Users", icon: UsersIcon, match: (p: string) => p.startsWith("/users"), adminOnly: true },
-  { href: "/settings", label: "Settings", icon: SettingsIcon, match: (p: string) => p.startsWith("/settings"), adminOnly: true },
+  { href: "/settings", label: "Admin Settings", icon: SettingsIcon, match: (p: string) => p.startsWith("/settings"), adminOnly: true },
 ];
 
 // The Warehouse Manager uses only the Orders page (other pages are admin-only on the server too).

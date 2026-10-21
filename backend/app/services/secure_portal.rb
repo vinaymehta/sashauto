@@ -16,7 +16,11 @@ class SecurePortal
   DOWNLOAD_TIMEOUT = 180
   EXCEL_BUTTON_CSS = 'a.aButton[onclick*="excelReport"]'.freeze
 
+  # business => why its download failed (the last call).
+  attr_reader :errors
+
   def initialize
+    @errors = {}
     @webdriversetup = WebdriverSetup.new('secure_portal')
     @driver = @webdriversetup.driver
     @wait = @webdriversetup.wait
@@ -33,6 +37,7 @@ class SecurePortal
       open_page(TARGET_URL) if i.positive? # back to a fresh requirement screen for the next supplier
       files[business] = download_requirement_report(supplier, business)
     rescue StandardError => e
+      @errors[business] = "Download failed: #{e.message.lines.first&.strip}"
       puts "[secure_portal] #{business}: download failed (#{e.class}: #{e.message.lines.first&.strip})"
     end
   ensure
