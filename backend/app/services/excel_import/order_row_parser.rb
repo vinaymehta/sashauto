@@ -82,6 +82,8 @@ module ExcelImport
         source_row_numbers: [ number ],
         source: raw[:source] || {}
       }.merge(details(values))
+      # GMBH (Faridabad) files leave Ship Date blank and give the date as Due Date: the Due Date is then the ship date.
+      row[:ship_date] ||= row[:due_date] if errors.none? { |e| e[:column] == "Ship Date" }
 
       REQUIRED_VALUES.each do |key, label|
         next unless row[key].nil?
