@@ -23,15 +23,15 @@ class SecurePortal
     @session_store = BrowserSessionStore.new('secure_portal')
   end
 
-  # Downloads the requirement report of each business, in one sign-in: `suppliers` maps a business to the text of
-  # its Supplier option (nil: the first supplier). Returns { business => path }; a business whose download fails is
-  # logged and left out. Every download is kept in DOWNLOAD_DIR, named with the date and time it was downloaded
-  # (IST), e.g. SupplierRequirements_16-10-26_13-05.xlsx.
+  # Downloads the requirement report of each business, in one sign-in: `suppliers` maps a business to its Supplier
+  # option (supplier number or part of the name; nil: the 2nd option). Returns { business => path }; a business whose download fails is
+  # logged and left out. Every download is kept in DOWNLOAD_DIR, named with the business and the date and time it was
+  # downloaded (IST), e.g. SupplierRequirements_DTP_16-10-26_13-05.xlsx.
   def call(suppliers = { 'dtp' => nil })
     ensure_logged_in
     suppliers.each_with_index.each_with_object({}) do |((business, supplier), i), files|
       open_page(TARGET_URL) if i.positive? # back to a fresh requirement screen for the next supplier
-      files[business] = download_requirement_report(supplier)
+      files[business] = download_requirement_report(supplier, business)
     rescue StandardError => e
       puts "[secure_portal] #{business}: download failed (#{e.class}: #{e.message.lines.first&.strip})"
     end
@@ -39,14 +39,14 @@ class SecurePortal
     @driver.quit
   end
 
-  # Requirement screen: Supplier = the option whose text contains `supplier_text` (else the first supplier, the 2nd
-  # option), Type = "All", then "Download to Excel". Blocks until the file has fully landed on disk.
-  def download_requirement_report(supplier_text = nil)
+  # Requirement screen: Supplier = the option whose number or name contains `supplier_text` (else the 2nd option),
+  # Type = "All", then "Download to Excel". Blocks until the file has fully landed on disk.
+  def download_requirement_report(supplier_text = nil, business = nil)
     supplier_el = @driver.find_element(id: 'supplierNum')
     supplier = Selenium::WebDriver::Support::Select.new(supplier_el)
     wanted = if supplier_text.present?
-      supplier.options.find { |o| o.text.downcase.include?(supplier_text.downcase) } ||
-        raise("SecurePortal: no Supplier option contains \"#{supplier_text}\" (options: #{supplier.options.map(&:text).join(' | ')})")
+      supplier.options.find { |o| "#{o.attribute('value')} #{option_text(o)}".downcase.include?(supplier_text.downcase) } ||
+        raise("SecurePortal: no Supplier option contains \"#{supplier_text}\" (options: #{supplier.options.map { |o| option_text(o) }.join(' | ')})")
     else
       supplier.options[1]
     end
@@ -67,7 +67,7 @@ class SecurePortal
 
     excel_button = @driver.find_element(css: EXCEL_BUTTON_CSS)
     @driver.execute_script("arguments[0].click();", excel_button)
-    file_path = timestamped(wait_for_download(clicked_at))
+    file_path = timestamped(wait_for_download(clicked_at), business)
     puts "Downloaded: -> #{file_path} (#{File.size(file_path)} bytes)"
     file_path
   end
@@ -213,15 +213,22 @@ class SecurePortal
   end
 
   def selected_text(select_id)
-    Selenium::WebDriver::Support::Select.new(@driver.find_element(id: select_id)).first_selected_option.text.strip
+    option_text(Selenium::WebDriver::Support::Select.new(@driver.find_element(id: select_id)).first_selected_option)
   end
 
-  # Renames the download to "<name>_<dd-mm-yy>_<HH-MM>.<ext>" (IST), so each download is kept, e.g.
-  # SupplierRequirements.xlsx -> SupplierRequirements_16-10-26_13-05.xlsx. Returns the new path.
-  def timestamped(path)
+  # An option's text. The portal hides the real <select> (display: none), so Selenium's `text` (visible text only) is
+  # always ""; textContent is the text in the page.
+  def option_text(option)
+    option.attribute('textContent').to_s.strip
+  end
+
+  # Renames the download to "<name>_<BUSINESS>_<dd-mm-yy>_<HH-MM>.<ext>" (IST), so each download is kept and shows
+  # whose it is, e.g. SupplierRequirements.xlsx -> SupplierRequirements_DTP_16-10-26_13-05.xlsx. Returns the new path.
+  def timestamped(path, business = nil)
     stamp = Time.find_zone!(AppConfig.ageing_time_zone).now.strftime('%d-%m-%y_%H-%M')
     ext = File.extname(path)
     name = File.basename(path, ext).sub(/ \(\d+\)\z/, '') # Chrome's "(1)" when the name was taken
+    name = "#{name}_#{business.to_s.upcase}" if business.present?
     target = File.join(File.dirname(path), "#{name}_#{stamp}#{ext}")
     target = File.join(File.dirname(path), "#{name}_#{stamp}-#{SecureRandom.hex(2)}#{ext}") if File.exist?(target)
     File.rename(path, target)

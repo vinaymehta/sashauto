@@ -87,9 +87,12 @@ module AppConfig
     setting("SECURE_PORTAL_PASSWORD")
   end
 
-  # Text of the portal's Supplier option to download for a business (Business::KEYS); nil when not set.
+  # The portal's Supplier option to download for each business (its supplier number, or part of its name):
+  # DTP = SASH Autotech, Inc. - Wood Dale, IL; GMBH = SASH AUTOTECH PVT LIMITED - FARIDABAD.
+  PORTAL_SUPPLIERS = { "dtp" => "0000383803", "gmbh" => "0000372699" }.freeze
+
   def portal_supplier(business)
-    setting("PORTAL_SUPPLIER_#{business.to_s.upcase}")
+    setting("PORTAL_SUPPLIER_#{business.to_s.upcase}", PORTAL_SUPPLIERS[business.to_s])
   end
 
   # Currency of a business's Deere Unit Price.

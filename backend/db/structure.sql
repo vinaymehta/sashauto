@@ -2141,24 +2141,10 @@ CREATE INDEX index_order_rows_on_batch_po_part ON public.order_rows USING btree 
 
 
 --
--- Name: index_order_snapshot_rows_on_batch_and_key; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_order_snapshot_rows_on_batch_and_key ON public.order_snapshot_rows USING btree (upload_batch_id, business_key_hash);
-
-
---
 -- Name: index_price_changes_on_changed_by_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX index_price_changes_on_changed_by_id ON public.price_changes USING btree (changed_by_id);
-
-
---
--- Name: index_price_changes_on_product_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_price_changes_on_product_id ON public.price_changes USING btree (product_id);
 
 
 --
@@ -2442,13 +2428,6 @@ CREATE INDEX index_vendor_orders_on_vendor_id ON public.vendor_orders USING btre
 
 
 --
--- Name: index_vendor_orders_on_vendor_order_placement_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_vendor_orders_on_vendor_order_placement_id ON public.vendor_orders USING btree (vendor_order_placement_id);
-
-
---
 -- Name: index_vendor_orders_on_vendor_order_placement_id_and_vendor_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2460,13 +2439,6 @@ CREATE UNIQUE INDEX index_vendor_orders_on_vendor_order_placement_id_and_vendor_
 --
 
 CREATE INDEX index_vendor_products_on_product_id ON public.vendor_products USING btree (product_id);
-
-
---
--- Name: index_vendor_products_on_vendor_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_vendor_products_on_vendor_id ON public.vendor_products USING btree (vendor_id);
 
 
 --
@@ -3048,6 +3020,7 @@ ALTER TABLE ONLY public.address_changes
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261021000003'),
 ('20261021000002'),
 ('20261020000002'),
 ('20261020000001'),

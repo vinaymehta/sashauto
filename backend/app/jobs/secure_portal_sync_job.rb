@@ -1,7 +1,7 @@
 require "digest"
 
-# Signs in to the Deere supplier portal (SecurePortal), downloads the requirement report of each business (DTP, and
-# GMBH once its supplier is set in Settings) and uploads each to its business like a manual upload (Uploads::Intake,
+# Signs in to the Deere supplier portal (SecurePortal), downloads the requirement report of each business (DTP: Wood
+# Dale, GMBH: Faridabad; see AppConfig.portal_supplier) and uploads each to its business like a manual upload (Uploads::Intake,
 # as the first active admin), so the usual checks and emails run. A file the same as the business's last upload is
 # skipped. Started by sidekiq-cron at 08:00 and 20:00 IST (config/schedule.yml).
 class SecurePortalSyncJob < ApplicationJob
@@ -10,8 +10,7 @@ class SecurePortalSyncJob < ApplicationJob
   sidekiq_options retry: false
 
   def perform
-    suppliers = { "dtp" => AppConfig.portal_supplier("dtp") }
-    suppliers["gmbh"] = AppConfig.portal_supplier("gmbh") if AppConfig.portal_supplier("gmbh").present?
+    suppliers = Business::KEYS.to_h { |business| [ business, AppConfig.portal_supplier(business) ] }
     SecurePortal.new.call(suppliers).each { |business, file| upload(file, business) }
   end
 
