@@ -22,7 +22,7 @@ module Ageing
       digest = AgeingDigest.create!(
         mode: "upload", as_of: @today, upload_batch: @batch, recipients: Notifications::Outbox.recipients,
         counts: counts, row_count: total,
-        subject: "Order ageing: #{counts['red']} red · #{counts['yellow']} yellow · #{counts['green']} green (#{@today.strftime('%-d %b %Y')})"
+        subject: "[#{Business.label(@batch.business)}] Order ageing: #{counts['red']} red · #{counts['yellow']} yellow · #{counts['green']} green (#{@today.strftime('%-d %b %Y')})"
       )
       AuditLog.record("ageing.digest_created", subject: digest, mode: "upload", counts: counts)
       digest

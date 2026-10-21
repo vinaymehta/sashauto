@@ -279,14 +279,15 @@ export interface Stats {
   overview: DashboardOverview;
 }
 
-export interface MoneyTotal { amount: string; orders: number; without_price: number; currency: string }
+// currency: of the shown business (Settings); null in "All" when DTP and GMBH use different ones.
+export interface MoneyTotal { amount: string; orders: number; without_price: number; currency: string | null }
 
 // Dashboard operations figures (Dashboard::Overview), from the current order data. A bucket is a number of orders and
 // their value (USD, Qty × Unit Price ÷ 100).
 export interface OrderBucket { count: number; value: string }
 export interface DashboardOrder {
   id: number; manual: boolean; po_number: string; po_line_number: string; part_number: string; order_type: OrderType;
-  ship_date: string; qty: string; value: string; status: PipelineStatus; po: boolean; overdue: boolean;
+  ship_date: string; qty: string; value: string; status: PipelineStatus; po: boolean; order_placed: boolean; overdue: boolean;
 }
 export type PipelineStatus = "none" | "received" | "dispatched" | "inbound";
 export interface DashboardOverview {
@@ -331,7 +332,9 @@ export interface OrderRow {
   source_row_number?: number | null;
   source_data?: Record<string, string | number | null>;
   manual?: boolean; // created by hand (Create order), not imported
+  business?: "dtp" | "gmbh"; // the business the order belongs to (Orders list)
   placed?: boolean; // has a PO generated (Orders list only)
+  order_placed?: boolean; // every PO of it is ticked "Order placed" (sent to the vendor; Orders list only)
   ordered_qty?: string | null; // sets ordered by its POs so far (Orders list only)
   kept?: boolean; // kept on Orders by a status mark, though no longer in the latest upload
   other_ship_to?: boolean; // Ship To is not the default address
@@ -363,6 +366,7 @@ export interface UploadChoice {
   uploaded_at: string;
   completed_at: string;
   uploaded_by: string | null;
+  business: "dtp" | "gmbh";
 }
 
 export interface OrderHistory {
@@ -408,7 +412,7 @@ export interface OrdersPage {
   data: OrderRow[];
   meta: PageMeta & { sort?: string; direction?: "asc" | "desc" };
   // The shown upload; `latest` = the current order data (it also lists the manual orders).
-  source: { uploaded_at: string; original_filename: string; upload_id: number; latest: boolean } | null;
+  source: { uploaded_at: string; original_filename: string; upload_id: number; latest: boolean; business?: "dtp" | "gmbh" } | null;
   facets: { ship_to_locations: string[]; commodity_types: string[]; vendors?: { id: number; name: string }[] } | null;
   columns?: { key: string; label: string }[];
 }
@@ -619,4 +623,20 @@ export interface VendorDetailsImportResult {
   updated: number;
   unchanged: number;
   issues: number;
+}
+
+// One business setting on the Settings page. source: where its value is from ("app": saved on the page, "env": .env);
+// value: the saved value (never sent for secrets); env_value: the .env value (not for secrets); set: has any value.
+export interface AppSettingItem {
+  key: string;
+  label: string;
+  group: string;
+  kind: "text" | "textarea" | "secret" | "select";
+  hint: string | null;
+  options: string[] | null;
+  default_value: string | null; // what applies when not set (shown on the page)
+  source: "app" | "env" | "none";
+  value: string | null;
+  env_value: string | null;
+  set: boolean;
 }

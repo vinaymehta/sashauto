@@ -16,6 +16,7 @@ import { DeliveryCell } from "@/components/orders/delivery-cell";
 import { OpenOrderContext, OrderDetailsLink } from "@/components/orders/order-details-modal";
 import { RelatedLink } from "@/components/orders/related-popover";
 import { Kpi } from "@/components/upload-summary";
+import { BUSINESS_LABEL, getBusiness } from "@/lib/business";
 import { useSession } from "@/components/session";
 import { AGE_FILTER, AgeLegend, ageRowProps, todayParam } from "@/components/age";
 import { useApi, useDebounced } from "@/components/use-api";
@@ -67,11 +68,12 @@ function QtyCell({ row }: { row: OrderRow }) {
   );
 }
 
-// "PO generated" when its POs order the whole Qty, else how much is ordered (the rest is still open).
+// "PO generated" when its POs order the whole Qty, "Order placed" once every PO is also ticked as sent to the vendor,
+// else how much is ordered (the rest is still open).
 function OrderedBadge({ row }: { row: OrderRow }) {
   const total = Number(row.combined ? row.combined.total : row.qty ?? 0);
   const ordered = Number(row.ordered_qty ?? 0);
-  if (ordered >= total) return <Badge tone="up">PO generated</Badge>;
+  if (ordered >= total) return row.order_placed ? <Badge tone="dark">Order placed</Badge> : <Badge tone="up">PO generated</Badge>;
   return <span title={`${formatQty(String(total - ordered))} still to order`}><Badge tone="warn">PO {formatQty(String(ordered))} of {formatQty(String(total))}</Badge></span>;
 }
 
@@ -95,7 +97,8 @@ function UnitLink({ row }: { row: OrderRow }) {
 // PO Number opens the ORDER DETAILS window; Part links list the related POs of the shown upload (`uploadId`;
 // undefined = current order data).
 const typedColumns = (uploadId?: number): Record<string, Omit<Column, "key" | "label">> => ({
-  type: { render: (r) => <span className="inline-flex items-center gap-1.5">{r.order_type}{r.manual && <Badge>Manual</Badge>}{r.placed && <OrderedBadge row={r} />}</span> },
+  // In "All" each row is tagged with its business (DTP / GMBH).
+  type: { render: (r) => <span className="inline-flex items-center gap-1.5">{r.order_type}{getBusiness() === "all" && r.business && <Badge tone="dark">{BUSINESS_LABEL[r.business]}</Badge>}{r.manual && <Badge>Manual</Badge>}{r.placed && <OrderedBadge row={r} />}</span> },
   due_date: { render: (r) => date(r.due_date) },
   ship_date: { render: (r) => formatDate(r.ship_date) },
   unit: { render: (r) => <UnitLink row={r} /> },

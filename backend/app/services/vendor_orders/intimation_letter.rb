@@ -20,10 +20,10 @@ module VendorOrders
       new(Letter.new(vendor: vendor, po_number: "DRAFT", po_date: Date.current, draft: true)).render
     end
 
-    # The export promotion council registration (RCMC), the export period and who signs, from .env (INTIMATION_*,
-    # COMPANY_REGISTERED_OFFICE; read when the server starts). Not set: left blank in the letter.
+    # The export promotion council registration (RCMC), the export period and who signs, from Settings, else .env
+    # (INTIMATION_*, COMPANY_REGISTERED_OFFICE). Not set: left blank in the letter.
     def self.settings
-      env = ->(name) { ENV[name].to_s.strip }
+      env = ->(name) { AppConfig.setting(name).to_s.strip }
       {
         council: env.("INTIMATION_RCMC_COUNCIL"),
         rcmc_no: env.("INTIMATION_RCMC_NO"),

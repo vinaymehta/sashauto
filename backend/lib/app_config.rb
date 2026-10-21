@@ -6,6 +6,11 @@ module AppConfig
     ENV[name].presence || default
   end
 
+  # A business setting: the value saved on the Settings page (AppSetting), else .env, else `default`.
+  def setting(name, default = nil)
+    AppSetting[name].presence || env(name, default)
+  end
+
   # A setting that must come from the environment (.env) in production. The local default is used only
   # in development/test, so a missing value can never silently point a server at localhost.
   def required(name, local_default)
@@ -28,22 +33,22 @@ module AppConfig
   # SASH (the buyer) on vendor purchase order PDFs: header, delivery and invoice address.
   def company
     {
-      name: env("COMPANY_NAME", "SASH Autotech Pvt. Ltd."),
-      address: env("COMPANY_ADDRESS", ""),
-      gst: env("COMPANY_GST", ""),
-      phone: env("COMPANY_PHONE", ""),
-      email: env("COMPANY_EMAIL", ""),
-      terms_url: env("COMPANY_TERMS_URL", "")
+      name: setting("COMPANY_NAME", "SASH Autotech Pvt. Ltd."),
+      address: setting("COMPANY_ADDRESS", ""),
+      gst: setting("COMPANY_GST", ""),
+      phone: setting("COMPANY_PHONE", ""),
+      email: setting("COMPANY_EMAIL", ""),
+      terms_url: setting("COMPANY_TERMS_URL", "")
     }
   end
 
   # Where orders are normally shipped; rows with any other Ship To are flagged and emailed (Orders::ShipTo).
   def default_ship_to
-    env("DEFAULT_SHIP_TO", "XPAC, 824 E 8TH ST, MILAN, IL 612643110")
+    setting("DEFAULT_SHIP_TO", "XPAC, 824 E 8TH ST, MILAN, IL 612643110")
   end
 
   def admin_notification_emails
-    env("ADMIN_NOTIFICATION_EMAILS", "").split(",").map(&:strip).reject(&:empty?)
+    setting("ADMIN_NOTIFICATION_EMAILS", "").split(",").map(&:strip).reject(&:empty?)
   end
 
   # Public URL of the frontend (what users open in the browser), used for links in emails.
@@ -70,7 +75,26 @@ module AppConfig
 
   # Slack Incoming Webhook for alerts (the portal's OTP request and failures). Blank: alerts are only logged.
   def slack_webhook_url
-    env("SLACK_WEBHOOK_URL")
+    setting("SLACK_WEBHOOK_URL")
+  end
+
+  # Deere supplier portal login (SecurePortal).
+  def portal_username
+    setting("SECURE_PORTAL_USERNAME")
+  end
+
+  def portal_password
+    setting("SECURE_PORTAL_PASSWORD")
+  end
+
+  # Text of the portal's Supplier option to download for a business (Business::KEYS); nil when not set.
+  def portal_supplier(business)
+    setting("PORTAL_SUPPLIER_#{business.to_s.upcase}")
+  end
+
+  # Currency of a business's Deere Unit Price.
+  def business_currency(business)
+    setting("CURRENCY_#{business.to_s.upcase}", "USD")
   end
 
   def max_upload_bytes

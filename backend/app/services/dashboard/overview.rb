@@ -4,7 +4,7 @@ module Dashboard
   # Operations figures of the dashboard, from the current order data (the latest upload and active manual orders),
   # counting orders as the Orders page lists them: a combined order (Orders::Combiner) once, valued at all of its rows.
   # Open = a Firm or Order order not yet delivered to Deere (no active outbound mark). Values are Qty × Unit Price ÷ 100
-  # (USD), as in Dashboard::Money.
+  # (in the business's currency, Settings), as in Dashboard::Money.
   #
   #   kpis       open orders, due in the next 30 days, overdue (ship date passed), PO coverage (share of the open value
   #              with a vendor PO generated)
@@ -21,12 +21,20 @@ module Dashboard
     # unpriced: a row of it has no Unit Price (nor a customer price), so its value leaves that row out.
     Order = Data.define(:id, :manual, :key, :firm_key, :po_number, :po_line_number, :part_number, :order_type, :ship_date, :qty, :value, :unpriced)
 
-    def self.call(today: Time.find_zone!(AppConfig.ageing_time_zone).today)
-      new(today).call
+    def self.call(today: Time.find_zone!(AppConfig.ageing_time_zone).today, view: "all")
+      new(today, view).call
     end
 
-    def initialize(today)
+    # `view`: the business view (Business: "dtp", "gmbh" or "all", both businesses together).
+    def initialize(today, view = "all")
       @today = today
+      @view = view
+    end
+
+    # The currency of the view's Deere prices, or nil when the businesses of "all" use different ones.
+    def currency
+      currencies = Business.of(@view).map { |b| Business.currency(b) }.uniq
+      currencies.one? ? currencies.first : nil
     end
 
     def call
@@ -34,6 +42,7 @@ module Dashboard
       status = statuses
       open = open_orders
       placed = VendorOrderPlacement.where(order_key: open.map(&:key)).distinct.pluck(:order_key).to_set
+      @order_placed = VendorOrderPlacement.order_placed_keys(placed.to_a)
       {
         kpis: kpis(open, placed),
         pipeline: STATUSES.map { |s| bucket(open.select { |o| (status[o.key] || "none") == s }).merge(status: s) },
@@ -55,6 +64,11 @@ module Dashboard
       @anchor_keys
     end
 
+    # The view's businesses (Business::KEYS).
+    def businesses
+      Business.of(@view)
+    end
+
     # Every order of the current data, combined orders folded into their first order.
     def listed_orders
       @listed_orders ||= build_listed_orders
@@ -64,12 +78,12 @@ module Dashboard
 
     def build_listed_orders
       @anchor_keys = {}
-      batch = UploadBatch.latest_completed
-      return manual_orders unless batch
+      batch_ids = UploadBatch.latest_for(@view).map(&:id)
+      return manual_orders if batch_ids.empty?
 
-      combined = Orders::Combiner.call(batch.id)
+      combined = Orders::Combiner.for_batches(batch_ids)
       anchor_of = combined.groups.values.select(&:combined?).flat_map { |g| g.members.map { |m| [ m.id, g.anchor_id ] } }.to_h
-      rows = OrderRow.where(upload_batch_id: batch.id)
+      rows = OrderRow.where(upload_batch_id: batch_ids)
                      .pluck(:id, :group_key, :po_number, :po_line_number, :part_number, :order_type, :ship_date, :qty, Arel.sql("source_data->>'Unit Price'"))
       prices = price_lookup(rows.map { |r| r[4] })
       values = rows.to_h { |r| [ r[0], value(r[7], r[8], prices[r[4]]) ] }
@@ -87,7 +101,7 @@ module Dashboard
     end
 
     def manual_orders
-      list = ManualOrder.active.pluck(:id, :po_number, :po_line_number, :part_number, :order_type, :ship_date, :qty, Arel.sql("source_data->>'Unit Price'"))
+      list = ManualOrder.active.where(business: Business.of(@view)).pluck(:id, :po_number, :po_line_number, :part_number, :order_type, :ship_date, :qty, Arel.sql("source_data->>'Unit Price'"))
       prices = price_lookup(list.map { |m| m[3] })
       list.map do |id, po, line, part, type, ship, qty, price|
         key = VendorOrderPlacement.order_key(ManualOrder.new(id: id))
@@ -154,7 +168,8 @@ module Dashboard
     def order_json(order, status, placed)
       { id: order.id, manual: order.manual, po_number: order.po_number, po_line_number: order.po_line_number,
         part_number: order.part_number, order_type: order.order_type, ship_date: order.ship_date, qty: Serializers.qty(order.qty),
-        value: money(order.value), status: status[order.key] || "none", po: placed.include?(order.key), overdue: order.ship_date < @today }
+        value: money(order.value), status: status[order.key] || "none", po: placed.include?(order.key),
+        order_placed: @order_placed.include?(order.key), overdue: order.ship_date < @today }
     end
 
     def bucket(list)

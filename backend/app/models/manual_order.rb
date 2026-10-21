@@ -25,8 +25,9 @@ class ManualOrder < ApplicationRecord
 
   # Detection records of `model` (QuantityChange, AddressChange, MoqAlert) created by manual creates and
   # edits of orders that are not deleted, optionally only those after `since`.
-  def self.detections(model, since: nil)
-    scope = model.where(upload_batch_id: nil, manual_order_id: active.select(:id))
+  def self.detections(model, since: nil, business: nil)
+    orders = business ? active.where(business: business) : active
+    scope = model.where(upload_batch_id: nil, manual_order_id: orders.select(:id))
     since ? scope.where(created_at: since..) : scope
   end
 end

@@ -23,22 +23,34 @@ class SecurePortal
     @session_store = BrowserSessionStore.new('secure_portal')
   end
 
-  # Returns the path of the downloaded Excel report. Every download is kept in
-  # DOWNLOAD_DIR, named with the date and time it was downloaded (IST), e.g.
-  # SupplierRequirements_16-10-26_13-05.xlsx.
-  def call
+  # Downloads the requirement report of each business, in one sign-in: `suppliers` maps a business to the text of
+  # its Supplier option (nil: the first supplier). Returns { business => path }; a business whose download fails is
+  # logged and left out. Every download is kept in DOWNLOAD_DIR, named with the date and time it was downloaded
+  # (IST), e.g. SupplierRequirements_16-10-26_13-05.xlsx.
+  def call(suppliers = { 'dtp' => nil })
     ensure_logged_in
-    download_requirement_report
+    suppliers.each_with_index.each_with_object({}) do |((business, supplier), i), files|
+      open_page(TARGET_URL) if i.positive? # back to a fresh requirement screen for the next supplier
+      files[business] = download_requirement_report(supplier)
+    rescue StandardError => e
+      puts "[secure_portal] #{business}: download failed (#{e.class}: #{e.message.lines.first&.strip})"
+    end
   ensure
     @driver.quit
   end
 
-  # Requirement screen: Supplier = 2nd option, Type = "All", then
-  # "Download to Excel". Blocks until the file has fully landed on disk.
-  def download_requirement_report
+  # Requirement screen: Supplier = the option whose text contains `supplier_text` (else the first supplier, the 2nd
+  # option), Type = "All", then "Download to Excel". Blocks until the file has fully landed on disk.
+  def download_requirement_report(supplier_text = nil)
     supplier_el = @driver.find_element(id: 'supplierNum')
     supplier = Selenium::WebDriver::Support::Select.new(supplier_el)
-    second_value = supplier.options[1].attribute('value')
+    wanted = if supplier_text.present?
+      supplier.options.find { |o| o.text.downcase.include?(supplier_text.downcase) } ||
+        raise("SecurePortal: no Supplier option contains \"#{supplier_text}\" (options: #{supplier.options.map(&:text).join(' | ')})")
+    else
+      supplier.options[1]
+    end
+    second_value = wanted.attribute('value')
     unless supplier.first_selected_option.attribute('value') == second_value
       choose_option(supplier_el, second_value) # onchange -> selectSupplier(..., 'refresh') reloads the form
       wait_for_form_refresh(supplier_el)
@@ -84,7 +96,7 @@ class SecurePortal
     open_page(LOGIN_URL)
     sleep 3
     input_email = @driver.find_element(css: 'input[name="identifier"]')
-    input_email.send_keys(ENV['SECURE_PORTAL_USERNAME'])
+    input_email.send_keys(AppConfig.portal_username)
     sleep 3
     remember_me = @driver.find_element(css: 'input[name="rememberMe"]')
     @driver.execute_script("arguments[0].click();", remember_me)
@@ -93,7 +105,7 @@ class SecurePortal
     submit_button.click
     sleep 3
     input_password = @driver.find_element(css: 'input[type="password"]')
-    input_password.send_keys(ENV['SECURE_PORTAL_PASSWORD'])
+    input_password.send_keys(AppConfig.portal_password)
     sleep 3
     submit_button = @driver.find_element(css: 'input.button.button-primary')
     submit_button.click

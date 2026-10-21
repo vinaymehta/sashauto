@@ -1,6 +1,7 @@
 module Api
-  # The latest successful order dataset plus the manual orders, or (`upload_id`) any earlier upload's
-  # rows exactly as imported. Search, sorting and pagination all run in PostgreSQL.
+  # The current order data of the business view (Business: DTP, GMBH or both for "All"): each business's latest
+  # upload plus its manual orders, or (`upload_id`) any earlier upload's rows exactly as imported. Search, sorting and
+  # pagination all run in PostgreSQL.
   class OrdersController < ApplicationController
     SEARCH_COLUMNS = %w[po_number po_line_number part_number commodity_type order_type ship_to_location
                         supplier_part_number plant_code].freeze
@@ -27,6 +28,8 @@ module Api
       "last_updated_date" => "order_rows.last_updated_date"
     }.freeze
     DEFAULT_SORT = "ship_date".freeze
+    # The business of an imported row: its upload's.
+    BUSINESS_SQL = "(SELECT ub.business FROM upload_batches ub WHERE ub.id = order_rows.upload_batch_id) AS business".freeze
 
     # Columns of order_rows that manual_orders has too (same names and types).
     SHARED_COLUMNS = %w[id group_key po_number part_number order_type ship_date po_line_number ship_to_location
@@ -36,14 +39,14 @@ module Api
                         source_data source_columns created_at].freeze
 
     def index
-      batch = selected_batch
-      return render(json: { data: [], meta: pagination_meta(0).last, source: nil }) if batch.nil? && !ManualOrder.active.exists?
+      batches = selected_batches
+      return render(json: { data: [], meta: pagination_meta(0).last, source: nil }) if batches.empty? && !manual_orders.exists?
 
-      # Every imported row of the upload (not only the current row of each PO + Part + Type).
-      dataset = dataset(batch)
-      columns = source_columns(batch)
+      # Every imported row of the upload(s) (not only the current row of each PO + Part + Type).
+      dataset = dataset(batches)
+      columns = source_columns(batches.first)
       # Orders inside a combined order (Orders::Combiner) are listed under its first order, not on their own.
-      combined = Orders::Combiner.call(batch&.id)
+      combined = Orders::Combiner.for_batches(batches.map(&:id))
       scope = filter(search(dataset, (params[:search].presence || params[:q]).to_s.strip.first(100)), combined)
       scope = scope.where("order_rows.manual OR order_rows.id NOT IN (?)", combined.hidden.to_a) if combined.hidden.any?
       scope, sort, direction = apply_sort(scope, sorts_for(columns).merge("firm_date" => firm_date_sql(combined)), default: DEFAULT_SORT)
@@ -54,13 +57,14 @@ module Api
         paginate(scope)
       else
         # Stored rows of the upload (row_count is the number after merging identical rows, not what is listed).
-        total = OrderRow.where(upload_batch_id: batch&.id).count +
-                (current_view? ? ManualOrder.active.count + kept_rows(batch).count : 0)
+        total = OrderRow.where(upload_batch_id: batches.map(&:id)).count +
+                (current_view? ? manual_orders.count + kept_rows(batches).count : 0)
         paginate_with_known_total(scope, total)
       end
 
-      ship_to_locations, commodity_types = facets(batch, dataset)
+      ship_to_locations, commodity_types = facets(batches)
       ordered = ordered_by_key(rows)
+      order_placed = VendorOrderPlacement.order_placed_keys(ordered.keys)
       deliveries = deliveries_by_key(rows)
       # A combined order's row shows the combined order's Firm Date (the day it reached the MOQ).
       # (By position: an imported row and a manual order can share an id.)
@@ -69,15 +73,18 @@ module Api
       render json: {
         data: rows.each_with_index.map do |row, i|
           key = placement_key(row)
-          Serializers.order_row(row, source: true).merge(placed: ordered.key?(key), ordered_qty: Serializers.qty(ordered[key]),
+          Serializers.order_row(row, source: true).merge(placed: ordered.key?(key), order_placed: order_placed.include?(key),
+                                                         ordered_qty: Serializers.qty(ordered[key]),
                                                          deliveries: deliveries.fetch(key, {}),
-                                                         firm_date: firm_dates[firm_keys[i]], **combined_info(row, combined))
+                                                         firm_date: firm_dates[firm_keys[i]], business: row[:business],
+                                                         **combined_info(row, combined))
         end,
         meta: meta.merge(sort: sort, direction: direction),
         # Every Excel column of the upload, in file order; `key` is the sort key.
         columns: columns,
-        source: batch && { uploaded_at: batch.completed_at, original_filename: batch.original_filename, upload_id: batch.id,
-                           latest: current_view? },
+        # The shown upload (the most recent one in "All"), with its business.
+        source: (batch = batches.max_by(&:completed_at)) && { uploaded_at: batch.completed_at, original_filename: batch.original_filename,
+                                                              upload_id: batch.id, latest: current_view?, business: batch.business },
         # Values present in the current data, for the filter panel.
         facets: { ship_to_locations: ship_to_locations, commodity_types: commodity_types, vendors: vendor_facet(dataset) }
       }
@@ -88,12 +95,12 @@ module Api
     # ones with a Qty and no PO generated yet; below_moq: open ones (single or combined) still below the MOQ; aged:
     # open ones 90+ days since their Firm Date (age group red, on the browser's `today`).
     def summary
-      batch = UploadBatch.latest_completed
-      combined = Orders::Combiner.call(batch&.id)
-      rows = OrderRow.where(upload_batch_id: batch&.id, order_type: %w[Firm Order]).where.not(id: combined.hidden.to_a)
+      batch_ids = UploadBatch.latest_for(current_business).map(&:id)
+      combined = Orders::Combiner.for_batches(batch_ids)
+      rows = OrderRow.where(upload_batch_id: batch_ids, order_type: %w[Firm Order]).where.not(id: combined.hidden.to_a)
                      .pluck(:id, :group_key, :po_line_number, :ship_date, :qty)
                      .map { |id, g, line, ship, qty| [ id, Digest::SHA256.hexdigest([ g, line, ship.iso8601 ].join(OrderRows::Normalizer::KEY_SEPARATOR)), qty, false ] }
-      rows += ManualOrder.active.where(order_type: %w[Firm Order]).pluck(:id, :qty)
+      rows += manual_orders.where(order_type: %w[Firm Order]).pluck(:id, :qty)
                          .map { |id, qty| [ id, VendorOrderPlacement.order_key(ManualOrder.new(id: id)), qty, true ] }
       delivered = OrderDelivery.active.where(kind: "outbound", order_key: rows.map { |r| r[1] }).distinct.pluck(:order_key).to_set
       open = rows.reject { |_, key, *| delivered.include?(key) }
@@ -231,10 +238,10 @@ module Api
                    .transform_values { |list| list.to_h { |d| [ d.kind, Serializers.order_delivery(d) ] } }
     end
 
-    # [Ship To Locations, Commodity Types] present in the dataset, sorted.
+    # [Ship To Locations, Commodity Types] present in the shown data, sorted.
     # Upload batches are immutable, so batch facets are cached in memory.
-    def facets(batch, dataset)
-      batch_facets = if batch
+    def facets(batches)
+      parts = batches.map do |batch|
         Rails.cache.fetch("order_rows_facets_batch_#{batch.id}") do
           OrderRow.where(upload_batch_id: batch.id).pick(
             Arel.sql("COALESCE(array_agg(DISTINCT order_rows.ship_to_location ORDER BY order_rows.ship_to_location), '{}')"),
@@ -242,21 +249,14 @@ module Api
                      "FILTER (WHERE order_rows.commodity_type IS NOT NULL), '{}')")
           ) || [ [], [] ]
         end
-      else
-        [ [], [] ]
       end
-
-      return batch_facets unless current_view? && ManualOrder.active.exists?
-
-      manual_facets = ManualOrder.active.pick(
-        Arel.sql("COALESCE(array_agg(DISTINCT ship_to_location ORDER BY ship_to_location), '{}')"),
-        Arel.sql("COALESCE(array_agg(DISTINCT commodity_type ORDER BY commodity_type) FILTER (WHERE commodity_type IS NOT NULL), '{}')")
-      ) || [ [], [] ]
-
-      [
-        (batch_facets[0] | manual_facets[0]).sort,
-        (batch_facets[1] | manual_facets[1]).sort
-      ]
+      if current_view? && manual_orders.exists?
+        parts << (manual_orders.pick(
+          Arel.sql("COALESCE(array_agg(DISTINCT ship_to_location ORDER BY ship_to_location), '{}')"),
+          Arel.sql("COALESCE(array_agg(DISTINCT commodity_type ORDER BY commodity_type) FILTER (WHERE commodity_type IS NOT NULL), '{}')")
+        ) || [ [], [] ])
+      end
+      [ parts.flat_map(&:first).uniq.sort, parts.flat_map(&:last).uniq.sort ]
     end
 
     # A manual order has no other rows: its history is itself.
@@ -268,45 +268,52 @@ module Api
       }
     end
 
-    # The upload whose rows are shown: `upload_id` (any completed upload), else the latest.
-    def selected_batch
-      return @selected_batch if defined?(@selected_batch)
-      @latest = UploadBatch.latest_completed
-      @selected_batch = params[:upload_id].present? ? UploadBatch.completed.find(params[:upload_id]) : @latest
+    # The uploads whose rows are shown: `upload_id` (any completed upload), else the latest upload of each business of
+    # the view.
+    def selected_batches
+      @selected_batches ||= params[:upload_id].present? ? [ UploadBatch.completed.find(params[:upload_id]) ] : UploadBatch.latest_for(current_business)
     end
 
-    # The current order data (latest upload) includes the manual orders; an earlier upload shows only its rows.
+    # The current order data (latest uploads) includes the manual orders; an earlier upload shows only its rows.
     def current_view?
-      selected_batch == @latest
+      params[:upload_id].blank?
     end
 
-    # The upload's rows, plus (current view) the manual orders and the kept rows (see #kept_rows), as one
+    # Active manual orders of the view's businesses.
+    def manual_orders
+      ManualOrder.active.where(business: businesses)
+    end
+
+    # The uploads' rows, plus (current view) the manual orders and the kept rows (see #kept_rows), as one
     # `order_rows` relation so the search, filters, sorting and pagination below apply to all. Each row has
     # `manual` and `kept` (true/false).
-    def dataset(batch)
-      imported = OrderRow.where(upload_batch_id: batch&.id)
+    def dataset(batches)
+      imported = OrderRow.where(upload_batch_id: batches.map(&:id))
                          .select(*SHARED_COLUMNS, :upload_batch_id, :source_row_number, :current, :group_row_count,
-                                 "false AS manual", "false AS kept")
+                                 "false AS manual", "false AS kept", BUSINESS_SQL)
       return OrderRow.from("(#{imported.to_sql}) AS order_rows") unless current_view?
 
-      manual = ManualOrder.active.select(*SHARED_COLUMNS, "NULL::bigint AS upload_batch_id", "NULL::integer AS source_row_number",
-                                         "true AS current", "1 AS group_row_count", "true AS manual", "false AS kept")
-      kept = OrderRow.where(id: kept_rows(batch).select(:id))
+      manual = manual_orders.select(*SHARED_COLUMNS, "NULL::bigint AS upload_batch_id", "NULL::integer AS source_row_number",
+                                    "true AS current", "1 AS group_row_count", "true AS manual", "false AS kept", "business")
+      kept = OrderRow.where(id: kept_rows(batches).select(:id))
                      .select(*SHARED_COLUMNS, :upload_batch_id, :source_row_number, :current, :group_row_count,
-                             "false AS manual", "true AS kept")
+                             "false AS manual", "true AS kept", BUSINESS_SQL)
       OrderRow.from("(#{imported.to_sql} UNION ALL #{manual.to_sql} UNION ALL #{kept.to_sql}) AS order_rows")
     end
 
-    # Orders placed with vendors or with an active status mark that are no longer in the latest upload: like manual
-    # orders they stay on the Orders page. One row per order (PO + Part + Type + PO Line + Ship Date), its last version.
-    def kept_rows(batch)
+    # Orders of the view's businesses placed with vendors or with an active status mark that are no longer in their
+    # business's latest upload: like manual orders they stay on the Orders page. One row per order (PO + Part + Type +
+    # PO Line + Ship Date), its last version.
+    def kept_rows(batches)
+      ids = batches.map { |b| Integer(b.id) }.presence || [ 0 ]
+      names = businesses.map { |b| OrderRow.connection.quote(b) }.join(",")
       OrderRow.from(<<~SQL.squish)
         (SELECT DISTINCT ON (r.group_key, r.po_line_number, r.ship_date) r.id
-         FROM order_rows r
-         WHERE r.upload_batch_id <> #{Integer(batch&.id || 0)}
+         FROM order_rows r JOIN upload_batches b ON b.id = r.upload_batch_id AND b.business IN (#{names})
+         WHERE r.upload_batch_id NOT IN (#{ids.join(',')})
            AND (EXISTS (SELECT 1 FROM order_deliveries d WHERE d.order_row_id = r.id AND d.removed_at IS NULL)
                 OR EXISTS (SELECT 1 FROM vendor_order_placements p WHERE p.order_row_id = r.id))
-           AND NOT EXISTS (SELECT 1 FROM order_rows n WHERE n.upload_batch_id = #{Integer(batch&.id || 0)}
+           AND NOT EXISTS (SELECT 1 FROM order_rows n WHERE n.upload_batch_id IN (#{ids.join(',')})
                            AND n.group_key = r.group_key AND n.po_line_number = r.po_line_number AND n.ship_date = r.ship_date)
          ORDER BY r.group_key, r.po_line_number, r.ship_date, r.upload_batch_id DESC) AS order_rows
       SQL
@@ -347,7 +354,7 @@ module Api
 
     # [{ value:, types:, rows: }] for the other side of a PO <-> Part relation, from one grouped query.
     def related(column, value, other)
-      dataset(selected_batch).where(column => value).group(other).order(other)
+      dataset(selected_batches).where(column => value).group(other).order(other)
             .pluck(other, Arel.sql("array_agg(DISTINCT order_type ORDER BY order_type)"), Arel.sql("COUNT(*)"))
             .map { |v, types, count| { value: v, types: types, rows: count } }
     end

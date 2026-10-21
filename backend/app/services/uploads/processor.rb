@@ -67,7 +67,8 @@ module Uploads
         @batch.lock!
         return if @batch.finished?
 
-        previous = UploadBatch.latest_completed
+        # Compared with the previous upload of the same business.
+        previous = UploadBatch.latest_completed(@batch.business)
         insert_snapshot_rows(result.rows)
         insert_order_rows(result.all_rows)
         Orders::FirmDates.import(@batch.id) # before the MOQ check, which records Firm Dates for the rest

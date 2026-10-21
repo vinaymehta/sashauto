@@ -25,7 +25,7 @@ module Notifications
     end
 
     def subject(batch, kind, count)
-      "#{SUBJECTS.fetch(kind)}: #{count} order row#{'s' unless count == 1} " \
+      "[#{Business.label(batch.business)}] #{SUBJECTS.fetch(kind)}: #{count} order row#{'s' unless count == 1} " \
         "(upload of #{batch.completed_at.in_time_zone.strftime('%-d %b %Y, %H:%M IST')})"
     end
 

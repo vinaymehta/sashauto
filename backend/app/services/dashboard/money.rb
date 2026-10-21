@@ -5,7 +5,7 @@ module Dashboard
   # them (Dashboard::Overview): a combined order once, at the total of its rows and on its first row's ship date.
   # - open_sale: Deere orders still to deliver, i.e. Firm and Order orders of the latest upload, and active manual
   #   orders, without an active "Delivered to Deere" (outbound) mark. Value = Qty × Unit Price ÷ 100 (Deere prices per
-  #   100 pcs; USD). by_date: value per ship date (the graph groups it by week or month).
+  #   100 pcs; in the business's currency, Settings). by_date: value per ship date (the graph groups it by week or month).
   # - open_supplier: vendor POs whose order has no status mark yet (not Received at SASH Faridabad). Value = PO qty ×
   #   the vendor's unit price, per currency (there is no exchange rate). by_vendor: value per vendor and currency.
   # - ytd_customer_spend: Deere's Firm and Order orders with a ship date from the start of the financial year
@@ -16,7 +16,6 @@ module Dashboard
   # The Unit Price is the order's own (file column "Unit Price"), else the part's customer price (Products).
   class Money
     TYPES = %w[Firm Order].freeze
-    SALE_CURRENCY = "USD"
     # One sale order: part, Qty, Unit Price text (per 100 pcs) and ship date.
     Sale = Data.define(:part, :qty, :price, :ship_date)
 
@@ -48,6 +47,7 @@ module Dashboard
       latest = OrderRow.where(order_type: TYPES, ship_date: series_from..@today)
                        .select("order_rows.*, MAX(upload_batch_id) OVER (PARTITION BY group_key, po_line_number, ship_date) AS latest_batch_id")
       rows = OrderRow.from(latest, :order_rows).where("order_rows.upload_batch_id = order_rows.latest_batch_id")
+                     .where(upload_batch_id: UploadBatch.where(business: @overview.businesses).select(:id))
                      .pluck(:group_key, :po_line_number, :part_number, :qty, :ship_date, Arel.sql("source_data->>'Unit Price'"))
                      .map { |g, line, part, qty, ship, price| [ order_key(g, line, ship), Sale.new(part, qty, price, ship) ] }
       sales = rows + manual_orders(ship_date: series_from..@today)
@@ -64,7 +64,7 @@ module Dashboard
     # { amount, orders, without_price, currency, by_date } of [ship date, value, unpriced] orders.
     def totals(orders)
       { amount: money(orders.sum(BigDecimal("0")) { |_, v, _| v }), orders: orders.size, without_price: orders.count { |*, unpriced| unpriced },
-        currency: SALE_CURRENCY, by_date: by_date(orders) }
+        currency: @overview.currency, by_date: by_date(orders) }
     end
 
     # [{ date, amount }] of [ship date, value, unpriced] orders by ship date.
@@ -73,7 +73,10 @@ module Dashboard
     end
 
     def open_supplier
-      orders = VendorOrder.joins(:vendor_order_placement, :vendor)
+      # POs of the view's businesses: placed for one of their uploads' rows or manual orders.
+      own = VendorOrderPlacement.where(upload_batch_id: UploadBatch.where(business: @overview.businesses).select(:id))
+                                .or(VendorOrderPlacement.where(manual_order_id: ManualOrder.where(business: @overview.businesses).select(:id)))
+      orders = VendorOrder.joins(:vendor_order_placement, :vendor).where(vendor_order_placement_id: own.select(:id))
                           .pluck("vendor_order_placements.order_key", :qty, :unit_price, :price_currency, "vendors.name")
       marked = OrderDelivery.active.where(order_key: orders.map(&:first).uniq).distinct.pluck(:order_key).to_set
       open = orders.reject { |key, *| marked.include?(key) }
@@ -90,7 +93,7 @@ module Dashboard
 
     # Active manual orders of type Firm / Order: [[order key, Sale], ...].
     def manual_orders(**where)
-      ManualOrder.active.where(order_type: TYPES, **where)
+      ManualOrder.active.where(business: @overview.businesses, order_type: TYPES, **where)
                  .pluck(:id, :part_number, :qty, Arel.sql("source_data->>'Unit Price'"), :ship_date)
                  .map { |id, part, qty, price, ship| [ VendorOrderPlacement.order_key(ManualOrder.new(id: id)), Sale.new(part, qty, price, ship) ] }
     end

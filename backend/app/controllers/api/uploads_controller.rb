@@ -17,7 +17,7 @@ module Api
     }.freeze
 
     def index
-      scope = UploadBatch.joins(:uploaded_by).includes(:uploaded_by)
+      scope = UploadBatch.joins(:uploaded_by).includes(:uploaded_by).where(business: businesses)
       scope = scope.where(status: params[:status]) if UploadBatch::STATUSES.include?(params[:status])
       scope = search_uploads(scope, params[:q].to_s.strip.first(100)) if params[:q].present?
       scope, sort, direction = apply_sort(scope, UPLOAD_SORTS, default: "uploaded_at", default_direction: :desc)
@@ -26,11 +26,12 @@ module Api
       render json: { data: batches.map { |b| Serializers.upload_batch(b) }, meta: meta }
     end
 
-    # Every completed upload, newest first, to choose which upload's order data the Orders page shows.
+    # Every completed upload of the view's businesses, newest first, to choose which upload's order data the Orders
+    # page shows.
     def history
-      batches = UploadBatch.completed.includes(:uploaded_by).order(completed_at: :desc, id: :desc)
+      batches = UploadBatch.completed.where(business: businesses).includes(:uploaded_by).order(completed_at: :desc, id: :desc)
       render json: { data: batches.map { |b| { id: b.id, original_filename: b.original_filename, uploaded_at: b.created_at,
-                                               completed_at: b.completed_at, uploaded_by: b.uploaded_by&.name } } }
+                                               completed_at: b.completed_at, uploaded_by: b.uploaded_by&.name, business: b.business } } }
     end
 
     # Matches the file name or uploader name.
@@ -45,8 +46,10 @@ module Api
     end
 
     def create
-      batch = Uploads::Intake.call(file: params.require(:file), user: current_user)
-      audit("upload.received", subject: batch, filename: batch.original_filename, sha256: batch.file_sha256)
+      # The business is chosen with the file (or is the one shown in the top bar).
+      business = Business::KEYS.include?(params[:business].to_s) ? params[:business].to_s : (businesses.one? ? businesses.first : nil)
+      batch = Uploads::Intake.call(file: params.require(:file), user: current_user, business: business)
+      audit("upload.received", subject: batch, filename: batch.original_filename, sha256: batch.file_sha256, business: batch.business)
       render json: { data: Serializers.upload_batch(batch, detail: true) }, status: :accepted
     rescue Uploads::Intake::Rejected => e
       render_error e.message, :unprocessable_content, code: "invalid_file"
@@ -189,9 +192,9 @@ module Api
     # manual order creates/edits made since it was uploaded (the current order data).
     def detections(batch, model)
       scope = model.where(upload_batch_id: batch.id)
-      return scope unless params[:manual] == "1" && batch == UploadBatch.latest_completed
+      return scope unless params[:manual] == "1" && batch == UploadBatch.latest_completed(batch.business)
 
-      scope.or(ManualOrder.detections(model, since: batch.completed_at))
+      scope.or(ManualOrder.detections(model, since: batch.completed_at, business: batch.business))
     end
   end
 end

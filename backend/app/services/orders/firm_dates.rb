@@ -2,8 +2,8 @@ module Orders
   # The Firm Date of an order, kept by order key so later uploads keep it. Two sources:
   # - the file's own "Firm Date" column (import): the base file gives the Firm Date of its orders, and wins;
   # - otherwise the day the order first reached the part's MOQ (record), e.g. orders that are new after the base file.
-  # A combined order (Orders::Combiner) always gets the day it reached the MOQ, whatever the file's dates of its orders
-  # (kept under combined_key). Kept even when the Qty drops again. Forecast orders never get a Firm Date.
+  # A combined order (Orders::Combiner, kept under combined_key) gets the latest Firm Date of its rows; only when none of
+  # them has one, the day it reached the MOQ. Kept even when the Qty drops again. Forecast orders never get a Firm Date.
   module FirmDates
     module_function
 
@@ -28,20 +28,40 @@ module Orders
                                unique_by: :order_key, update_only: :firm_on) # Rails sets updated_at when it changes
     end
 
-    # Records today for the orders of `result` at or above the MOQ that have no Firm Date yet. Only for the latest
-    # upload (or the one being imported): orders of earlier uploads were recorded while those were current.
+    # Firm Dates of the orders of `result` at or above the MOQ. A combined order takes the latest Firm Date of its rows
+    # (set again each time, so it follows rows added or taken out); any other order without a Firm Date yet gets today.
+    # Only for the latest upload (or the one being imported): orders of earlier uploads were recorded while those were
+    # current.
     def record(batch_id, result)
-      latest = UploadBatch.latest_completed&.id
+      latest = UploadBatch.latest_completed(UploadBatch.where(id: batch_id).pick(:business))&.id
       return if result.firm.empty? || (latest && batch_id < latest)
 
-      keys = result.firm.values.uniq
+      now = Time.current
+      from_rows = combined_from_rows(result)
+      if from_rows.any?
+        OrderFirmDate.upsert_all(from_rows.map { |key, date| { order_key: key, firm_on: date, created_at: now, updated_at: now } },
+                                 unique_by: :order_key, update_only: :firm_on)
+      end
+
+      keys = result.firm.values.uniq - from_rows.keys
       missing = keys - OrderFirmDate.where(order_key: keys).pluck(:order_key)
       return if missing.empty?
 
       today = Time.find_zone!(AppConfig.ageing_time_zone).today
-      now = Time.current
       OrderFirmDate.insert_all(missing.map { |key| { order_key: key, firm_on: today, created_at: now, updated_at: now } },
                                unique_by: :order_key)
+    end
+
+    # combined key => the latest Firm Date of its rows, for the combined orders of `result` at or above the MOQ whose
+    # rows have one.
+    def combined_from_rows(result)
+      groups = result.groups.values.select { |g| g.combined? && result.firm.key?(g.anchor_id) }
+      member_keys = groups.to_h { |g| [ g.anchor_id, g.members.map { |m| VendorOrderPlacement.order_key(m) } ] }
+      dates = for_keys(member_keys.values.flatten.uniq)
+      groups.filter_map do |g|
+        latest = member_keys[g.anchor_id].filter_map { |key| dates[key] }.max
+        [ result.firm[g.anchor_id], latest ] if latest
+      end.to_h
     end
 
     # Key of a combined order's own Firm Date (the day it reached the MOQ), apart from the file's Firm Date of its first

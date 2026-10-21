@@ -2,13 +2,14 @@
 
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { CloseIcon, DownloadIcon } from "../icons";
+import { CloseIcon, DownloadIcon, PrintIcon } from "../icons";
 
 // In-app PDF viewer: the document on a white page in a large window over the app (not a new browser tab).
-// Closes on ✕, Escape (only the viewer, not a panel underneath) or a click outside. `downloadUrl` adds a
-// Download button.
+// Closes on ✕, Escape (only the viewer, not a panel underneath) or a click outside. Print opens the browser's print
+// dialog for the document; `downloadUrl` adds a Download button.
 export function PdfViewer({ url, title, downloadUrl, onClose }: { url: string; title: string; downloadUrl?: string; onClose: () => void }) {
   const box = useRef<HTMLDivElement>(null);
+  const frame = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -31,6 +32,10 @@ export function PdfViewer({ url, title, downloadUrl, onClose }: { url: string; t
         <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3">
           <p className="truncate text-sm font-semibold text-ink">{title}</p>
           <div className="flex items-center gap-1">
+            <button type="button" onClick={() => { frame.current?.contentWindow?.focus(); frame.current?.contentWindow?.print(); }}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm font-medium text-ink-muted hover:bg-subtle hover:text-ink">
+              <PrintIcon size={15} />Print
+            </button>
             {downloadUrl && (
               <a href={downloadUrl} className="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm font-medium text-ink-muted hover:bg-subtle hover:text-ink">
                 <DownloadIcon size={15} />Download
@@ -41,7 +46,7 @@ export function PdfViewer({ url, title, downloadUrl, onClose }: { url: string; t
             </button>
           </div>
         </div>
-        <iframe src={src} title={title} className="min-h-0 w-full flex-1 bg-neutral-100" />
+        <iframe ref={frame} src={src} title={title} className="min-h-0 w-full flex-1 bg-neutral-100" />
       </div>
     </div>,
     document.body,

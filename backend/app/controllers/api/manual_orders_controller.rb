@@ -16,8 +16,12 @@ module Api
       render json: { data: Serializers.order_row(ManualOrder.active.find(params[:id]), source: true) }
     end
 
+    # A new order belongs to the business chosen with it (`business`), or the one shown in the top bar.
     def create
-      save(ManualOrder.new, "manual_order.created", :created)
+      business = Business::KEYS.include?(params[:business].to_s) ? params[:business].to_s : (businesses.one? ? businesses.first : nil)
+      return render_error("Choose whether the order is for DTP or GMBH.", :unprocessable_content, code: "business_required") unless business
+
+      save(ManualOrder.new(business: business), "manual_order.created", :created)
     end
 
     def update

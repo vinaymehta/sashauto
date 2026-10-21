@@ -18,6 +18,12 @@ class VendorOrderPlacement < ApplicationRecord
     where(order_key: key).sum(Arel.sql("COALESCE(allocated_qty, order_qty)"))
   end
 
+  # Order keys (of `keys`) whose every vendor PO is ticked "Order placed" (sent to the vendor).
+  def self.order_placed_keys(keys)
+    joins(:vendor_orders).where(order_key: keys).group(:order_key)
+                         .having("bool_and(vendor_orders.order_placed_at IS NOT NULL)").pluck(:order_key).to_set
+  end
+
   # Sets ordered of this placement.
   def ordered
     allocated_qty || order_qty

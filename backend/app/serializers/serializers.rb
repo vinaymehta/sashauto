@@ -14,7 +14,7 @@ module Serializers
 
   def upload_batch(batch, detail: false)
     data = {
-      id: batch.id, version: batch.version_number, status: batch.status,
+      id: batch.id, version: batch.version_number, status: batch.status, business: batch.business,
       original_filename: batch.original_filename, byte_size: batch.byte_size,
       uploaded_by: batch.uploaded_by&.name, uploaded_at: batch.created_at, completed_at: batch.completed_at,
       failed_at: batch.failed_at, row_count: batch.row_count,

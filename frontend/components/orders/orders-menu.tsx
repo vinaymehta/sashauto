@@ -5,9 +5,10 @@ import type { UploadChoice } from "@/lib/types";
 import { formatDateTime } from "@/lib/format";
 import { CheckIcon, ChevronDownIcon, DownloadIcon, PlusIcon, UploadIcon } from "../icons";
 import { useDismiss } from "../use-dismiss";
+import { BUSINESS_LABEL } from "@/lib/business";
 
 // Button with a dropdown panel below it, right-aligned; `children` gets a function that closes the panel.
-function Dropdown({ label, className = "", width, children }: {
+export function Dropdown({ label, className = "", width, children }: {
   label: ReactNode; className?: string; width: string; children: (close: () => void) => ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -53,7 +54,7 @@ export function UploadPicker({ uploads, latestId, selectedId, onSelect }: {
                         className="flex w-full items-start gap-2 px-4 py-2 text-left text-sm text-ink transition-colors hover:bg-canvas">
                   <CheckIcon size={14} className={`mt-0.5 shrink-0 ${active ? "text-ink" : "invisible"}`} />
                   <span className="min-w-0">
-                    <span className="block truncate font-medium">{current ? "Current · " : ""}{u.original_filename}</span>
+                    <span className="block truncate font-medium">{current ? "Current · " : ""}<span className="mr-1 rounded bg-neutral-100 px-1 text-2xs font-semibold text-ink-muted">{BUSINESS_LABEL[u.business]}</span>{u.original_filename}</span>
                     <span className="block text-xs text-ink-muted">{formatDateTime(u.completed_at)} · {u.uploaded_by ?? "—"}</span>
                   </span>
                 </button>

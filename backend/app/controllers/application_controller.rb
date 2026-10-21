@@ -106,6 +106,17 @@ class ApplicationController < ActionController::Base
 
   AGE_GROUPS = %w[green yellow red].freeze
 
+  # The business view of the request (Business::VIEWS): the X-Business header the app sends for the switch in the top
+  # bar, or a `business` param (links); "all" when missing.
+  def current_business
+    @current_business ||= [ request.headers["X-Business"], params[:business] ].map(&:to_s).find { |v| Business::VIEWS.include?(v) } || "all"
+  end
+
+  # The businesses of the view: one, or both for "all".
+  def businesses
+    Business.of(current_business)
+  end
+
   # Age group of an order row = days since its Firm Date (Ageing::Rules): green 30-59, yellow 60-89, red 90 or more;
   # under 30 days or no Firm Date has no group. "Today" is the browser's date (param `today`,
   # within a day of the server's) so filters match the colours the user sees; otherwise the server date.

@@ -1,30 +1,25 @@
 module Dashboard
-  # Aggregates for the overview dashboard. Every figure is computed in PostgreSQL with a handful of
-  # grouped queries over indexed columns; no snapshot rows are loaded into Ruby.
+  # The dashboard of a business view (Business: "dtp", "gmbh" or "all"): the latest upload, what needs attention, the
+  # money figures (Dashboard::Money) and the operations figures (Dashboard::Overview).
   class Stats
-    TREND_VERSIONS = 12
-    WINDOW = 30.days
+    def self.call(view = "all")
+      new(view).call
+    end
 
-    def self.call
-      new.call
+    def initialize(view)
+      @view = view
+      @businesses = Business.of(view)
     end
 
     def call
-      latest = UploadBatch.latest_completed
+      latest = UploadBatch.latest_for(@view).max_by(&:completed_at)
       today = Time.find_zone!(AppConfig.ageing_time_zone).today
       # One order list for both (Dashboard::Overview), so their counts agree.
-      overview = Overview.new(today)
+      overview = Overview.new(today, @view)
       {
         latest: latest && latest_summary(latest),
         totals: totals,
-        last_30_days: last_30_days,
-        trend: trend,
-        composition: latest ? composition(latest) : nil,
-        top_changes: top_changes,
-        recent_uploads: UploadBatch.includes(:uploaded_by).order(created_at: :desc, id: :desc).limit(6).map { |b| Serializers.upload_batch(b) },
-        # Executive figures: open sale and supplier values, and this financial year's customer spend (Dashboard::Money).
         money: Money.call(today: today, overview: overview),
-        # Open orders, pipeline, ageing, outlook, top parts and upcoming shipments (Dashboard::Overview).
         overview: overview.call
       }
     end
@@ -40,8 +35,8 @@ module Dashboard
     end
 
     def totals
-      uploads = UploadBatch.group(:status).count
-      notifications = Notification.group(:status).count
+      uploads = UploadBatch.where(business: @businesses).group(:status).count
+      notifications = Notification.joins(:upload_batch).where(upload_batches: { business: @businesses }).group(:status).count
       {
         versions: uploads.fetch("completed", 0),
         failed_uploads: uploads.fetch("failed", 0),
@@ -52,43 +47,6 @@ module Dashboard
         emails_failed: notifications.fetch("failed", 0),
         emails_pending: notifications.fetch("pending", 0)
       }
-    end
-
-    def last_30_days
-      scope = UploadBatch.completed.where(completed_at: WINDOW.ago..)
-      increases, decreases, versions = scope.pick(Arel.sql("COALESCE(SUM(increase_count), 0)"),
-                                                 Arel.sql("COALESCE(SUM(decrease_count), 0)"), Arel.sql("COUNT(*)"))
-      { versions: versions, increases: increases, decreases: decreases }
-    end
-
-    def trend
-      UploadBatch.completed.order(version_number: :desc).limit(TREND_VERSIONS)
-                 .pluck(:version_number, :completed_at, :increase_count, :decrease_count, :compared_count, :previous_upload_batch_id)
-                 .reverse
-                 .map do |version, at, inc, dec, compared, prev|
-                   { version: version, completed_at: at, increases: inc.to_i, decreases: dec.to_i,
-                     compared: compared, baseline: prev.nil? }
-                 end
-    end
-
-    def composition(batch)
-      rows = batch.order_snapshot_rows
-      {
-        by_type: rows.group(:order_type).count,
-        by_quantity_source: rows.group(:quantity_source).count,
-        by_ship_to: rows.group(:ship_to_location).count,
-        ship_dates: { first: rows.minimum(:ship_date), last: rows.maximum(:ship_date) }
-      }
-    end
-
-    # Largest changes of the most recent version that had any (the latest version may have none).
-    def top_changes
-      batch = UploadBatch.completed.where("increase_count + decrease_count > 0").order(version_number: :desc).first
-      return { version: nil, changes: [] } unless batch
-
-      changes = batch.quantity_changes.order(Arel.sql("abs(difference) DESC"), :id).limit(5)
-      { version: batch.version_number, upload_id: batch.id, completed_at: batch.completed_at,
-        changes: changes.map { |c| Serializers.quantity_change(c) } }
     end
   end
 end

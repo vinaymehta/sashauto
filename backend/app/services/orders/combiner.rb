@@ -22,7 +22,7 @@ module Orders
 
     COLUMNS = %i[id group_key part_number po_number po_line_number order_type ship_date qty].freeze
     # Part of the cache key: raise it when Group or Result change, so results cached in the old shape are not read.
-    CACHE_VERSION = 5
+    CACHE_VERSION = 6
 
     def self.call(batch_id)
       return Result.new(groups: {}, hidden: Set.new, open: Set.new, firm: {}) if batch_id.nil?
@@ -35,6 +35,17 @@ module Orders
       Rails.cache.fetch([ "orders-combined", CACHE_VERSION, batch_id, moq_version, merge_version ]) do
         new(batch_id).call.tap { |result| FirmDates.record(batch_id, result) }
       end
+    end
+
+    # The combined orders of several uploads (the "All" view: each business's latest upload) as one result. Row ids are
+    # unique across uploads, so the parts never collide.
+    def self.for_batches(batch_ids)
+      results = batch_ids.compact.map { |id| call(id) }
+      return call(nil) if results.empty?
+      return results.first if results.size == 1
+
+      Result.new(groups: results.map(&:groups).reduce(:merge), hidden: results.map(&:hidden).reduce(:|),
+                 open: results.map(&:open).reduce(:|), firm: results.map(&:firm).reduce(:merge))
     end
 
     def initialize(batch_id)

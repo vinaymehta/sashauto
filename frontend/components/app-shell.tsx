@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { BoxIcon, CloseIcon, DashboardIcon, MenuIcon, TableIcon, TruckIcon, UsersIcon } from "./icons";
+import { BoxIcon, CloseIcon, DashboardIcon, MenuIcon, TableIcon, TruckIcon, UsersIcon, SettingsIcon } from "./icons";
 import { BrandLogo } from "./brand-logo";
+import { BusinessProvider, useBusiness } from "./business-switch";
 import { ChangePasswordForm } from "./users/change-password-form";
 import { NotificationBell } from "./notification-bell";
 import { useSession } from "./session";
@@ -19,15 +20,24 @@ const NAV = [
   { href: "/products", label: "Products", icon: BoxIcon, match: (p: string) => p.startsWith("/products") },
   { href: "/vendors", label: "Vendors", icon: TruckIcon, match: (p: string) => p.startsWith("/vendors") },
   { href: "/users", label: "Users", icon: UsersIcon, match: (p: string) => p.startsWith("/users"), adminOnly: true },
+  { href: "/settings", label: "Settings", icon: SettingsIcon, match: (p: string) => p.startsWith("/settings"), adminOnly: true },
 ];
 
 // The Warehouse Manager uses only the Orders page (other pages are admin-only on the server too).
 const MANAGER_PATH = "/orders";
 
+// The business view (All / DTP / GMBH, top bar) wraps the whole app.
 export function AppShell({ children }: { children: ReactNode }) {
+  return <BusinessProvider><Shell>{children}</Shell></BusinessProvider>;
+}
+
+function Shell({ children }: { children: ReactNode }) {
+  const { view: business } = useBusiness();
   const { user, loading, signOut } = useSession();
   const router = useRouter();
   const pathname = usePathname();
+  // A settings page (/settings/<page>) opens as its own window: no app menu or top bar (it has its own).
+  const fullWindow = /^\/settings\/[^/]+/.test(pathname);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawer = useRef<HTMLDivElement>(null);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
@@ -76,6 +86,10 @@ export function AppShell({ children }: { children: ReactNode }) {
     </nav>
   );
 
+  if (fullWindow && ready && !blocked) {
+    return <ToastProvider><main className="min-h-screen px-4 py-5 sm:px-6">{children}</main></ToastProvider>;
+  }
+
   return (
     <ToastProvider>
       <div className="min-h-screen lg:flex">
@@ -121,8 +135,8 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
           </header>
           <main className="flex-1 px-4 py-5 sm:px-6">
-            {/* Keyed by path so each page fades in instead of snapping into place. */}
-            <div key={pathname} className="animate-fade-in">
+            {/* Keyed by path (and business view) so each page fades in, and reloads its data for another business. */}
+            <div key={`${pathname}:${business}`} className="animate-fade-in">
               {ready && !blocked ? children : (
                 <div role="status" aria-label="Loading">
                   <Skeleton className="h-7 w-48" />

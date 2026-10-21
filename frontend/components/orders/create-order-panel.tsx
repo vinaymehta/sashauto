@@ -5,6 +5,8 @@ import { api, ApiError } from "@/lib/api";
 import type { ManualOrderField, ManualOrderWarning, OrderRow, UploadDetail } from "@/lib/types";
 import { PencilIcon, UploadIcon } from "../icons";
 import { useToast } from "../toast";
+import type { BusinessKey } from "@/lib/business";
+import { BusinessChoice, useBusiness } from "../business-switch";
 import { UploadCard } from "../upload-card";
 import { useApi } from "../use-api";
 import { Button } from "../ui/button";
@@ -14,12 +16,18 @@ import { FormSection } from "../ui/form-section";
 import { Sheet } from "../ui/sheet";
 import { Skeleton } from "../ui/skeleton";
 
-// Side panel behind the Orders page's "Upload file" button.
+// Side panel behind the Orders page's "Upload file" button. The file is for one business: the one in the top bar, or
+// (in "All") the one chosen here.
 export function UploadOrdersPanel({ onClose, onUploaded }: { onClose: () => void; onUploaded: (upload: UploadDetail) => void }) {
+  const { view } = useBusiness();
+  const [business, setBusiness] = useState<BusinessKey | null>(view === "all" ? null : view);
   return (
     <Sheet open onClose={onClose} title="Upload file" icon={<UploadIcon size={18} />}
            description="Drop or choose a Supplier Requirements .xlsx export to compare quantities.">
-      <UploadCard onFinished={onUploaded} />
+      <div className="space-y-4">
+        <BusinessChoice value={business} onChange={setBusiness} />
+        <UploadCard onFinished={onUploaded} business={business} />
+      </div>
     </Sheet>
   );
 }
@@ -43,6 +51,9 @@ export function CreateOrderPanel({ order, onClose, onSaved, shipToLocations = []
   const [error, setError] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<ManualOrderWarning[]>([]);
   const [saving, setSaving] = useState(false);
+  // A new order belongs to one business: the one in the top bar, or (in "All") the one chosen here.
+  const { view } = useBusiness();
+  const [business, setBusiness] = useState<BusinessKey | null>(view === "all" ? null : view);
 
   const set = (label: string) => (value: string) => {
     setValues((v) => ({ ...v, [label]: value }));
@@ -54,10 +65,11 @@ export function CreateOrderPanel({ order, onClose, onSaved, shipToLocations = []
     const missing = Object.fromEntries(fields.filter((f) => f.required && !values[f.label]?.trim()).map((f) => [f.label, `${f.label} is missing.`]));
     setErrors(missing);
     if (Object.keys(missing).length > 0) return setError("Fill in the required fields.");
+    if (!order && !business) return setError("Choose whether the order is for DTP or GMBH.");
     setSaving(true);
     setError(null);
     try {
-      const body = { values: Object.fromEntries(fields.map((f) => [f.label, values[f.label]?.trim() ?? ""])), confirmed };
+      const body = { values: Object.fromEntries(fields.map((f) => [f.label, values[f.label]?.trim() ?? ""])), confirmed, business: order ? undefined : business };
       const res = order
         ? await api.patch<{ data: OrderRow; warnings: ManualOrderWarning[] }>(`/api/manual_orders/${order.id}`, body)
         : await api.post<{ data: OrderRow; warnings: ManualOrderWarning[] }>("/api/manual_orders", body);
@@ -120,6 +132,7 @@ export function CreateOrderPanel({ order, onClose, onSaved, shipToLocations = []
       ) : (
         <form onSubmit={save} className="space-y-4" noValidate>
           {error && <Alert>{error}</Alert>}
+          {!order && <BusinessChoice value={business} onChange={setBusiness} />}
           <FormSection title="Order">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{fields.filter((f) => f.required).map(field)}</div>
           </FormSection>

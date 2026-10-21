@@ -9,16 +9,20 @@ module Uploads
 
     class Rejected < StandardError; end
 
-    def self.call(file:, user:)
-      new(file, user).call
+    # `business`: the business the file is for (Business::KEYS).
+    def self.call(file:, user:, business:)
+      new(file, user, business).call
     end
 
-    def initialize(file, user)
+    def initialize(file, user, business)
       @file = file
       @user = user
+      @business = business.to_s
     end
 
     def call
+      raise Rejected, "Choose whether the file is for DTP or GMBH." unless Business::KEYS.include?(@business)
+
       validate!
       filename = ActiveStorage::Filename.new(@file.original_filename.to_s).sanitized.first(255)
       sha256 = Digest::SHA256.file(@file.path).hexdigest
@@ -28,7 +32,7 @@ module Uploads
       )
       batch = UploadBatch.create!(
         uploaded_by: @user, status: "pending", original_filename: filename, file_sha256: sha256,
-        byte_size: blob.byte_size, content_type: XLSX_CONTENT_TYPE, file: blob
+        byte_size: blob.byte_size, content_type: XLSX_CONTENT_TYPE, file: blob, business: @business
       )
       Uploads::ProcessJob.perform_later(batch.id)
       batch

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import { createContext, useContext, useState, type ReactNode } from "react";
 import type { DashboardOrder, DashboardOverview, DateAmount, OrderRow, PipelineStatus, ProductVendor, Stats } from "@/lib/types";
 import { OrderDetailPanel } from "@/components/orders/history-row";
 import { formatCount, formatDate, formatQty } from "@/lib/format";
@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Alert, EmptyState } from "@/components/ui/feedback";
 import { PageHeader } from "@/components/ui/panel";
 import { InfoTip } from "@/components/ui/info-tip";
+import { BusinessPicker } from "@/components/business-switch";
 import { Sheet } from "@/components/ui/sheet";
 import { formatMoq, formatPrice } from "@/components/vendors/vendor-products-panel";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -25,7 +26,12 @@ function formatMoney(amount: string | number, currency: string, compact = false)
     style: "currency", currency, maximumFractionDigits: compact ? 1 : 0, notation: compact ? "compact" : "standard",
   }).format(Number(amount));
 }
-const usd = (v: string | number, compact = false) => formatMoney(v, "USD", compact);
+// Deere amounts in the shown business's currency (Settings). In "All" with different currencies the amounts are added
+// up as plain numbers (a notice says so). The page provides the currency; `useMoney` formats with it.
+const CurrencyContext = createContext<string | null>("USD");
+const moneyIn = (currency: string | null) => (v: string | number, compact = false) => (currency ? formatMoney(v, currency, compact)
+  : new Intl.NumberFormat("en-US", { maximumFractionDigits: compact ? 1 : 0, notation: compact ? "compact" : "standard" }).format(Number(v)));
+const useMoney = () => moneyIn(useContext(CurrencyContext));
 // The Orders page filtered to open orders (Firm and Order; delivered ones are hidden there by default).
 const OPEN_ORDERS = "/orders?type=Firm,Order";
 const plural = (n: number, word: string) => `${formatCount(n)} ${word}${n === 1 ? "" : "s"}`;
@@ -96,7 +102,7 @@ export default function DashboardPage() {
     <PageHeader
       title="Dashboard"
       description="Open orders with Deere and vendors, where they stand, and Deere's spend with SASH this financial year."
-      actions={<Link href="/orders?upload=1"><Button variant="primary"><UploadIcon size={15} />Upload new file</Button></Link>}
+      actions={<div className="flex flex-wrap items-center gap-2"><BusinessPicker /><Link href="/orders?upload=1"><Button variant="primary"><UploadIcon size={15} />Upload new file</Button></Link></div>}
     />
   );
 
@@ -125,12 +131,13 @@ export default function DashboardPage() {
   ].filter(Boolean) as { text: string; href: string }[];
 
   const { kpis } = overview;
+  const usd = moneyIn(money.open_sale.currency);
   const sale = money.open_sale;
   const supplier = money.open_supplier;
   const ytd = money.ytd_customer_spend;
 
   return (
-    <>
+    <CurrencyContext.Provider value={money.open_sale.currency}>
       {header}
       <div className="space-y-5">
         {attention.length > 0 && (
@@ -144,21 +151,28 @@ export default function DashboardPage() {
 
         {/* Money (Dashboard::Money). */}
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          <StatCard size="lg" label="Total Open Value (Sale)" info={<>Value of Deere orders <b>not yet delivered</b>: Firm and Order orders of the latest upload and manual orders, without a &quot;Delivered to Deere&quot; (Outbound) status. Value = Qty × Unit Price ÷ 100 (Deere prices are per 100 pcs), in USD. Forecast is not counted.</>} icon={<BoxIcon size={16} />} tint="violet" href={OPEN_ORDERS}
-                    value={formatMoney(sale.amount, sale.currency)}
+          {!money.open_sale.currency && (
+            <div className="md:col-span-3">
+              <Alert tone="warning" title="DTP and GMBH use different currencies">
+                In All, Deere amounts of both are added up without a currency. Choose DTP or GMBH in the top bar for exact values.
+              </Alert>
+            </div>
+          )}
+          <StatCard size="lg" label="Total Open Value (Sale)" info={<>Value of Deere orders <b>not yet delivered</b>: Firm and Order orders of the latest upload and manual orders, without a &quot;Delivered to Deere&quot; (Outbound) status. Value = Qty × Unit Price ÷ 100 (Deere prices are per 100 pcs), in the business&apos;s currency (Settings). Forecast is not counted.</>} icon={<BoxIcon size={16} />} tint="violet" href={OPEN_ORDERS}
+                    value={usd(sale.amount)}
                     detail={`${ordersText(sale.orders, sale.without_price)} not yet delivered to Deere`} />
           <StatCard size="lg" label="Total Open Value (Supplier)" info={<>Value of the vendor POs generated in the app whose order has <b>no status yet</b> (not received at SASH Faridabad). Value = PO quantity × the vendor&apos;s unit price. Shown per currency, as there is no exchange rate.</>} icon={<TruckIcon size={16} />} tint="amber"
                     value={supplier.by_currency.length ? formatMoney(supplier.by_currency[0]!.amount, supplier.by_currency[0]!.currency) : "—"}
                     extra={supplier.by_currency.slice(1).map((c) => formatMoney(c.amount, c.currency)).join(" + ") || undefined}
                     detail={`${ordersText(supplier.orders, supplier.without_price)} not yet received`} />
-          <StatCard size="lg" label="YTD Customer Spend with SASH" info={<>Value of Deere&apos;s Firm and Order orders with a <b>ship date from 1 April</b> (start of the financial year) to today, from every upload (the latest version of each order) and manual orders. Value = Qty × Unit Price ÷ 100, in USD.</>} icon={<CalendarIcon size={16} />} tint="aqua"
-                    value={formatMoney(ytd.amount, ytd.currency)}
+          <StatCard size="lg" label="YTD Customer Spend with SASH" info={<>Value of Deere&apos;s Firm and Order orders with a <b>ship date from 1 April</b> (start of the financial year) to today, from every upload (the latest version of each order) and manual orders. Value = Qty × Unit Price ÷ 100, in the business&apos;s currency (Settings).</>} icon={<CalendarIcon size={16} />} tint="aqua"
+                    value={usd(ytd.amount)}
                     detail={`${formatDate(ytd.from)} – ${formatDate(ytd.to)} · ${ordersText(ytd.orders, ytd.without_price)}`} />
         </div>
 
         {/* Operations (Dashboard::Overview). */}
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard label="Open orders" info={<>Firm and Order orders <b>not yet delivered to Deere</b>, counted as the Orders page lists them (a combined order counts once). The amount is their value in USD.</>} icon={<FileIcon size={16} />} tint="neutral" href={OPEN_ORDERS}
+          <StatCard label="Open orders" info={<>Firm and Order orders <b>not yet delivered to Deere</b>, counted as the Orders page lists them (a combined order counts once). The amount is their value.</>} icon={<FileIcon size={16} />} tint="neutral" href={OPEN_ORDERS}
                     value={formatCount(kpis.open.count)} detail={`${usd(kpis.open.value, true)} · Firm and Order`} />
           <StatCard label="Shipping in 30 days" href={`${OPEN_ORDERS}&timing=next30`} info={<>Open orders with a <b>ship date from today to 30 days ahead</b>, and their value. They are listed in Next shipments.</>} icon={<CalendarIcon size={16} />} tint="violet"
                     value={formatCount(kpis.due_30.count)} detail={`${usd(kpis.due_30.value, true)} due by ${formatDate(addDays(30))}`} />
@@ -215,7 +229,7 @@ export default function DashboardPage() {
                           row={{ id: order.id, manual: order.manual, po_number: order.po_number, po_line_number: order.po_line_number,
                                  part_number: order.part_number, order_type: order.order_type, ship_date: order.ship_date, qty: order.qty } as OrderRow} />
       )}
-    </>
+    </CurrencyContext.Provider>
   );
 }
 
@@ -227,6 +241,7 @@ const ahead = (period: Period) => (period === "month" ? "this month by week" : `
 // Open Value (Sale) by ship date: this month by week, the next 6 or 12 months. Open orders already past the period's
 // start (overdue) are shown apart, above the chart.
 function SaleChart({ points }: { points: DateAmount[] }) {
+  const usd = useMoney();
   const [period, setPeriod] = useState<Period>("6m");
   const all = groupByPeriod(points.map((p) => ({ date: p.date, values: [Number(p.amount)] })), period, { ahead: true, earlier: true, series: 1 });
   const overdue = all.find((b) => b.key === "earlier");
@@ -251,6 +266,7 @@ function SaleChart({ points }: { points: DateAmount[] }) {
 
 // Demand outlook: confirmed (Firm + Order) and Forecast value by ship date, ahead, stacked.
 function OutlookChart({ points }: { points: DashboardOverview["outlook"] }) {
+  const usd = useMoney();
   const [period, setPeriod] = useState<Period>("6m");
   const bars = groupByPeriod(points.map((p) => ({ date: p.date, values: [Number(p.firm), Number(p.forecast)] })), period, { ahead: true, series: 2 });
   return (
@@ -265,6 +281,7 @@ function OutlookChart({ points }: { points: DashboardOverview["outlook"] }) {
 
 // Customer spend with SASH by ship date: this month by week, the last 6 months, or this financial year.
 function SpendChart({ points, yearStart }: { points: DateAmount[]; yearStart: string }) {
+  const usd = useMoney();
   const [period, setPeriod] = useState<Period>("year");
   const bars = groupByPeriod(points.map((p) => ({ date: p.date, values: [Number(p.amount)] })), period, { yearStart, series: 1 });
   return (
@@ -297,6 +314,7 @@ function Progress({ percent }: { percent: number }) {
 // Each status step with its number of open orders, their value and a bar against the largest step; a step opens its
 // orders on the Orders page.
 function Pipeline({ items }: { items: DashboardOverview["pipeline"] }) {
+  const usd = useMoney();
   const max = Math.max(1, ...items.map((i) => i.count));
   return (
     <ol className="-mx-2 space-y-1">
@@ -324,6 +342,7 @@ function Pipeline({ items }: { items: DashboardOverview["pipeline"] }) {
 
 // One stacked bar of the age groups (share of open orders), then each group with its orders and value.
 function Ageing({ items }: { items: DashboardOverview["ageing"] }) {
+  const usd = useMoney();
   const total = items.reduce((a, i) => a + i.count, 0);
   return (
     <div>
@@ -360,6 +379,7 @@ function Ageing({ items }: { items: DashboardOverview["ageing"] }) {
 
 // Each part opens its detail panel (PartPanel).
 function TopParts({ items, total, onOpenOrder }: { items: DashboardOverview["top_parts"]; total: number; onOpenOrder: (order: DashboardOrder) => void }) {
+  const usd = useMoney();
   const [open, setOpen] = useState<DashboardOverview["top_parts"][number] | null>(null);
   if (items.length === 0) return <Empty>No open orders.</Empty>;
   const max = Math.max(1, ...items.map((p) => Number(p.value)));
@@ -398,6 +418,7 @@ function TopParts({ items, total, onOpenOrder }: { items: DashboardOverview["top
 function PartPanel({ part, total, onClose, onOpenOrder }: {
   part: DashboardOverview["top_parts"][number]; total: number; onClose: () => void; onOpenOrder: (order: DashboardOrder) => void;
 }) {
+  const usd = useMoney();
   const vendors = useApi<{ data: ProductVendor[] }>(part.product_id ? `/api/products/${part.product_id}/vendors` : null);
   const overdue = part.open_orders.filter((o) => o.overdue);
   const stats: [string, ReactNode][] = [
@@ -465,6 +486,7 @@ function Upcoming({ items, onOpenOrder }: { items: DashboardOverview["upcoming"]
 // Open orders, one line each: ship date (overdue in red), part and PO, status and PO tags, value and quantity. A line
 // opens the order's details (`onOpen`).
 function OrderList({ items, showPart = true, onOpen }: { items: DashboardOrder[]; showPart?: boolean; onOpen: (order: DashboardOrder) => void }) {
+  const usd = useMoney();
   return (
     <ul className="divide-y divide-neutral-100">
       {items.map((o) => {
@@ -483,7 +505,9 @@ function OrderList({ items, showPart = true, onOpen }: { items: DashboardOrder[]
               </span>
               <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
                 <span className="rounded bg-neutral-100 px-1.5 py-0.5 font-medium text-ink-muted">{STATUS[o.status].label}</span>
-                {o.po
+                {o.order_placed
+                  ? <span className="rounded bg-neutral-900 px-1.5 py-0.5 font-medium text-white">Order placed</span>
+                  : o.po
                   ? <span className="rounded bg-age-green px-1.5 py-0.5 font-medium text-age-green-ink">PO generated</span>
                   : <span className="rounded bg-age-yellow px-1.5 py-0.5 font-medium text-age-yellow-ink">No vendor PO</span>}
                 <span className="text-ink-faint">{o.order_type}</span>

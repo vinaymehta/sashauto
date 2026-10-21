@@ -1,6 +1,8 @@
 // Thin client for the Rails API (same origin via the /api rewrite). Mutating requests carry the
 // CSRF token issued by GET /api/session; the session itself is an httpOnly cookie.
 
+import { getBusiness } from "./business";
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -42,7 +44,8 @@ export function withQuery(path: string, query: Query = {}) {
 }
 
 async function request<T>(method: string, path: string, body?: unknown, retried = false): Promise<T> {
-  const headers: Record<string, string> = { Accept: "application/json" };
+  // The business view (top bar) decides whose order data the server returns.
+  const headers: Record<string, string> = { Accept: "application/json", "X-Business": getBusiness() };
   let payload: BodyInit | undefined;
 
   if (method !== "GET") headers["X-CSRF-Token"] = await ensureCsrfToken();
@@ -83,7 +86,7 @@ async function request<T>(method: string, path: string, body?: unknown, retried 
 async function postForBlob(path: string, body: unknown): Promise<Blob> {
   const res = await fetch(path, {
     method: "POST", credentials: "same-origin", cache: "no-store",
-    headers: { "Content-Type": "application/json", "X-CSRF-Token": await ensureCsrfToken() }, body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json", "X-CSRF-Token": await ensureCsrfToken(), "X-Business": getBusiness() }, body: JSON.stringify(body),
   }).catch(() => { throw new ApiError("Cannot reach the server. Check your connection and try again.", 0, "network_error"); });
   if (!res.ok) {
     const data = await res.json().catch(() => null);

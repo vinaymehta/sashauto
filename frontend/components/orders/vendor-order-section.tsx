@@ -4,7 +4,7 @@ import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { EmailDraft, OrderUnit, ProductVendor, VendorOrderInfo, VendorOrderPlacementInfo, VendorOrderState } from "@/lib/types";
 import { formatDate, formatDateOnly, formatDateTime, formatQty } from "@/lib/format";
-import { AlertIcon, ChevronDownIcon, DownloadIcon, FileIcon, MailIcon } from "../icons";
+import { AlertIcon, DownloadIcon, FileIcon, MailIcon, PrintIcon } from "../icons";
 import { useSession } from "../session";
 import { useApi } from "../use-api";
 import { useToast } from "../toast";
@@ -13,7 +13,9 @@ import { Alert, Spinner } from "../ui/feedback";
 import { PdfViewer } from "../ui/pdf-viewer";
 import { DatePicker } from "../ui/date-picker";
 import { formatAmount, formatPrice } from "../vendors/vendor-products-panel";
-import { CopyButton } from "../ui/copy-button";
+import { ConfirmDialog } from "../ui/confirm-dialog";
+import { printPdf } from "@/lib/print";
+import { EmailViewer } from "./email-viewer";
 
 const QTY = /^\d+(\.\d{1,3})?$/;
 // A vendor's ship date defaults to this many days before the order's ship date (time to ship to the customer).
@@ -62,7 +64,7 @@ export function VendorOrderSection({ orderId, manual = false, onPlaced }: { orde
           <div className="flex justify-center py-8"><Spinner /></div>
         ) : !state ? null : (
           <>
-            {state.placements.map((p) => <PlacedOrders key={p.id} state={state} placement={p} />)}
+            {state.placements.map((p) => <PlacedOrders key={p.id} state={state} placement={p} onChanged={onPlaced} />)}
             {state.can_place ? (
               <AllocationForm key={state.order.remaining} state={state} path={path} onPlaced={() => { reload(); onPlaced?.(); }} />
             ) : state.placements.length === 0 ? (
@@ -252,7 +254,7 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
 
 // One generated PO (placement): its vendor orders, each with the PO and Intimation Letter PDFs and the "Order placed"
 // tick.
-function PlacedOrders({ state, placement }: { state: VendorOrderState; placement: VendorOrderPlacementInfo }) {
+function PlacedOrders({ state, placement, onChanged }: { state: VendorOrderState; placement: VendorOrderPlacementInfo; onChanged?: () => void }) {
   const warnings = state.warnings.filter((w) => placement.vendor_orders.some((vo) => vo.id === w.vendor_order_id));
   const [viewing, setViewing] = useState<{ id: number; number: string; kind: DraftKind } | null>(null);
   const fileButton = "inline-flex h-8 items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-2.5 text-xs font-medium text-ink hover:border-neutral-400 hover:bg-subtle";
@@ -279,6 +281,9 @@ function PlacedOrders({ state, placement }: { state: VendorOrderState; placement
                 <a href={`/api/vendor_orders/${vo.id}/pdf?download=1`} className={fileButton}>
                   <DownloadIcon size={13} className="text-ink-muted" />Download
                 </a>
+                <button type="button" onClick={() => printPdf(`/api/vendor_orders/${vo.id}/pdf`)} className={fileButton} title="Print the purchase order">
+                  <PrintIcon size={13} className="text-ink-muted" />Print
+                </button>
               </DocCard>
               <DocCard title="Intimation Letter">
                 <button type="button" onClick={() => setViewing({ id: vo.id, number: vo.number, kind: "letter" })} className={fileButton}>
@@ -287,9 +292,12 @@ function PlacedOrders({ state, placement }: { state: VendorOrderState; placement
                 <a href={`/api/vendor_orders/${vo.id}/letter?download=1`} className={fileButton}>
                   <DownloadIcon size={13} className="text-ink-muted" />Download
                 </a>
+                <button type="button" onClick={() => printPdf(`/api/vendor_orders/${vo.id}/letter`)} className={fileButton} title="Print the Intimation Letter">
+                  <PrintIcon size={13} className="text-ink-muted" />Print
+                </button>
               </DocCard>
             </span>
-            <span className="col-span-2 flex justify-end"><OrderPlacedTick order={vo} /></span>
+            <span className="col-span-2 flex justify-end"><OrderPlacedTick order={vo} onChanged={onChanged} /></span>
           </li>
         ))}
       </ul>
@@ -313,97 +321,84 @@ function PlacedOrders({ state, placement }: { state: VendorOrderState; placement
 }
 
 // Below the Vendor order section: the email to send each vendor with its generated PO (the app never sends it). One
-// row per vendor PO; clicking it opens the email (To, Subject, message) with Copy for the message.
+// row per vendor PO; Preview opens the email in a window (EmailViewer) with Copy.
 function EmailDrafts({ placements }: { placements: VendorOrderPlacementInfo[] }) {
+  const [open, setOpen] = useState<VendorOrderInfo | null>(null);
+  const { data, error } = useApi<{ data: EmailDraft }>(open ? `/api/vendor_orders/${open.id}/email` : null);
+  const fileButton = "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-2.5 text-xs font-medium text-ink hover:border-neutral-400 hover:bg-subtle";
+
   return (
     <section className="mt-4 overflow-hidden rounded-lg border border-line bg-white shadow-card">
       <header className="border-b border-neutral-100 px-5 py-3">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-muted">Email draft</h3>
       </header>
       <ul className="divide-y divide-neutral-100">
-        {placements.flatMap((p) => p.vendor_orders).map((vo) => <EmailDraftRow key={vo.id} order={vo} />)}
+        {placements.flatMap((p) => p.vendor_orders).map((vo) => (
+          <li key={vo.id} className="flex items-center gap-3 px-5 py-3 text-sm">
+            <MailIcon size={15} className="shrink-0 text-tint-violet-ink" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-medium text-ink">{vo.vendor_name}</span>
+              <span className="block truncate text-xs text-ink-muted">PO {vo.number}</span>
+            </span>
+            <button type="button" onClick={() => setOpen(vo)} className={fileButton}>
+              <MailIcon size={13} className="text-ink-muted" />Preview
+            </button>
+          </li>
+        ))}
       </ul>
+      {open && (
+        <EmailViewer title={`Email to ${open.vendor_name} · PO ${open.number}`} onClose={() => setOpen(null)}
+                     draft={data?.data ?? null} error={error?.message} />
+      )}
     </section>
   );
 }
 
-function EmailDraftRow({ order }: { order: VendorOrderInfo }) {
-  const [open, setOpen] = useState(false);
-  // Loaded the first time the row is opened.
-  const { data, error, loading } = useApi<{ data: EmailDraft }>(open ? `/api/vendor_orders/${order.id}/email` : null);
-  const draft = data?.data;
-
-  return (
-    <li>
-      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open}
-              className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm hover:bg-neutral-50">
-        <MailIcon size={15} className="shrink-0 text-tint-violet-ink" />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate font-medium text-ink">{order.vendor_name}</span>
-          <span className="block truncate text-xs text-ink-muted">PO {order.number}</span>
-        </span>
-        <ChevronDownIcon size={16} className={`shrink-0 text-ink-muted transition-transform ${open ? "rotate-180" : ""}`} />
-      </button>
-      {open && (
-        <div className="border-t border-neutral-100 bg-neutral-50/60 px-5 py-3">
-          {error ? (
-            <Alert title="Could not load the email">{error.message}</Alert>
-          ) : loading || !draft ? (
-            <div className="flex justify-center py-4"><Spinner /></div>
-          ) : (
-            <div className="overflow-hidden rounded-lg border border-line bg-white">
-              <dl className="divide-y divide-neutral-100 border-b border-line text-sm">
-                <div className="grid grid-cols-[5rem_minmax(0,1fr)] gap-3 px-4 py-2">
-                  <dt className="text-ink-muted">To</dt>
-                  <dd className="break-words text-ink">{draft.to.join(", ") || <span className="text-ink-faint">No email address on file for this vendor</span>}</dd>
-                </div>
-                <div className="grid grid-cols-[5rem_minmax(0,1fr)] gap-3 px-4 py-2">
-                  <dt className="text-ink-muted">Subject</dt>
-                  <dd className="break-words text-ink">{draft.subject}</dd>
-                </div>
-              </dl>
-              <div className="flex items-start justify-between gap-3 px-4 py-3">
-                <pre className="min-w-0 flex-1 whitespace-pre-wrap break-words font-sans text-sm leading-6 text-ink">{draft.body}</pre>
-                <CopyButton text={draft.body} small />
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </li>
-  );
-}
-
 // "Order placed" tick of one generated PO: an admin ticks it once the PO was sent to the vendor (and can untick it).
-function OrderPlacedTick({ order }: { order: VendorOrderInfo }) {
+// Removing the tick asks first. `onChanged`: after a change (the Orders list shows "Order placed" once every PO is ticked).
+function OrderPlacedTick({ order, onChanged }: { order: VendorOrderInfo; onChanged?: () => void }) {
   const notify = useToast();
   const admin = useSession().user?.role === "admin";
   const [current, setCurrent] = useState(order);
   const [saving, setSaving] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const placed = current.order_placed_at !== null;
 
-  async function toggle() {
+  async function save(value: boolean) {
     setSaving(true);
     try {
-      const res = await api.patch<{ data: VendorOrderInfo }>(`/api/vendor_orders/${order.id}`, { order_placed: !placed });
+      const res = await api.patch<{ data: VendorOrderInfo }>(`/api/vendor_orders/${order.id}`, { order_placed: value });
       setCurrent(res.data);
-      notify(placed ? `${order.number}: "Order placed" removed.` : `${order.number} marked as order placed.`);
+      notify(value ? `${order.number} marked as order placed.` : `${order.number}: "Order placed" removed.`);
+      setConfirming(false);
+      onChanged?.();
     } catch (err) {
       notify(err instanceof ApiError ? err.message : "Could not save.", "error");
     } finally {
       setSaving(false);
     }
   }
+  const toggle = () => (placed ? setConfirming(true) : save(true));
 
+  // The confirmation sits outside the label, so clicks in it never toggle the checkbox.
   return (
-    <label className={`ml-auto inline-flex h-8 items-center gap-2 rounded-md px-2.5 text-xs font-medium ${
-      placed ? "bg-age-green text-age-green-ink" : "text-ink-muted"} ${admin ? "cursor-pointer" : ""}`}
-           title={placed ? `Ticked${current.order_placed_by ? ` by ${current.order_placed_by}` : ""} on ${formatDateTime(current.order_placed_at!)}` : undefined}>
-      <input type="checkbox" checked={placed} disabled={!admin || saving} onChange={toggle}
-             className="h-4 w-4 accent-[var(--color-accent)]" />
-      Order placed
-      {placed && <span className="font-normal">· {formatDateOnly(current.order_placed_at)}</span>}
-    </label>
+    <>
+      <label className={`ml-auto inline-flex h-8 items-center gap-2 rounded-md px-2.5 text-xs font-medium ${
+        placed ? "bg-age-green text-age-green-ink" : "text-ink-muted"} ${admin ? "cursor-pointer" : ""}`}
+             title={placed ? `Ticked${current.order_placed_by ? ` by ${current.order_placed_by}` : ""} on ${formatDateTime(current.order_placed_at!)}` : undefined}>
+        <input type="checkbox" checked={placed} disabled={!admin || saving} onChange={toggle}
+               className="h-4 w-4 accent-[var(--color-accent)]" />
+        Order placed
+        {placed && <span className="font-normal">· {formatDateOnly(current.order_placed_at)}</span>}
+      </label>
+      {confirming && (
+        <ConfirmDialog title={`Remove "Order placed" from ${order.number}?`} confirmLabel="Remove" busyLabel="Removing…" busy={saving}
+                       onConfirm={() => save(false)} onCancel={() => setConfirming(false)}>
+          Are you sure you want to remove it? The PO will show as not yet sent to {order.vendor_name}, and the order goes back to
+          &quot;PO generated&quot;.
+        </ConfirmDialog>
+      )}
+    </>
   );
 }
 

@@ -67,6 +67,9 @@ Rails.application.routes.draw do
     end
     # Every vendor's parts with their "Available" tick, vendor-wise (Products page, Available parts tab).
     resources :available_parts, only: :index
+    # Business settings (Settings page, admins).
+    get "settings", to: "settings#index"
+    patch "settings", to: "settings#update"
     resources :products, only: %i[index create update] do
       get :vendors, on: :member
     end

@@ -18,8 +18,14 @@ class UploadBatch < ApplicationRecord
   scope :completed, -> { where(status: "completed") }
   scope :latest_completed_first, -> { completed.order(version_number: :desc) }
 
-  def self.latest_completed
-    latest_completed_first.first
+  # The latest completed upload, of one business (Business::KEYS) when given.
+  def self.latest_completed(business = nil)
+    (business ? latest_completed_first.where(business: business) : latest_completed_first).first
+  end
+
+  # The latest completed upload of each business of a view ("dtp", "gmbh" or "all"), skipping a business without one.
+  def self.latest_for(view)
+    Business.of(view).filter_map { |business| latest_completed(business) }
   end
 
   # Quantity changes recorded against the previous version: Qty up/down, rows added and rows removed.

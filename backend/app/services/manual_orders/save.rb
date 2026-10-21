@@ -163,9 +163,9 @@ module ManualOrders
 
     def warnings
       warnings = []
-      latest = UploadBatch.latest_completed
+      latest = UploadBatch.latest_completed(@order.business)
       if OrderRow.where(upload_batch_id: latest&.id, group_key: @order.group_key).exists? ||
-         ManualOrder.active.where(group_key: @order.group_key).where.not(id: @order.id).exists?
+         ManualOrder.active.where(business: @order.business, group_key: @order.group_key).where.not(id: @order.id).exists?
         warnings << { code: "duplicate_order",
                       message: "An order with PO Number #{@order.po_number}, Part Number #{@order.part_number} and Type " \
                                "#{@order.order_type} already exists. Both orders are kept." }

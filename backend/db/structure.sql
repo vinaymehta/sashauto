@@ -309,6 +309,39 @@ ALTER SEQUENCE public.ageing_notifications_id_seq OWNED BY public.ageing_notific
 
 
 --
+-- Name: app_settings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.app_settings (
+    id bigint NOT NULL,
+    key character varying NOT NULL,
+    value text,
+    updated_by_id bigint,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: app_settings_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.app_settings_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: app_settings_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.app_settings_id_seq OWNED BY public.app_settings.id;
+
+
+--
 -- Name: ar_internal_metadata; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -438,6 +471,8 @@ CREATE TABLE public.manual_orders (
     deleted_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
+    business character varying DEFAULT 'dtp'::character varying NOT NULL,
+    CONSTRAINT manual_orders_business_valid CHECK (((business)::text = ANY ((ARRAY['dtp'::character varying, 'gmbh'::character varying])::text[]))),
     CONSTRAINT manual_orders_quantities_non_negative CHECK (((qty >= (0)::numeric) AND (previous_qty >= (0)::numeric) AND (last_asn_qty >= (0)::numeric) AND (last_receipt_qty >= (0)::numeric))),
     CONSTRAINT manual_orders_quantity_source_valid CHECK (((quantity_source)::text = ANY ((ARRAY['qty'::character varying, 'previous_qty'::character varying, 'unknown'::character varying])::text[])))
 );
@@ -1020,6 +1055,8 @@ CREATE TABLE public.upload_batches (
     address_change_count integer,
     moq_alert_count integer,
     rescheduled_count integer,
+    business character varying DEFAULT 'dtp'::character varying NOT NULL,
+    CONSTRAINT upload_batches_business_valid CHECK (((business)::text = ANY ((ARRAY['dtp'::character varying, 'gmbh'::character varying])::text[]))),
     CONSTRAINT upload_batches_status_valid CHECK (((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('processing'::character varying)::text, ('completed'::character varying)::text, ('failed'::character varying)::text]))),
     CONSTRAINT upload_batches_version_iff_completed CHECK ((((status)::text = 'completed'::text) = (version_number IS NOT NULL)))
 );
@@ -1357,6 +1394,13 @@ ALTER TABLE ONLY public.ageing_notifications ALTER COLUMN id SET DEFAULT nextval
 
 
 --
+-- Name: app_settings id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_settings ALTER COLUMN id SET DEFAULT nextval('public.app_settings_id_seq'::regclass);
+
+
+--
 -- Name: audit_logs id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -1542,6 +1586,14 @@ ALTER TABLE ONLY public.ageing_digests
 
 ALTER TABLE ONLY public.ageing_notifications
     ADD CONSTRAINT ageing_notifications_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: app_settings app_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_settings
+    ADD CONSTRAINT app_settings_pkey PRIMARY KEY (id);
 
 
 --
@@ -1833,6 +1885,20 @@ CREATE UNIQUE INDEX index_ageing_notifications_once_per_threshold ON public.agei
 
 
 --
+-- Name: index_app_settings_on_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_app_settings_on_key ON public.app_settings USING btree (key);
+
+
+--
+-- Name: index_app_settings_on_updated_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_app_settings_on_updated_by_id ON public.app_settings USING btree (updated_by_id);
+
+
+--
 -- Name: index_audit_logs_on_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1886,6 +1952,13 @@ CREATE INDEX index_import_issues_on_status_and_created_at ON public.import_issue
 --
 
 CREATE INDEX index_import_issues_on_vendor_product_id ON public.import_issues USING btree (vendor_product_id);
+
+
+--
+-- Name: index_manual_orders_on_business; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_manual_orders_on_business ON public.manual_orders USING btree (business);
 
 
 --
@@ -2236,6 +2309,13 @@ CREATE INDEX index_snapshot_rows_on_batch_and_po ON public.order_snapshot_rows U
 --
 
 CREATE INDEX index_snapshot_rows_on_batch_and_ship_date ON public.order_snapshot_rows USING btree (upload_batch_id, ship_date);
+
+
+--
+-- Name: index_upload_batches_on_business; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_upload_batches_on_business ON public.upload_batches USING btree (business);
 
 
 --
@@ -2916,6 +2996,14 @@ ALTER TABLE ONLY public.order_merges
 
 
 --
+-- Name: app_settings fk_rails_f31be33b10; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_settings
+    ADD CONSTRAINT fk_rails_f31be33b10 FOREIGN KEY (updated_by_id) REFERENCES public.users(id);
+
+
+--
 -- Name: vendor_orders fk_rails_f3b4e77c67; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2978,6 +3066,8 @@ ALTER TABLE ONLY public.address_changes
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261020000002'),
+('20261020000001'),
 ('20261019000002'),
 ('20261019000001'),
 ('20261016000002'),

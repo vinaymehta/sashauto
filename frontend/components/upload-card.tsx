@@ -29,7 +29,8 @@ function checkFile(files: FileList | File[] | null | undefined): { file?: File; 
   return { file };
 }
 
-export function UploadCard({ onFinished }: { onFinished: (upload: UploadDetail) => void }) {
+// `business`: the business the file is for (sent with it); null blocks uploading until one is chosen.
+export function UploadCard({ onFinished, business }: { onFinished: (upload: UploadDetail) => void; business: string | null }) {
   const notify = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -78,10 +79,12 @@ export function UploadCard({ onFinished }: { onFinished: (upload: UploadDetail) 
 
   async function submit() {
     if (!file) return;
+    if (!business) return setError("Choose whether the file is for DTP or GMBH.");
     setSubmitting(true);
     setError(null);
     const form = new FormData();
     form.append("file", file);
+    form.append("business", business);
     try {
       const res = await api.post<{ data: UploadDetail }>("/api/uploads", form);
       setUpload(res.data);
