@@ -35,7 +35,7 @@ export default function UsersPage() {
   const { user: me, refresh: refreshSession } = useSession();
   const isAdmin = me?.role === "admin";
   const notify = useToast();
-  const list = useListQuery({}, 25, { key: "name", direction: "asc" });
+  const list = useListQuery({}, 100, { key: "name", direction: "asc" });
   const [search, setSearch] = useState("");
   const q = useDebounced(search.trim());
   const { data, error, loading, reload } = useApi<Paginated<User>>(isAdmin ? "/api/users" : null, {

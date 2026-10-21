@@ -12,7 +12,7 @@ import { Button } from "../ui/button";
 import { Alert, Spinner } from "../ui/feedback";
 import { PdfViewer } from "../ui/pdf-viewer";
 import { DatePicker } from "../ui/date-picker";
-import { formatAmount, formatPrice } from "../vendors/vendor-products-panel";
+import { formatAmount, formatPrice } from "../vendors/price-format";
 import { ConfirmDialog } from "../ui/confirm-dialog";
 import { printPdf } from "@/lib/print";
 import { EmailViewer } from "./email-viewer";

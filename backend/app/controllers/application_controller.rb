@@ -4,7 +4,7 @@ class ApplicationController < ActionController::Base
 
   SESSION_LIFETIME = 12.hours
   PER_PAGE_OPTIONS = [ 10, 25, 50, 100 ].freeze
-  DEFAULT_PER_PAGE = 10
+  DEFAULT_PER_PAGE = 100
 
   protect_from_forgery with: :exception
   before_action :require_login
@@ -134,6 +134,12 @@ class ApplicationController < ActionController::Base
   def multi_param(name, allowed = nil)
     values = params[name].to_s.split(",").map(&:strip).reject(&:empty?).uniq.first(100)
     allowed ? values & allowed : values
+  end
+
+  # Keeps the rows matching any of the chosen values of a multi_param filter; `conditions`: value => SQL condition.
+  def where_any(scope, name, conditions)
+    picked = multi_param(name, conditions.keys)
+    picked.any? ? scope.where(picked.map { |value| "(#{conditions.fetch(value)})" }.join(" OR ")) : scope
   end
 
   def request_today

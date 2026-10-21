@@ -7,7 +7,7 @@ import type { SortDirection } from "./ui/sort-header";
 // Filter, sort and pagination state for a server-paginated list. Any change returns to page 1.
 export function useListQuery(
   initialFilters: FilterValues = {},
-  initialPerPage = 10,
+  initialPerPage = 100,
   defaultSort: { key: string; direction: SortDirection } = { key: "", direction: "asc" },
 ) {
   const [filters, setFilters] = useState<FilterValues>(initialFilters);

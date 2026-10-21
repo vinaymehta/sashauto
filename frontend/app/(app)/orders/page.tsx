@@ -200,7 +200,7 @@ function OrdersView() {
   const [linkedFilters] = useState(() => Object.fromEntries(
     LINKABLE_FILTERS.flatMap((key) => (params.get(key) ? [[key, params.get(key)!]] : [])),
   ));
-  const list = useListQuery(linkedFilters, 25, { key: "ship_date", direction: "asc" });
+  const list = useListQuery(linkedFilters, 100, { key: "firm_date", direction: "asc" });
   const [search, setSearch] = useState("");
   const term = useDebounced(search.trim());
   const role = useSession().user?.role;
@@ -290,13 +290,13 @@ function OrdersView() {
   const addressChanges = (shown?.stats.address_change_count ?? 0) + (manual?.address_changes ?? 0);
   const moqAlerts = (shown?.stats.moq_alert_count ?? 0) + (manual?.moq_alerts ?? 0);
   const tabs = [
-    { key: "orders" as const, label: "Orders", icon: <TableIcon size={14} />, count: data?.meta.total ?? null },
+    { key: "orders" as const, label: "Orders", icon: <TableIcon size={17} />, count: data?.meta.total ?? null },
     ...(!shown || (isFirst && quantityChanges + addressChanges === 0) ? [] : [
-      { key: "changes" as const, label: "Quantity changes", icon: <ArrowUpDownIcon size={14} />, count: quantityChanges },
-      { key: "addresses" as const, label: "Address changes", icon: <MapPinIcon size={14} />, count: addressChanges },
+      { key: "changes" as const, label: "Quantity changes", icon: <ArrowUpDownIcon size={17} />, count: quantityChanges },
+      { key: "addresses" as const, label: "Address changes", icon: <MapPinIcon size={17} />, count: addressChanges },
     ]),
     ...(!shown || (isFirst && moqAlerts === 0) ? [] : [
-      { key: "moq" as const, label: "MOQ alerts", icon: <AlertIcon size={14} />, count: moqAlerts },
+      { key: "moq" as const, label: "MOQ alerts", icon: <AlertIcon size={17} />, count: moqAlerts },
     ]),
   ];
   type TabKey = (typeof tabs)[number]["key"];

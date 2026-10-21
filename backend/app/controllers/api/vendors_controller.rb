@@ -14,6 +14,19 @@ module Api
     COUNT_COLUMNS = [ "vendors.*", "(SELECT COUNT(*) FROM vendor_products vp WHERE vp.vendor_id = vendors.id) AS product_count",
                       "(SELECT COUNT(*) FROM vendor_products vp WHERE vp.vendor_id = vendors.id AND vp.available_qty > 0) AS available_count" ].freeze
 
+    PRODUCT_COUNT = "(SELECT COUNT(*) FROM vendor_products vp WHERE vp.vendor_id = vendors.id)".freeze
+    # List filters (each several values, any of them matches): value => SQL condition.
+    FILTERS = {
+      parts: { "none" => "#{PRODUCT_COUNT} = 0", "some" => "#{PRODUCT_COUNT} > 0" },
+      available: {
+        "yes" => "EXISTS (SELECT 1 FROM vendor_products vp WHERE vp.vendor_id = vendors.id AND vp.available_qty > 0)",
+        "no" => "NOT EXISTS (SELECT 1 FROM vendor_products vp WHERE vp.vendor_id = vendors.id AND vp.available_qty > 0)"
+      },
+      missing: { "contact" => "vendors.phone IS NULL AND vendors.mobile IS NULL", "email" => "vendors.email IS NULL",
+                 "gst" => "vendors.gst IS NULL", "place" => "vendors.place_of_supply IS NULL" },
+      vendor_type: Vendor::TYPES.to_h { |t| [ t, Vendor.sanitize_sql([ "vendors.vendor_type = ?", t ]) ] }
+    }.freeze
+
     before_action -> { require_role(:admin) }, except: %i[index show]
     rate_limit to: 20, within: 1.hour, only: :import, store: RATE_LIMIT_STORE, by: -> { current_user&.id || request.remote_ip },
                with: -> { render_error "Too many imports in a short time. Try again later.", :too_many_requests }
@@ -30,9 +43,13 @@ module Api
           )
         SQL
       end
+      places = multi_param(:place_of_supply)
+      scope = scope.where(place_of_supply: places) if places.any?
+      FILTERS.each { |name, conditions| scope = where_any(scope, name, conditions) }
       scope, sort, direction = apply_sort(scope, SORTS, default: "name")
       vendors, meta = paginate(scope)
-      render json: { data: vendors.map { |v| Serializers.vendor(v) }, meta: meta.merge(sort: sort, direction: direction) }
+      render json: { data: vendors.map { |v| Serializers.vendor(v) }, meta: meta.merge(sort: sort, direction: direction),
+                     facets: { places_of_supply: Vendor.where.not(place_of_supply: nil).distinct.order(:place_of_supply).pluck(:place_of_supply) } }
     end
 
     def show

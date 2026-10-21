@@ -161,6 +161,10 @@ export interface Product {
   created_at: string;
   updated_at: string;
   open_conflicts: ProductConflict[];
+  // Products list only: vendors supplying it, the lowest vendor price per piece, pieces vendors have available.
+  vendor_count?: number;
+  best_vendor_price?: { amount: string; currency: Currency; vendor: string } | null;
+  available_qty?: string | null;
 }
 
 export interface PageMeta {
@@ -475,11 +479,7 @@ export interface VendorProduct {
   price_note: string | null;
   price_text: string | null; // as written in the vendor file
   updated_at: string;
-  // "Available" tick: the vendor can supply this part now (the manager's check list), and who / when it last changed.
-  available: boolean;
   available_qty: string | null; // "Available Parts": pieces the vendor has available now
-  available_changed_at: string | null;
-  available_changed_by: string | null;
   vendor_name: string;
 }
 
@@ -496,6 +496,7 @@ export interface ProductVendor {
   price_currency: Currency;
   price_note: string | null;
   price_text: string | null;
+  available_qty: string | null; // "Available Parts": pieces the vendor has now
 }
 
 // A vendor order is placed in sets or in pieces; order Qty always counts sets.

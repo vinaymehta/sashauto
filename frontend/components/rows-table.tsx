@@ -19,7 +19,7 @@ import { Pagination, Table, Td } from "./ui/table";
 // The stored order rows of one version: what the uploaded workbook contained after
 // normalization (one row per order key; merged duplicates list all their Excel rows).
 export function RowsTable({ uploadId }: { uploadId: number }) {
-  const list = useListQuery({}, 10, { key: "excel_row", direction: "asc" });
+  const list = useListQuery({}, 100, { key: "excel_row", direction: "asc" });
   const [search, setSearch] = useState("");
   const [shipTos, setShipTos] = useState<string[]>([]);
   const q = useDebounced(search.trim());

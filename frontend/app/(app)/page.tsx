@@ -16,7 +16,7 @@ import { PageHeader } from "@/components/ui/panel";
 import { InfoTip } from "@/components/ui/info-tip";
 import { BusinessPicker } from "@/components/business-switch";
 import { Sheet } from "@/components/ui/sheet";
-import { formatMoq, formatPrice } from "@/components/vendors/vendor-products-panel";
+import { formatMoq, formatPrice } from "@/components/vendors/price-format";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TINTS, type Tint } from "@/components/ui/tint";
 

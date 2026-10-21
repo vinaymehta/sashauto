@@ -10,7 +10,7 @@ module Api
                             "vendor_products.description ILIKE :t OR vendors.name ILIKE :t", t: term)
       end
 
-      items, meta = paginate(scope.includes(:product, :vendor, :available_changed_by).order("products.part_number", "vendors.name", :id))
+      items, meta = paginate(scope.includes(:product, :vendor).order("products.part_number", "vendors.name", :id))
       render json: { data: items.map { |vp| Serializers.vendor_product(vp) }, meta: meta }
     end
   end

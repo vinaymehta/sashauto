@@ -37,7 +37,7 @@ export function useOpenImportIssues() {
 // new vendor.
 export function ImportIssuesPanel({ canEdit, onChanged }: { canEdit: boolean; onChanged: () => void }) {
   const notify = useToast();
-  const list = useListQuery({}, 25);
+  const list = useListQuery({}, 100);
   const [status, setStatus] = useState<Status>("open");
   const [search, setSearch] = useState("");
   const q = useDebounced(search.trim());

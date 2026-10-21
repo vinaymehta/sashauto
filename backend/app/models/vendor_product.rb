@@ -5,8 +5,6 @@ class VendorProduct < ApplicationRecord
 
   belongs_to :vendor, touch: true
   belongs_to :product
-  # Who last ticked or unticked "Available" (the vendor can supply this part now).
-  belongs_to :available_changed_by, class_name: "User", optional: true
 
   # "Available Parts": pieces the vendor has available now.
   validates :available_qty, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true

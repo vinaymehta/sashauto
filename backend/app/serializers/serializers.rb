@@ -94,7 +94,7 @@ module Serializers
     { id: item.id, vendor_id: item.vendor_id, vendor_name: item.vendor.name, pack_size: item.pack_size,
       price_amount: qty(item.price_amount), set_price_amount: qty(item.set_price_amount),
       moq: qty(item.moq), moq_sets: qty(item.moq_sets), moq_text: item.moq_text, price_currency: item.price_currency,
-      price_note: item.price_note, price_text: item.price_text }
+      price_note: item.price_note, price_text: item.price_text, available_qty: qty(item.available_qty) }
   end
 
   def vendor_product(item)
@@ -103,8 +103,7 @@ module Serializers
         .merge(part_number: item.product.part_number, commodity_type: item.product.commodity_type,
                pack_size: item.pack_size, moq: qty(item.moq), moq_sets: qty(item.moq_sets), weight_kg: qty(item.weight_kg),
                price_amount: qty(item.price_amount), set_price_amount: qty(item.set_price_amount),
-               available: item.available, available_qty: qty(item.available_qty), available_changed_at: item.available_changed_at,
-               available_changed_by: item.available_changed_by&.name, vendor_name: item.vendor.name)
+               available_qty: qty(item.available_qty), vendor_name: item.vendor.name)
   end
 
   def moq_alert(alert)
@@ -148,12 +147,19 @@ module Serializers
     data
   end
 
-  def product(product, open_conflicts: [])
-    product.slice(:id, :part_number, :commodity_type, :source, :sash_part, :vendor_part, :description, :moq_text, :created_at,
-                  :updated_at)
-           .merge(pack_size: product.pack_size, moq: qty(product.moq), moq_sets: qty(product.moq_sets), weight_kg: qty(product.weight_kg),
-                  customer_price: qty(product.customer_price))
-           .merge(open_conflicts: open_conflicts.map { |c| product_conflict(c) })
+  # `vendors` (the product's vendor parts, loaded): adds how many vendors supply it, the lowest vendor price per piece
+  # (with its currency and vendor) and the pieces vendors have available, for the Products list.
+  def product(product, open_conflicts: [], vendors: nil)
+    data = product.slice(:id, :part_number, :commodity_type, :source, :sash_part, :vendor_part, :description, :moq_text, :created_at,
+                         :updated_at)
+                  .merge(pack_size: product.pack_size, moq: qty(product.moq), moq_sets: qty(product.moq_sets), weight_kg: qty(product.weight_kg),
+                         customer_price: qty(product.customer_price))
+                  .merge(open_conflicts: open_conflicts.map { |c| product_conflict(c) })
+    return data unless vendors
+
+    best = vendors.select(&:price_amount).min_by(&:price_amount)
+    data.merge(vendor_count: vendors.size, available_qty: qty(vendors.filter_map(&:available_qty).then { |q| q.any? ? q.sum : nil }),
+               best_vendor_price: best && { amount: qty(best.price_amount), currency: best.price_currency, vendor: best.vendor.name })
   end
 
   def import_issue(issue)

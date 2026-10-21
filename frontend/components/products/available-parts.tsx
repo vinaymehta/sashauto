@@ -18,7 +18,7 @@ const dash = <span className="text-neutral-300">—</span>;
 // Products page, "Available parts" tab: the parts a vendor has available now (its "Available Parts" quantity, entered
 // with the vendor's part), with the vendor and the quantity.
 export function AvailablePartsPanel() {
-  const list = useListQuery({}, 25, { key: "part_number", direction: "asc" });
+  const list = useListQuery({}, 100, { key: "part_number", direction: "asc" });
   const [search, setSearch] = useState("");
   const q = useDebounced(search.trim());
   const { data, error, loading } = useApi<Paginated<VendorProduct>>("/api/available_parts", { q, page: list.page, per_page: list.perPage });
@@ -41,31 +41,31 @@ export function AvailablePartsPanel() {
         />
       ) : data ? (
         <div className={`transition-opacity duration-200 ${loading ? "opacity-50" : ""}`}>
-          <Table fixed minWidth="min-w-[900px]">
-            <colgroup>
-              <col className="w-44" />
-              <col className="w-40" />
-              <col />
-              <col className="w-72" />
-              <col className="w-40" />
-            </colgroup>
+          {/* Columns size to their content and Description takes the rest; on smaller screens Description and SASH Part
+              show under the Part Number instead (and on phones the vendor). */}
+          <Table dense>
             <thead>
               <tr>
                 <Th>Part Number</Th>
-                <Th>SASH Part</Th>
-                <Th>Description</Th>
-                <Th>Vendor</Th>
+                <Th className="hidden md:table-cell">SASH Part</Th>
+                <Th className="hidden w-full lg:table-cell">Description</Th>
+                <Th className="hidden sm:table-cell">Vendor</Th>
                 <Th align="right">Available Parts</Th>
               </tr>
             </thead>
             <tbody>
               {data.data.map((item) => (
-                <tr key={item.id} className="transition-colors hover:bg-neutral-50/60">
-                  <Td className="truncate font-medium" title={item.part_number}>{item.part_number}</Td>
-                  <Td className="truncate" title={item.sash_part ?? undefined}>{item.sash_part ?? dash}</Td>
-                  <Td className="truncate text-ink-muted" title={item.description ?? undefined}>{item.description ?? dash}</Td>
-                  <Td className="truncate" title={item.vendor_name}>{item.vendor_name}</Td>
-                  <Td align="right" className="tabular font-semibold">{formatQty(item.available_qty!)} pcs</Td>
+                <tr key={item.id} className="transition-colors hover:bg-neutral-50/60 [&>td]:h-14 [&>td]:py-2">
+                  <Td>
+                    <span className="block font-medium">{item.part_number}</span>
+                    <span className="block max-w-[12rem] truncate text-xs text-ink-muted sm:hidden">{item.vendor_name}</span>
+                    {item.sash_part && <span className="block text-xs text-ink-muted md:hidden">SASH {item.sash_part}</span>}
+                    {item.description && <span className="block max-w-[14rem] truncate text-xs text-ink-muted lg:hidden" title={item.description}>{item.description}</span>}
+                  </Td>
+                  <Td className="hidden md:table-cell">{item.sash_part ?? dash}</Td>
+                  <Td className="hidden max-w-0 truncate text-ink-muted lg:table-cell" title={item.description ?? undefined}>{item.description ?? dash}</Td>
+                  <Td className="hidden max-w-xs truncate sm:table-cell" title={item.vendor_name}>{item.vendor_name}</Td>
+                  <Td align="right" className="font-semibold">{formatQty(item.available_qty!)} pcs</Td>
                 </tr>
               ))}
             </tbody>

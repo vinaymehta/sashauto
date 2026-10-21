@@ -27,7 +27,8 @@ module Api
       "last_released_date" => "order_rows.last_released_date",
       "last_updated_date" => "order_rows.last_updated_date"
     }.freeze
-    DEFAULT_SORT = "ship_date".freeze
+    # Oldest Firm Date first (orders without one last).
+    DEFAULT_SORT = "firm_date".freeze
     # The business of an imported row: its upload's.
     BUSINESS_SQL = "(SELECT ub.business FROM upload_batches ub WHERE ub.id = order_rows.upload_batch_id) AS business".freeze
 

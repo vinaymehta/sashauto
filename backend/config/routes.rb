@@ -61,9 +61,7 @@ Rails.application.routes.draw do
     end
     resources :vendors, only: %i[index show create update destroy] do
       post :import, on: :collection
-      resources :products, only: %i[index create update destroy], controller: :vendor_products do
-        patch :availability, on: :member
-      end
+      resources :products, only: %i[index create update destroy], controller: :vendor_products
     end
     # Every vendor's parts with their "Available" tick, vendor-wise (Products page, Available parts tab).
     resources :available_parts, only: :index

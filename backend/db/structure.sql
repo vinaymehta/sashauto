@@ -1259,9 +1259,6 @@ CREATE TABLE public.vendor_products (
     set_price_amount numeric(15,4),
     moq_text character varying(200),
     price_text character varying(200),
-    available boolean DEFAULT false NOT NULL,
-    available_changed_at timestamp(6) without time zone,
-    available_changed_by_id bigint,
     available_qty numeric(15,3),
     CONSTRAINT vendor_products_available_qty_non_negative CHECK (((available_qty IS NULL) OR (available_qty >= (0)::numeric))),
     CONSTRAINT vendor_products_currency_valid CHECK (((price_currency)::text = ANY ((ARRAY['INR'::character varying, 'USD'::character varying, 'EUR'::character varying, 'CNY'::character varying, 'GBP'::character varying])::text[]))),
@@ -2459,13 +2456,6 @@ CREATE UNIQUE INDEX index_vendor_orders_on_vendor_order_placement_id_and_vendor_
 
 
 --
--- Name: index_vendor_products_on_available; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_vendor_products_on_available ON public.vendor_products USING btree (available);
-
-
---
 -- Name: index_vendor_products_on_product_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2820,14 +2810,6 @@ ALTER TABLE ONLY public.active_storage_variant_records
 
 
 --
--- Name: vendor_products fk_rails_9a66ac7a21; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.vendor_products
-    ADD CONSTRAINT fk_rails_9a66ac7a21 FOREIGN KEY (available_changed_by_id) REFERENCES public.users(id);
-
-
---
 -- Name: import_issues fk_rails_a0cf0ea4e7; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3066,6 +3048,7 @@ ALTER TABLE ONLY public.address_changes
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261021000002'),
 ('20261020000002'),
 ('20261020000001'),
 ('20261019000002'),
