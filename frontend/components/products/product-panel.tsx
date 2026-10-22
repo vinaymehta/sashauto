@@ -22,7 +22,7 @@ const money = (value: string | null, digits = 2) =>
 const inputClass = "tabular h-8 w-full rounded-md border border-neutral-300 bg-white px-2 text-right text-sm text-ink focus:border-neutral-500 focus:outline-none";
 
 // The one place for a part (Products page, and a vendor's Parts tab): its details (pack, MOQ), Deere's price, every
-// vendor with its price per piece, MOQ and Available Parts, and the price history. An admin edits each in place and
+// vendor with its price per piece, MOQ and Current Inventory, and the price history. An admin edits each in place and
 // adds or removes the part's vendors. `onSaved`: after any change (the list behind refreshes). `edit`: open with the
 // part details already in edit mode (the pencil in the Products list).
 export function ProductPanel({ productId, canEdit, edit = false, onClose, onSaved }: {
@@ -194,7 +194,7 @@ function CustomerPrice({ product, price, canEdit, onSaved }: { product: Product;
   );
 }
 
-// Vendors of the part: price per piece (and per set), MOQ and Available Parts, each edited in place; vendors are
+// Vendors of the part: price per piece (and per set), MOQ and Current Inventory, each edited in place; vendors are
 // added and removed here too.
 function Vendors({ product, items, canEdit, onSaved }: { product: Product; items: ProductVendor[]; canEdit: boolean; onSaved: () => void }) {
   const [editing, setEditing] = useState<number | null>(null);
@@ -232,7 +232,7 @@ function Vendors({ product, items, canEdit, onSaved }: { product: Product; items
               <th className="h-9 border-b border-neutral-100 bg-neutral-50 px-5 text-left">Vendor</th>
               <th className="h-9 border-b border-neutral-100 bg-neutral-50 px-3 text-right">Price per piece</th>
               <th className="h-9 border-b border-neutral-100 bg-neutral-50 px-3 text-right">MOQ (pcs)</th>
-              <th className="h-9 border-b border-neutral-100 bg-neutral-50 px-3 text-right">Available Parts</th>
+              <th className="h-9 border-b border-neutral-100 bg-neutral-50 px-3 text-right">Current Inventory</th>
               {canEdit && <th className="h-9 w-32 border-b border-neutral-100 bg-neutral-50 px-5 text-right" />}
             </tr>
           </thead>
@@ -253,7 +253,7 @@ function Vendors({ product, items, canEdit, onSaved }: { product: Product; items
                   <td className="tabular border-b border-neutral-100 px-3 py-3 text-right">{v.available_qty !== null ? formatQty(v.available_qty) : dash}</td>
                   {canEdit && (
                     <td className="whitespace-nowrap border-b border-neutral-100 px-5 py-3 text-right">
-                      <button type="button" onClick={() => { setEditing(v.id); setAdding(false); }} title="Edit price, MOQ and Available Parts"
+                      <button type="button" onClick={() => { setEditing(v.id); setAdding(false); }} title="Edit price, MOQ and Current Inventory"
                               className="inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-muted hover:bg-neutral-100 hover:text-ink">
                         <PencilIcon size={14} />
                       </button>
@@ -280,7 +280,7 @@ function Vendors({ product, items, canEdit, onSaved }: { product: Product; items
   );
 }
 
-// Inline edit of one vendor's price per piece, MOQ (pieces) and Available Parts.
+// Inline edit of one vendor's price per piece, MOQ (pieces) and Current Inventory.
 function VendorEditRow({ product, item, onDone }: { product: Product; item: ProductVendor; onDone: (saved: boolean) => void }) {
   const notify = useToast();
   const [price, setPrice] = useState(item.price_amount ?? "");
@@ -290,7 +290,7 @@ function VendorEditRow({ product, item, onDone }: { product: Product; item: Prod
   const [error, setError] = useState<string | null>(null);
 
   async function save() {
-    const bad = [[price, "Price"], [moq, "MOQ"], [available, "Available Parts"]].find(([v]) => v.trim() !== "" && !NUMBER.test(v.trim()));
+    const bad = [[price, "Price"], [moq, "MOQ"], [available, "Current Inventory"]].find(([v]) => v.trim() !== "" && !NUMBER.test(v.trim()));
     if (bad) return setError(`${bad[1]}: enter a number, or leave blank.`);
     setSaving(true);
     setError(null);
@@ -317,7 +317,7 @@ function VendorEditRow({ product, item, onDone }: { product: Product; item: Prod
           <span className="text-xs text-ink-muted">{item.price_currency}</span></span>
       </td>
       <td className="border-b border-neutral-100 px-3 py-2"><input aria-label="MOQ in pieces" inputMode="decimal" value={moq} onChange={(e) => setMoq(e.target.value)} className={inputClass} /></td>
-      <td className="border-b border-neutral-100 px-3 py-2"><input aria-label="Available Parts" inputMode="decimal" value={available} onChange={(e) => setAvailable(e.target.value)} className={inputClass} /></td>
+      <td className="border-b border-neutral-100 px-3 py-2"><input aria-label="Current Inventory" inputMode="decimal" value={available} onChange={(e) => setAvailable(e.target.value)} className={inputClass} /></td>
       <td className="whitespace-nowrap border-b border-neutral-100 px-5 py-2 text-right">
         <Button size="sm" variant="ghost" onClick={() => onDone(false)} disabled={saving}>Cancel</Button>
         <Button size="sm" variant="primary" onClick={save} disabled={saving}>{saving ? "…" : "Save"}</Button>
@@ -326,7 +326,7 @@ function VendorEditRow({ product, item, onDone }: { product: Product; item: Prod
   );
 }
 
-// Inline row to add a vendor for the part: search a vendor, then its price per piece, MOQ and Available Parts.
+// Inline row to add a vendor for the part: search a vendor, then its price per piece, MOQ and Current Inventory.
 function VendorAddRow({ product, existing, onDone }: { product: Product; existing: number[]; onDone: (saved: boolean) => void }) {
   const notify = useToast();
   const [search, setSearch] = useState("");
@@ -342,7 +342,7 @@ function VendorAddRow({ product, existing, onDone }: { product: Product; existin
 
   async function save() {
     if (!vendor) return setError("Choose a vendor.");
-    const bad = [[price, "Price"], [moq, "MOQ"], [available, "Available Parts"]].find(([v]) => v.trim() !== "" && !NUMBER.test(v.trim()));
+    const bad = [[price, "Price"], [moq, "MOQ"], [available, "Current Inventory"]].find(([v]) => v.trim() !== "" && !NUMBER.test(v.trim()));
     if (bad) return setError(`${bad[1]}: enter a number, or leave blank.`);
     setSaving(true);
     setError(null);
@@ -386,7 +386,7 @@ function VendorAddRow({ product, existing, onDone }: { product: Product; existin
           <span className="text-xs text-ink-muted">{vendor?.currency ?? "INR"}</span></span>
       </td>
       <td className="border-b border-neutral-100 px-3 py-2"><input aria-label="MOQ in pieces" inputMode="decimal" value={moq} onChange={(e) => setMoq(e.target.value)} className={inputClass} /></td>
-      <td className="border-b border-neutral-100 px-3 py-2"><input aria-label="Available Parts" inputMode="decimal" value={available} onChange={(e) => setAvailable(e.target.value)} className={inputClass} /></td>
+      <td className="border-b border-neutral-100 px-3 py-2"><input aria-label="Current Inventory" inputMode="decimal" value={available} onChange={(e) => setAvailable(e.target.value)} className={inputClass} /></td>
       <td className="whitespace-nowrap border-b border-neutral-100 px-5 py-2 text-right">
         <Button size="sm" variant="ghost" onClick={() => onDone(false)} disabled={saving}>Cancel</Button>
         <Button size="sm" variant="primary" onClick={save} disabled={saving}>{saving ? "…" : "Add"}</Button>

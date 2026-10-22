@@ -51,7 +51,7 @@ module Api
                      meta: meta, customer_currency: AppConfig.business_currency("dtp"), facets: { commodity_types: Product.where.not(commodity_type: nil).distinct.order(:commodity_type).pluck(:commodity_type) } }
     end
 
-    # The part panel: the product, the vendors supplying it with each vendor's price, MOQ and Available Parts, the
+    # The part panel: the product, the vendors supplying it with each vendor's price, MOQ and Current Inventory, the
     # customer price and the price history (customer and vendor prices, newest first).
     def vendors
       product = Product.find(params[:id])

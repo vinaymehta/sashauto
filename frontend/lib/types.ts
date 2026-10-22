@@ -310,6 +310,7 @@ export interface DateAmount { date: string; amount: string }
 
 export interface OrderRow {
   id: number;
+  part_description?: string | null; // the product's Description (Products), Orders list only
   order_type: OrderType;
   due_date: string | null;
   ship_date: string;
@@ -455,7 +456,7 @@ export interface Vendor {
   portal_enabled: boolean;
   remarks: string | null;
   product_count: number;
-  available_count: number; // parts with an "Available Parts" quantity (pieces the vendor has now)
+  available_count: number; // parts with an "Current Inventory" quantity (pieces the vendor has now)
   created_at: string;
   updated_at: string;
 }
@@ -482,7 +483,7 @@ export interface VendorProduct {
   price_note: string | null;
   price_text: string | null; // as written in the vendor file
   updated_at: string;
-  available_qty: string | null; // "Available Parts": pieces the vendor has available now
+  available_qty: string | null; // "Current Inventory": pieces the vendor has available now
   vendor_name: string;
 }
 
@@ -499,7 +500,9 @@ export interface ProductVendor {
   price_currency: Currency;
   price_note: string | null;
   price_text: string | null;
-  available_qty: string | null; // "Available Parts": pieces the vendor has now
+  available_qty: string | null; // "Current Inventory": pieces the vendor has now
+  lead_days: number | null; // the vendor's lead time: Vendor Ship Due Date = PO date + this
+  intimation_letter: boolean; // the vendor is at the 0.1% GST rate: its PO comes with an Intimation Letter
 }
 
 // A vendor order is placed in sets or in pieces; order Qty always counts sets.
@@ -510,7 +513,8 @@ export interface VendorOrderInfo {
   number: string;
   vendor_id: number;
   vendor_name: string;
-  ship_date: string | null; // chosen when placing; null for orders placed before it existed
+  ship_date: string | null; // Vendor Ship Due Date, chosen when placing; null for orders placed before it existed
+  intimation_letter: boolean; // an Intimation Letter comes with this PO (vendor at the 0.1% GST rate)
   qty: string;
   unit: OrderUnit;
   price_amount: string | null;

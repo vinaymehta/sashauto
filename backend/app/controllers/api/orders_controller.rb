@@ -71,6 +71,7 @@ module Api
       # (By position: an imported row and a manual order can share an id.)
       firm_keys = rows.map { |row| firm_key(row, combined) }
       firm_dates = Orders::FirmDates.for_keys(firm_keys)
+      descriptions = Product.where(part_number: rows.map(&:part_number).uniq).pluck(:part_number, :description).to_h
       render json: {
         data: rows.each_with_index.map do |row, i|
           key = placement_key(row)
@@ -78,6 +79,7 @@ module Api
                                                          ordered_qty: Serializers.qty(ordered[key]),
                                                          deliveries: deliveries.fetch(key, {}),
                                                          firm_date: firm_dates[firm_keys[i]], business: row[:business],
+                                                         part_description: descriptions[row.part_number],
                                                          **combined_info(row, combined))
         end,
         meta: meta.merge(sort: sort, direction: direction),

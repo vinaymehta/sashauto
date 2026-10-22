@@ -1,5 +1,5 @@
 module Api
-  # Products page, Available parts tab: the vendor parts with an "Available Parts" quantity (pieces the vendor has
+  # Products page, Current inventory tab: the vendor parts with an "Current Inventory" quantity (pieces the vendor has
   # now), by Part Number then vendor. Search: q (part, SASH part, vendor part, description or vendor).
   class AvailablePartsController < ApplicationController
     def index

@@ -1,7 +1,8 @@
 module VendorOrders
   # Places one order row with vendors: one Vendor Order per selected vendor, in one transaction.
   #
-  #   allocations: [{ vendor_id:, qty:, unit:, ship_date: }]  (ship_date: YYYY-MM-DD, defaults to the order's Ship Date)
+  #   allocations: [{ vendor_id:, qty:, unit:, ship_date: }]  (ship_date: YYYY-MM-DD, the Vendor Ship Due Date; defaults to
+  #   the PO generation date + the vendor's lead time)
   #
   # Rules: at least one vendor; each vendor once and linked to the row's Part Number (Vendors list);
   # every qty a number > 0; the total at most the Qty still to order. The original order row is not changed.
@@ -65,15 +66,16 @@ module VendorOrders
           link = links.fetch(line[:vendor_id])
           VendorOrder.create!(vendor_order_placement: placement, vendor: link.vendor,
                               number: VendorOrder.po_number(@row.po_number, link.vendor, @row.ship_date),
-                              qty: line[:qty], unit: line[:unit], ship_date: line[:ship_date] || default_ship_date,
+                              qty: line[:qty], unit: line[:unit], ship_date: line[:ship_date] || default_ship_date(link.vendor),
                               unit_price: line[:unit] == "pcs" ? link.price_amount : link.set_price_amount,
                               price_currency: link.price_currency, price_note: link.price_note, email_status: "not_sent")
         end
       end
-      # Each vendor's purchase order and Intimation Letter are saved as PDFs (not emailed).
+      # Each vendor's purchase order is saved as a PDF (not emailed), with the Intimation Letter for a vendor at the
+      # concessional GST rate of 0.1%.
       placement.vendor_orders.each do |order|
         order.attach_pdf
-        order.attach_letter
+        order.attach_letter if order.vendor.intimation_letter?
       end
       Result.new(placement: placement, warnings: moq_warnings(placement))
     end
@@ -87,11 +89,8 @@ module VendorOrders
       product, link, line = draft_line(vendor_id)
       PdfBuilder.preview(vendor: link.vendor, product: product, link: link, qty: line[:qty], unit: line[:unit],
                          unit_price: line[:unit] == "pcs" ? link.price_amount : link.set_price_amount,
-                         required_by: line[:ship_date] || default_ship_date, prepared_by: @user.name)
+                         required_by: line[:ship_date] || default_ship_date(link.vendor), prepared_by: @user.name)
     end
-
-    # Vendors ship this many days before the order's ship date, unless a date is chosen.
-    VENDOR_LEAD_DAYS = 120
 
     # [product, vendor link, allocation line] of one vendor of the allocation.
     def draft_line(vendor_id)
@@ -103,8 +102,10 @@ module VendorOrders
       [ product, links.fetch(vendor_id), line ]
     end
 
-    def default_ship_date
-      @row.ship_date - VENDOR_LEAD_DAYS
+    # Vendor Ship Due Date, unless a date is chosen: the day the PO is generated plus the vendor's lead time (days;
+    # none set: the same day).
+    def default_ship_date(vendor)
+      Date.current + vendor.lead_days.to_i
     end
 
     # The placed order: an imported order row (with its upload) or a manual order.

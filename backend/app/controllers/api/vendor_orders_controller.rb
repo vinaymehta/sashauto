@@ -60,6 +60,7 @@ module Api
       product = Product.find_by(part_number: row.part_number)
       link = product&.vendor_products&.find_by(vendor_id: params.require(:vendor_id))
       return render_error("Choose a vendor linked to this part.", :unprocessable_content) unless link
+      return render_error("#{link.vendor.name} has no Intimation Letter: it is only for vendors at the 0.1% GST rate.", :unprocessable_content) unless link.vendor.intimation_letter?
 
       send_data VendorOrders::IntimationLetter.preview(vendor: link.vendor), filename: "intimation-letter-draft.pdf",
                                                                             type: "application/pdf", disposition: "inline"
@@ -73,6 +74,10 @@ module Api
     # The saved Intimation Letter of a vendor order.
     def letter
       vendor_order = VendorOrder.find(params[:id])
+      unless vendor_order.intimation_letter.attached? || vendor_order.vendor.intimation_letter?
+        return render_error("This vendor has no Intimation Letter: it is only for vendors at the 0.1% GST rate.", :not_found)
+      end
+
       send_data vendor_order.letter_document, filename: vendor_order.letter_file_name, type: "application/pdf",
                                               disposition: params[:download] == "1" ? "attachment" : "inline"
     end

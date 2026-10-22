@@ -1,5 +1,6 @@
 module Api
-  # Vendors list (search, sort and pagination in PostgreSQL), CRUD and Excel import. Changes are admin-only.
+  # Vendors list (search, sort and pagination in PostgreSQL), add, edit and Excel import (vendors are not deleted).
+  # Changes are admin-only.
   class VendorsController < ApplicationController
     # Details of a vendor (besides the name).
     DETAILS = %i[code vendor_type salutation first_name last_name company_name email phone mobile language address gst
@@ -10,7 +11,7 @@ module Api
       "name" => "vendors.name", "product_count" => "product_count", "available_count" => "available_count",
       "updated_at" => "vendors.updated_at"
     }.freeze
-    # Each vendor's number of parts, and of parts with an "Available Parts" quantity (pieces it has now).
+    # Each vendor's number of parts, and of parts with an "Current Inventory" quantity (pieces it has now).
     COUNT_COLUMNS = [ "vendors.*", "(SELECT COUNT(*) FROM vendor_products vp WHERE vp.vendor_id = vendors.id) AS product_count",
                       "(SELECT COUNT(*) FROM vendor_products vp WHERE vp.vendor_id = vendors.id AND vp.available_qty > 0) AS available_count" ].freeze
 
@@ -80,15 +81,6 @@ module Api
       end
     rescue ActiveRecord::RecordNotUnique
       render_error "A vendor with this name already exists.", :unprocessable_content
-    end
-
-    # Deletes the vendor and its part list (the Products themselves stay).
-    def destroy
-      vendor = Vendor.find(params[:id])
-      count = vendor.vendor_products.count
-      vendor.destroy!
-      audit("vendor.deleted", subject: vendor, name: vendor.name, products: count)
-      head :no_content
     end
 
     def import

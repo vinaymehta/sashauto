@@ -7,6 +7,8 @@ class Vendor < ApplicationRecord
   GST_TREATMENTS = %w[registered_regular registered_composition unregistered consumer overseas sez deemed_export].freeze
   TAX_PREFERENCES = %w[taxable tax_exempt].freeze
   CURRENCIES = %w[INR USD EUR CNY GBP].freeze
+  # The concessional GST rate (goods for export): only these vendors get an Intimation Letter with their PO.
+  LETTER_GST_RATE = BigDecimal("0.1")
   # One email, or several separated by commas or semicolons.
   EMAIL_LIST = /\A\s*[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+(\s*[,;]\s*[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+)*\s*[,;]?\s*\z/
 
@@ -43,5 +45,10 @@ class Vendor < ApplicationRecord
   # Primary contact, e.g. "Mr. Amarjit Singh".
   def contact_name
     [ salutation, first_name, last_name ].compact.join(" ").presence
+  end
+
+  # Supplies at the concessional GST rate of 0.1%, so its POs come with an Intimation Letter.
+  def intimation_letter?
+    gst_rate.present? && gst_rate.to_d == LETTER_GST_RATE
   end
 end

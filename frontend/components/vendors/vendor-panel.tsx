@@ -21,7 +21,7 @@ const dash = <span className="text-neutral-300">—</span>;
 const inputClass = "tabular h-8 w-full rounded-md border border-neutral-300 bg-white px-2 text-sm text-ink focus:border-neutral-500 focus:outline-none";
 
 // One panel per vendor (Vendors page): Details (contact, tax, address) and Parts (what it supplies, with its price per
-// piece, MOQ and Available Parts). A part opens the part panel, where its prices are edited; an admin adds parts here
+// piece, MOQ and Current Inventory). A part opens the part panel, where its prices are edited; an admin adds parts here
 // and edits the vendor (Edit vendor).
 export function VendorPanel({ vendor, canEdit, onClose, onEdit, onChanged }: {
   vendor: Vendor; canEdit: boolean; onClose: () => void; onEdit: () => void; onChanged: () => void;
@@ -47,7 +47,7 @@ export function VendorPanel({ vendor, canEdit, onClose, onEdit, onChanged }: {
   );
 }
 
-// The vendor's parts: Part Number, description, price per piece, MOQ and Available Parts. A row opens the part panel.
+// The vendor's parts: Part Number, description, price per piece, MOQ and Current Inventory. A row opens the part panel.
 function VendorParts({ vendor, canEdit, onOpen, onChanged }: { vendor: Vendor; canEdit: boolean; onOpen: (productId: number) => void; onChanged: () => void }) {
   const [search, setSearch] = useState("");
   const q = useDebounced(search.trim());
@@ -75,7 +75,7 @@ function VendorParts({ vendor, canEdit, onOpen, onChanged }: { vendor: Vendor; c
                 <th className="h-9 border-b border-neutral-100 bg-neutral-50 px-3 text-left">Description</th>
                 <th className="h-9 border-b border-neutral-100 bg-neutral-50 px-3 text-right">Price per piece</th>
                 <th className="h-9 border-b border-neutral-100 bg-neutral-50 px-3 text-right">MOQ (pcs)</th>
-                <th className="h-9 border-b border-neutral-100 bg-neutral-50 px-5 text-right">Available Parts</th>
+                <th className="h-9 border-b border-neutral-100 bg-neutral-50 px-5 text-right">Current Inventory</th>
               </tr>
             </thead>
             <tbody>
@@ -97,7 +97,7 @@ function VendorParts({ vendor, canEdit, onOpen, onChanged }: { vendor: Vendor; c
   );
 }
 
-// Add a part to the vendor: its Part Number (must be in Products), price per piece, MOQ and Available Parts.
+// Add a part to the vendor: its Part Number (must be in Products), price per piece, MOQ and Current Inventory.
 function AddPart({ vendor, onDone }: { vendor: Vendor; onDone: (saved: boolean) => void }) {
   const notify = useToast();
   const [values, setValues] = useState({ part_number: "", price_amount: "", moq: "", available_qty: "" });
@@ -109,7 +109,7 @@ function AddPart({ vendor, onDone }: { vendor: Vendor; onDone: (saved: boolean) 
     e?.preventDefault();
     if (!values.part_number.trim()) return setError("Enter the Part Number.");
     const bad = (["price_amount", "moq", "available_qty"] as const).find((k) => values[k].trim() !== "" && !NUMBER.test(values[k].trim()));
-    if (bad) return setError("Price, MOQ and Available Parts must be numbers (or blank).");
+    if (bad) return setError("Price, MOQ and Current Inventory must be numbers (or blank).");
     setSaving(true);
     setError(null);
     try {
@@ -124,7 +124,7 @@ function AddPart({ vendor, onDone }: { vendor: Vendor; onDone: (saved: boolean) 
 
   return (
     <form onSubmit={save} className="grid gap-3 border-b border-line bg-tint-violet/30 px-5 py-3 sm:grid-cols-[1.4fr_1fr_1fr_1fr_auto] sm:items-end">
-      {([["part_number", "Part Number", "e.g. JXA22628"], ["price_amount", `Price per piece (${vendor.currency})`, ""], ["moq", "MOQ (pcs)", ""], ["available_qty", "Available Parts", ""]] as const).map(([key, label, ph]) => (
+      {([["part_number", "Part Number", "e.g. JXA22628"], ["price_amount", `Price per piece (${vendor.currency})`, ""], ["moq", "MOQ (pcs)", ""], ["available_qty", "Current Inventory", ""]] as const).map(([key, label, ph]) => (
         <label key={key} className="block text-xs font-medium text-ink-muted">
           {label}
           <input value={values[key]} onChange={set(key)} placeholder={ph} autoFocus={key === "part_number"}

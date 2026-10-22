@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { EmailDraft, OrderUnit, ProductVendor, VendorOrderInfo, VendorOrderPlacementInfo, VendorOrderState } from "@/lib/types";
-import { formatDate, formatDateOnly, formatDateTime, formatQty } from "@/lib/format";
+import { formatDate, formatDateOnly, formatDateTime, formatQty, todayIst } from "@/lib/format";
 import { AlertIcon, DownloadIcon, FileIcon, MailIcon, PrintIcon } from "../icons";
 import { useSession } from "../session";
 import { useApi } from "../use-api";
@@ -18,12 +18,11 @@ import { printPdf } from "@/lib/print";
 import { EmailViewer } from "./email-viewer";
 
 const QTY = /^\d+(\.\d{1,3})?$/;
-// A vendor's ship date defaults to this many days before the order's ship date (time to ship to the customer).
-// It can be changed per vendor.
-const VENDOR_LEAD_DAYS = 120;
-function defaultVendorShipDate(orderShipDate: string) {
-  const [y, m, d] = orderShipDate.split("-").map(Number);
-  return new Date(y!, m! - 1, d! - VENDOR_LEAD_DAYS).toLocaleDateString("en-CA");
+// A vendor's Vendor Ship Due Date defaults to the day the PO is generated (today, IST) plus the vendor's lead time
+// (no lead time: today). It can be changed per vendor.
+function defaultVendorShipDate(leadDays: number | null) {
+  const [y, m, d] = todayIst().split("-").map(Number);
+  return new Date(y!, m! - 1, d! + (leadDays ?? 0)).toLocaleDateString("en-CA");
 }
 // Which draft PDF of a vendor: the purchase order or the Intimation Letter.
 type DraftKind = "po" | "letter";
@@ -128,7 +127,7 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
     setAlloc((current) => {
       const next = { ...current };
       if (next[vendorId] !== undefined) delete next[vendorId];
-      else next[vendorId] = { qty: remaining > 0 ? String(remaining / 1000) : "", unit: "sets", ship_date: defaultVendorShipDate(state.order.ship_date) };
+      else next[vendorId] = { qty: remaining > 0 ? String(remaining / 1000) : "", unit: "sets", ship_date: defaultVendorShipDate(state.vendors.find((v) => v.vendor_id === vendorId)?.lead_days ?? null) };
       return next;
     });
   }
@@ -200,8 +199,10 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
               </span>
               {checked && (
                 <span className="col-start-2 col-end-4 flex flex-wrap items-center justify-end gap-2">
-                  <span className="text-xs font-medium text-ink-muted">Vendor ship date</span>
-                  <DatePicker value={a.ship_date} invalid={!a.ship_date} aria-label={`Ship date for ${v.vendor_name}`} className="w-44"
+                  <span className="text-xs font-medium text-ink-muted">
+                    Vendor Ship Due Date{v.lead_days !== null && <span className="font-normal"> (today + {v.lead_days} days lead time)</span>}
+                  </span>
+                  <DatePicker value={a.ship_date} invalid={!a.ship_date} aria-label={`Vendor Ship Due Date for ${v.vendor_name}`} className="w-44"
                               onChange={(day) => setAlloc((current) => ({ ...current, [v.vendor_id]: { ...current[v.vendor_id]!, ship_date: day } }))} />
                 </span>
               )}
@@ -235,12 +236,12 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
           </p>
         )}
         {invalid.length > 0 && <p className="text-xs text-dec">Enter a quantity greater than 0 (up to 3 decimals) for each selected vendor.</p>}
-        {!datesSet && <p className="text-xs text-dec">Choose a ship date for each selected vendor.</p>}
+        {!datesSet && <p className="text-xs text-dec">Choose a Vendor Ship Due Date for each selected vendor.</p>}
         {error && <Alert>{error}</Alert>}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
           <span className="text-xs text-ink-muted">
-            Vendor ship date: {VENDOR_LEAD_DAYS} days before the order&apos;s ship date ({formatDate(state.order.ship_date)}) unless changed; the PO shows
-            it as Required By. Generating saves each vendor&apos;s PO and Intimation Letter (PDFs) and locks the allocation; the email draft is made from them when you open it.
+            Vendor Ship Due Date: today plus the vendor&apos;s lead time, unless changed; it is printed on the PO. Generating saves each vendor&apos;s
+            PO (PDF), with an Intimation Letter for vendors at the 0.1% GST rate, and locks the allocation; the email draft is made from them when you open it.
           </span>
           <Button variant="primary" size="sm" disabled={!ready || busy} onClick={place}>
             {busy ? "Generating…" : "Generate PO"}
@@ -267,11 +268,11 @@ function PlacedOrders({ state, placement, onChanged }: { state: VendorOrderState
             <span className="min-w-0">
               <span className="block font-semibold text-ink">{vo.number}</span>
               <span className="block truncate text-xs text-ink-muted">
-                {vo.vendor_name}{vo.ship_date ? ` · ship ${formatDate(vo.ship_date)}` : ""}
+                {vo.vendor_name}{vo.ship_date ? ` · ship due ${formatDate(vo.ship_date)}` : ""}
               </span>
             </span>
             <span className="tabular font-semibold text-ink">{formatQty(vo.qty)} {vo.unit === "pcs" || state.pack_size <= 1 ? "pcs" : "sets"}</span>
-            {/* The saved PO and Intimation Letter, each in its own card, and the admin's "Order placed" tick once they
+            {/* The saved PO and (a vendor at the 0.1% GST rate) Intimation Letter, each in its own card, and the admin's "Order placed" tick once they
                 were sent to the vendor (the emails are in the Email draft section below). */}
             <span className="col-span-2 grid gap-3 sm:grid-cols-2">
               <DocCard title="Purchase Order">
@@ -285,7 +286,7 @@ function PlacedOrders({ state, placement, onChanged }: { state: VendorOrderState
                   <PrintIcon size={13} className="text-ink-muted" />Print
                 </button>
               </DocCard>
-              <DocCard title="Intimation Letter">
+              {vo.intimation_letter && <DocCard title="Intimation Letter">
                 <button type="button" onClick={() => setViewing({ id: vo.id, number: vo.number, kind: "letter" })} className={fileButton}>
                   <FileIcon size={13} className="text-ink-muted" />View
                 </button>
@@ -295,7 +296,7 @@ function PlacedOrders({ state, placement, onChanged }: { state: VendorOrderState
                 <button type="button" onClick={() => printPdf(`/api/vendor_orders/${vo.id}/letter`)} className={fileButton} title="Print the Intimation Letter">
                   <PrintIcon size={13} className="text-ink-muted" />Print
                 </button>
-              </DocCard>
+              </DocCard>}
             </span>
             <span className="col-span-2 flex justify-end"><OrderPlacedTick order={vo} onChanged={onChanged} /></span>
           </li>

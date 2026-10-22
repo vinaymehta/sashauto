@@ -59,7 +59,7 @@ Rails.application.routes.draw do
         get :email
       end
     end
-    resources :vendors, only: %i[index show create update destroy] do
+    resources :vendors, only: %i[index show create update] do
       post :import, on: :collection
       resources :products, only: %i[index create update destroy], controller: :vendor_products
     end

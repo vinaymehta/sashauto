@@ -151,6 +151,12 @@ function buildColumns(columns: { key: string; label: string }[], uploadId?: numb
       return [{ key: "price_per_piece", label: "Price per piece", header: "Price per piece", align: "right", sortable: false, render: pricePerPiece },
               { ...column, header: "Unit Price (price per 100 pieces)" }];
     }
+    // Commodity Type is not shown; Part Description (the product's Description) comes right after Part Number.
+    if (key === "commodity_type") return [];
+    if (key === "part_number") {
+      return [column, { key: "part_description", label: "Part Description", sortable: false,
+                        render: (r) => <span className="block max-w-72 truncate" title={r.part_description ?? ""}>{r.part_description || "—"}</span> }];
+    }
     // The file's own "Firm Date" column is shown as the Firm Date column below (with the date of orders it has none for).
     if (label.trim().toLowerCase() === "firm date") return [];
     // "Firm Date" (from the file, else the day the order, or its combined order, first reached the MOQ) just after Due Date.

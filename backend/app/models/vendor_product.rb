@@ -6,7 +6,7 @@ class VendorProduct < ApplicationRecord
   belongs_to :vendor, touch: true
   belongs_to :product
 
-  # "Available Parts": pieces the vendor has available now.
+  # "Current Inventory": pieces the vendor has available now.
   validates :available_qty, numericality: { greater_than_or_equal_to: 0 }, allow_nil: true
 
   blank_to_nil = ->(value) { value.to_s.strip.presence }

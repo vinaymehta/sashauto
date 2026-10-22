@@ -15,7 +15,7 @@ import { Pagination, Table, Td, Th } from "../ui/table";
 
 const dash = <span className="text-neutral-300">—</span>;
 
-// Products page, "Available parts" tab: the parts a vendor has available now (its "Available Parts" quantity, entered
+// Products page, "Current inventory" tab: the parts a vendor has available now (its "Current Inventory" quantity, entered
 // with the vendor's part), with the vendor and the quantity.
 export function AvailablePartsPanel() {
   const list = useListQuery({}, 100, { key: "part_number", direction: "asc" });
@@ -25,18 +25,18 @@ export function AvailablePartsPanel() {
 
   return (
     <Panel flush>
-      <ListToolbar summary={data ? `${formatCount(data.meta.total)} available part${data.meta.total === 1 ? "" : "s"}` : ""}>
-        <SearchInput label="Search available parts" placeholder="Search part, SASH part, description or vendor" value={search}
+      <ListToolbar summary={data ? `${formatCount(data.meta.total)} part${data.meta.total === 1 ? "" : "s"} in current inventory` : ""}>
+        <SearchInput label="Search current inventory" placeholder="Search part, SASH part, description or vendor" value={search}
                      onSearch={(v) => { setSearch(v); list.resetPage(); }} className="w-full sm:w-72" />
       </ListToolbar>
       {error ? (
-        <div className="p-4"><Alert title="Could not load the available parts">{error.message}</Alert></div>
+        <div className="p-4"><Alert title="Could not load the current inventory">{error.message}</Alert></div>
       ) : loading && !data ? (
         <TableSkeleton rows={10} columns={5} />
       ) : data && data.data.length === 0 ? (
         <EmptyState
-          title={q ? "No available parts match" : "No available parts yet"}
-          description={q ? "Try a different search." : "Enter Available Parts for a vendor's part on the Vendors page (edit the part)."}
+          title={q ? "No current inventory matches" : "No current inventory yet"}
+          description={q ? "Try a different search." : "Enter Current Inventory for a vendor's part on the Vendors page (edit the part)."}
           action={q ? <Button size="sm" onClick={() => setSearch("")}>Clear search</Button> : undefined}
         />
       ) : data ? (
@@ -50,7 +50,7 @@ export function AvailablePartsPanel() {
                 <Th className="hidden md:table-cell">SASH Part</Th>
                 <Th className="hidden w-full lg:table-cell">Description</Th>
                 <Th className="hidden sm:table-cell">Vendor</Th>
-                <Th align="right">Available Parts</Th>
+                <Th align="right">Current Inventory</Th>
               </tr>
             </thead>
             <tbody>
@@ -70,7 +70,7 @@ export function AvailablePartsPanel() {
               ))}
             </tbody>
           </Table>
-          <Pagination meta={data.meta} onPage={list.setPage} onPerPage={list.setPerPage} noun="available parts" />
+          <Pagination meta={data.meta} onPage={list.setPage} onPerPage={list.setPerPage} noun="current inventory" />
         </div>
       ) : null}
     </Panel>

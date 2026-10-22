@@ -38,7 +38,7 @@ function productFilters(commodityTypes: string[]): FilterGroup[] {
     { section: "Prices and MOQ", key: "vendor_price", label: "Vendor price", options: SET_MISSING },
     { section: "Prices and MOQ", key: "moq", label: "MOQ", options: SET_MISSING },
     { section: "Vendors", key: "vendors", label: "Vendors", options: [{ value: "none", label: "No vendor" }, { value: "one", label: "One vendor" }, { value: "many", label: "Two or more" }] },
-    { section: "Vendors", key: "available", label: "Available parts", options: [{ value: "yes", label: "Available now" }, { value: "no", label: "None available" }] },
+    { section: "Vendors", key: "available", label: "Current inventory", options: [{ value: "yes", label: "In stock" }, { value: "no", label: "None in stock" }] },
     { section: "Review", key: "conflicts", label: "Commodity conflicts", options: [{ value: "open", label: "Has open conflicts" }] },
   ];
 }
@@ -72,7 +72,7 @@ function ProductsView() {
   const sortProps = { sort: list.sort, direction: list.direction, onSort: list.toggleSort };
   const [viewing, setViewing] = useState<{ product: Product; edit: boolean } | null>(null);
   const [adding, setAdding] = useState(false);
-  // The list, the Available parts tab (vendor-wise check list) or the Import issues tab (problems from vendor file imports).
+  // The list, the Current inventory tab (vendor-wise check list) or the Import issues tab (problems from vendor file imports).
   const [view, setView] = useState<"list" | "available" | "issues">("list");
   const issues = useOpenImportIssues();
   const onImported = (r: VendorImportResult) => { reload(); issues.reload(); if (r.issues) setView("issues"); };
@@ -91,7 +91,7 @@ function ProductsView() {
       <div className="flex items-center border-b border-line">
         <Tabs active={view} onChange={setView} tabs={[
           { key: "list" as const, label: "Products", count: data?.meta.total ?? null },
-          { key: "available" as const, label: "Available parts" },
+          { key: "available" as const, label: "Current inventory" },
           { key: "issues" as const, label: "Import issues", count: issues.count },
         ]} />
       </div>

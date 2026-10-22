@@ -1,12 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { api, ApiError } from "@/lib/api";
 import type { Paginated, Vendor, VendorImportResult } from "@/lib/types";
 import { formatCount } from "@/lib/format";
-import { PencilIcon, PlusIcon, TrashIcon } from "@/components/icons";
+import { PencilIcon, PlusIcon } from "@/components/icons";
 import { useSession } from "@/components/session";
-import { useToast } from "@/components/toast";
 import { useApi, useDebounced } from "@/components/use-api";
 import { useListQuery } from "@/components/use-list-query";
 import { DtpImportButton } from "@/components/vendors/dtp-import";
@@ -15,7 +13,6 @@ import { Tabs } from "@/components/ui/tabs";
 import { VendorFormPanel } from "@/components/vendors/vendor-form-panel";
 import { VendorPanel } from "@/components/vendors/vendor-panel";
 import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Alert, EmptyState } from "@/components/ui/feedback";
 import { FilterChips, FilterMenu, type FilterGroup } from "@/components/ui/filter-menu";
 import { ListToolbar } from "@/components/ui/list-toolbar";
@@ -31,7 +28,7 @@ const dash = <span className="text-neutral-300">—</span>;
 function vendorFilters(places: string[]): FilterGroup[] {
   return [
     { section: "Parts", key: "parts", label: "Parts", options: [{ value: "some", label: "Has parts" }, { value: "none", label: "No parts" }] },
-    { section: "Parts", key: "available", label: "Available parts", options: [{ value: "yes", label: "Has available parts" }, { value: "no", label: "None available" }] },
+    { section: "Parts", key: "available", label: "Current inventory", options: [{ value: "yes", label: "Has current inventory" }, { value: "no", label: "None in stock" }] },
     { section: "Details", key: "place_of_supply", label: "Place of supply", options: places.map((v) => ({ value: v, label: v })) },
     { section: "Details", key: "missing", label: "Missing details", options: [
       { value: "contact", label: "No phone or mobile" }, { value: "email", label: "No email" }, { value: "gst", label: "No GST" }, { value: "place", label: "No place of supply" },
@@ -41,10 +38,9 @@ function vendorFilters(places: string[]): FilterGroup[] {
 const iconButton = "inline-flex h-8 w-8 items-center justify-center rounded-md text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-ink";
 
 // Vendors and the parts they supply. Click a vendor to see its parts in the side panel.
-// Admins can add, rename and delete vendors, manage their parts and import the vendor Excel file.
+// Admins can add and edit vendors (vendors are not deleted), manage their parts and import the vendor Excel file.
 export default function VendorsPage() {
   const isAdmin = useSession().user?.role === "admin";
-  const notify = useToast();
   const list = useListQuery({}, 100, { key: "name", direction: "asc" });
   const [search, setSearch] = useState("");
   const q = useDebounced(search.trim());
@@ -62,29 +58,10 @@ export default function VendorsPage() {
 
   const [open, setOpen] = useState<Vendor | null>(null);
   const [editing, setEditing] = useState<Vendor | "new" | null>(null);
-  const [deleting, setDeleting] = useState<Vendor | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
   // The list, or the Import issues tab (problems from vendor file imports).
   const [view, setView] = useState<"list" | "issues">("list");
   const issues = useOpenImportIssues();
   const onImported = (r: VendorImportResult) => { reload(); issues.reload(); if (r.issues) setView("issues"); };
-
-  async function remove() {
-    if (!deleting) return;
-    setBusy(true);
-    setDeleteError(null);
-    try {
-      await api.delete(`/api/vendors/${deleting.id}`);
-      notify(`Vendor ${deleting.name} deleted.`);
-      setDeleting(null);
-      reload();
-    } catch (err) {
-      setDeleteError(err instanceof ApiError ? err.message : "Could not delete the vendor.");
-    } finally {
-      setBusy(false);
-    }
-  }
 
   return (
     <>
@@ -128,7 +105,7 @@ export default function VendorsPage() {
         ) : data ? (
           <div className={`transition-opacity duration-200 ${loading ? "opacity-50" : ""}`}>
             {/* The list shows who the vendor is; everything else is in its panel. Columns size to their content and the
-                name takes the rest. On smaller screens Contact No, Place of Supply, Available Parts and Code drop out of
+                name takes the rest. On smaller screens Contact No, Place of Supply, Current Inventory and Code drop out of
                 the table; code, phone and place then show under the name. Some phone fields hold names and notes, so the
                 number is cut with "…" (full text on hover). */}
             <Table dense>
@@ -139,7 +116,7 @@ export default function VendorsPage() {
                   <Th className="hidden 2xl:table-cell">Contact No</Th>
                   <Th className="hidden xl:table-cell">Place of Supply</Th>
                   <SortTh label="Products" sortKey="product_count" align="center" {...sortProps} />
-                  <SortTh label="Available Parts" sortKey="available_count" align="center" className="hidden md:table-cell" {...sortProps} />
+                  <SortTh label="Current Inventory" sortKey="available_count" align="center" className="hidden md:table-cell" {...sortProps} />
                   {isAdmin && <Th align="right" className="hidden sm:table-cell">Action</Th>}
                 </tr>
               </thead>
@@ -165,17 +142,13 @@ export default function VendorsPage() {
                       <Td className="tabular hidden max-w-[12rem] truncate text-ink-muted 2xl:table-cell" title={phone ?? undefined}>{phone ?? dash}</Td>
                       <Td className="hidden text-ink-muted xl:table-cell">{v.place_of_supply ?? dash}</Td>
                       <Td align="center" className="tabular">{formatCount(v.product_count)}</Td>
-                      <Td align="center" className="tabular hidden md:table-cell" title={`${formatCount(v.available_count)} of ${formatCount(v.product_count)} parts have Available Parts`}>
+                      <Td align="center" className="tabular hidden md:table-cell" title={`${formatCount(v.available_count)} of ${formatCount(v.product_count)} parts have Current Inventory`}>
                         {v.available_count ? <span className="font-semibold text-inc">{formatCount(v.available_count)}</span> : dash}
                       </Td>
                       {isAdmin && (
                         <Td align="right" className="hidden space-x-1 sm:table-cell" onClick={(e) => e.stopPropagation()}>
                           <button type="button" className={iconButton} onClick={() => setEditing(v)} aria-label={`Edit ${v.name}`} title="Edit vendor">
                             <PencilIcon size={16} />
-                          </button>
-                          <button type="button" className={`${iconButton} hover:text-dec`} onClick={() => { setDeleteError(null); setDeleting(v); }}
-                                  aria-label={`Delete ${v.name}`} title="Delete vendor">
-                            <TrashIcon size={16} />
                           </button>
                         </Td>
                       )}
@@ -195,11 +168,6 @@ export default function VendorsPage() {
       {editing && (
         <VendorFormPanel vendor={editing === "new" ? undefined : editing} onClose={() => setEditing(null)}
                          onSaved={(v) => { reload(); if (open?.id === v.id) setOpen({ ...open, name: v.name }); }} />
-      )}
-      {deleting && (
-        <ConfirmDialog title={`Delete ${deleting.name}?`} busy={busy} error={deleteError} onConfirm={remove} onCancel={() => setDeleting(null)}>
-          This removes the vendor and its list of {formatCount(deleting.product_count)} part{deleting.product_count === 1 ? "" : "s"}. The products themselves stay in Products.
-        </ConfirmDialog>
       )}
     </>
   );

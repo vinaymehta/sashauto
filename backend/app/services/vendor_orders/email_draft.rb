@@ -45,7 +45,7 @@ module VendorOrders
         [ "Description", @link&.description.presence || @product&.description ],
         [ "Quantity", "#{qty_text(@qty)} #{uom}" ],
         [ "Unit Price", (@unit_price && "#{@currency} #{price_text(@unit_price)} per #{per}") ],
-        [ "Required By", @required_by&.strftime("%-d %b %Y") ]
+        [ "Vendor Ship Due Date", @required_by&.strftime("%-d %b %Y") ]
       ].select { |_, value| value.present? }
       width = items.map { |label, _| label.size }.max
       signature = [ @sender, @company[:name],
@@ -54,7 +54,7 @@ module VendorOrders
       <<~TEXT
         Dear #{contact.presence || 'Sir/Madam'},
 
-        Please find attached our Purchase Order No. #{@number} dated #{@date.strftime('%-d %b %Y')}, together with the Intimation Letter for supply at the concessional GST rate of 0.1% (goods for export).
+        Please find attached our Purchase Order No. #{@number} dated #{@date.strftime('%-d %b %Y')}#{letter_text}.
 
         #{items.map { |label, value| "#{"#{label}:".ljust(width + 1)}  #{value}" }.join("\n")}
 
@@ -63,6 +63,11 @@ module VendorOrders
         Thanks & Regards,
         #{signature.join("\n")}
       TEXT
+    end
+
+    # The Intimation Letter goes with the PO only for a vendor at the concessional GST rate of 0.1%.
+    def letter_text
+      @vendor.intimation_letter? ? ", together with the Intimation Letter for supply at the concessional GST rate of 0.1% (goods for export)" : ""
     end
 
     # SASH's part number, then the vendor's own when it has one.

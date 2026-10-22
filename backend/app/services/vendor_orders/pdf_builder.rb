@@ -81,6 +81,11 @@ module VendorOrders
       "#{whole.reverse.scan(/\d{1,3}/).join(',').reverse}.#{frac}"
     end
 
+    # 18.0 => "18", 0.1 => "0.1".
+    def gst_rate_text(rate)
+      rate.to_d.to_s("F").sub(/\.?0+\z/, "")
+    end
+
     def unit_cost(value)
       return "" if value.nil?
       value.to_d.round(4) == value.to_d.round(2) ? money(value) : money(value, decimals: 4)
@@ -155,9 +160,9 @@ module VendorOrders
       pdf.move_down 10
     end
 
-    # A row of label/value cells: Currency · Required By · Prepared By.
+    # A row of label/value cells: Currency · Vendor Ship Due Date (PO date + the vendor's lead time) · Prepared By.
     def info_row(pdf)
-      cells = [ [ "Currency", @po.currency ], [ "Required By", @po.required_by&.strftime("%d %b %Y")&.upcase ], [ "Prepared By", @po.prepared_by ] ]
+      cells = [ [ "Currency", @po.currency ], [ "Vendor Ship Due Date", @po.required_by&.strftime("%d %b %Y")&.upcase ], [ "Prepared By", @po.prepared_by ] ]
       width = pdf.bounds.width / cells.size
       top = pdf.cursor
       cells.each_with_index do |(label, value), i|
@@ -175,7 +180,7 @@ module VendorOrders
     end
 
     COLUMNS = [
-      [ "Our Article No", 78, :left ], [ "Your Article No", 78, :left ], [ "Item Description", 0, :left ],
+      [ "Our Article No", 78, :left ], [ "Vendor Part No.", 78, :left ], [ "Item Description", 0, :left ],
       [ "Qty", 40, :right ], [ "UOM", 52, :center ], [ "Unit Cost", 62, :right ], [ "Line Total", 70, :right ]
     ].freeze
 
@@ -225,7 +230,11 @@ module VendorOrders
       label_x = widths[0..2].sum
       label_w = widths[3] + widths[4] + widths[5]
       top = pdf.cursor
-      rows = [ [ "Total", money(total) ], [ "Total (#{@po.currency})", money(total) ] ]
+      # GST at the vendor's rate (blank when the vendor has none), then the total with GST.
+      rate = @po.vendor.gst_rate
+      gst = rate && (total * rate.to_d / 100).round(2)
+      rows = [ [ "Total", money(total) ], [ rate ? "GST (#{gst_rate_text(rate)}%)" : "GST", gst ? money(gst) : "-" ],
+               [ "Total (#{@po.currency})", money(total + (gst || 0)) ] ]
       rows.each_with_index do |(label, value), i|
         y = top - (i * 18)
         pdf.fill_color i == rows.size - 1 ? HEADER_FILL : "ffffff"
