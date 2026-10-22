@@ -7,6 +7,9 @@ class Product < ApplicationRecord
   has_many :product_conflicts
   has_many :vendor_products, dependent: :restrict_with_error
   has_many :price_changes
+  # Photos of the part (Products → part panel → Images), at most MAX_IMAGES, served by ProductImagesController.
+  has_many_attached :images
+  MAX_IMAGES = 10
 
   # Price history: every change of the customer price (Unit Price per 100 pcs) is kept as a PriceChange.
   attr_accessor :price_source, :price_changed_by, :price_upload_batch

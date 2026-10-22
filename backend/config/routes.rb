@@ -2,7 +2,7 @@ Rails.application.routes.draw do
   get "up" => "rails/health#show", as: :rails_health_check
   # Sidekiq dashboard (password in .env, see config/initializers/sidekiq.rb)
   mount Sidekiq::Web => "/sidekiq" if defined?(Sidekiq::Web)
-  resources :otp_requests, only: [:index], id: /[a-z0-9_]+/ do
+  resources :otp_requests, only: [ :index ], id: /[a-z0-9_]+/ do
     member do
       post :submit
     end
@@ -57,6 +57,7 @@ Rails.application.routes.draw do
         get :pdf
         get :letter
         get :email
+        post :regenerate
       end
     end
     resources :vendors, only: %i[index show create update] do
@@ -72,6 +73,8 @@ Rails.application.routes.draw do
     resource :portal_sync, only: %i[show create], controller: :portal_sync
     resources :products, only: %i[index create update] do
       get :vendors, on: :member
+      # Photos of the part: upload (several files), view one, remove one.
+      resources :images, only: %i[create show destroy], controller: :product_images
     end
     resources :import_issues, only: :index do
       member do

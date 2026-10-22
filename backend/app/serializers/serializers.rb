@@ -160,12 +160,19 @@ module Serializers
                          :updated_at)
                   .merge(pack_size: product.pack_size, moq: qty(product.moq), moq_sets: qty(product.moq_sets), weight_kg: qty(product.weight_kg),
                          customer_price: qty(product.customer_price), customer_currency: AppConfig.business_currency("dtp"))
-                  .merge(open_conflicts: open_conflicts.map { |c| product_conflict(c) })
+                  .merge(open_conflicts: open_conflicts.map { |c| product_conflict(c) }, images: product_images(product))
     return data unless vendors
 
     best = vendors.select(&:price_amount).min_by(&:price_amount)
     data.merge(vendor_count: vendors.size, available_qty: qty(vendors.filter_map(&:available_qty).then { |q| q.any? ? q.sum : nil }),
                best_vendor_price: best && { amount: qty(best.price_amount), currency: best.price_currency, vendor: best.vendor.name })
+  end
+
+  # A part's photos (oldest first): id, file name and the address that serves it (ProductImagesController#show).
+  def product_images(product)
+    product.images.sort_by(&:created_at).map do |image|
+      { id: image.id, filename: image.filename.to_s, url: "/api/products/#{product.id}/images/#{image.id}" }
+    end
   end
 
   def import_issue(issue)

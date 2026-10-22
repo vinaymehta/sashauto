@@ -97,6 +97,15 @@ module Api
       render json: { data: Serializers.vendor_order(order) }
     end
 
+    # Regenerate PO: rebuilds the saved PO (and Intimation Letter) from the current vendor, part and company details;
+    # the PO number, date, quantity, price and Vendor Ship Due Date stay as placed.
+    def regenerate
+      order = VendorOrder.find(params[:id])
+      order.regenerate_documents!
+      audit("vendor_order.regenerated", subject: order, number: order.number, letter: order.intimation_letter.attached?)
+      render json: { data: Serializers.vendor_order(order.reload) }
+    end
+
     private
 
     # The order row, or (`manual=1`) the manual order, with this id.

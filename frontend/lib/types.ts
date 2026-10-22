@@ -145,6 +145,13 @@ export interface PriceChange {
   upload: string | null;
 }
 
+// A photo of a part, served by the API (Products → part panel → Images).
+export interface ProductImage {
+  id: number;
+  filename: string;
+  url: string;
+}
+
 export interface Product {
   id: number;
   part_number: string;
@@ -163,6 +170,7 @@ export interface Product {
   created_at: string;
   updated_at: string;
   open_conflicts: ProductConflict[];
+  images?: ProductImage[]; // photos, oldest first
   // Products list only: vendors supplying it, the lowest vendor price per piece, pieces vendors have available.
   vendor_count?: number;
   best_vendor_price?: { amount: string; currency: Currency; vendor: string } | null;

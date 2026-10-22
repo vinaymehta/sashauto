@@ -42,7 +42,7 @@ module Api
       FILTERS.each { |name, conditions| scope = where_any(scope, name, conditions) }
       scope, sort, direction = apply_sort(scope, SORTS, default: "part_number")
 
-      products, meta = paginate(scope)
+      products, meta = paginate(scope.with_attached_images)
       meta = meta.merge(sort: sort, direction: direction)
       conflicts = ProductConflict.open.includes(:upload_batch).where(product_id: products.map(&:id)).order(:created_at).group_by(&:product_id)
       vendors = VendorProduct.includes(:vendor).where(product_id: products.map(&:id)).group_by(&:product_id)

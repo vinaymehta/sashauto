@@ -210,7 +210,7 @@ module VendorOrders
         x += widths[i]
       end
       row_top = top - 18
-      body_height = 230
+      body_height = 200 # leaves the totals (with the GST row) and the terms on one page
       @po.lines.each do |line|
         values = [ line.our_article, line.vendor_article, line.description, qty(line.qty), line.uom, unit_cost(line.unit_cost), money(line.total) ]
         x = 0

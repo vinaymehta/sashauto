@@ -172,6 +172,10 @@ function ProductRow({ product, active, canEdit, onOpen }: { product: Product; ac
         className={`cursor-pointer align-middle transition-colors duration-150 hover:bg-neutral-50 [&>td]:h-14 [&>td]:py-2 ${active ? "shadow-[inset_3px_0_0_var(--color-accent)]" : ""}`}>
       <Td>
         <span className="flex items-center gap-2 font-medium">
+          {product.images?.[0] && (
+            // eslint-disable-next-line @next/next/no-img-element -- served by the API behind the session
+            <img src={product.images[0].url} alt="" loading="lazy" className="h-8 w-8 shrink-0 rounded border border-line object-cover" />
+          )}
           {product.part_number}
           {product.open_conflicts.length > 0 && <Badge tone="warn">Conflict</Badge>}
         </span>

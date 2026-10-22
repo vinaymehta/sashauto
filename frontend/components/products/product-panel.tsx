@@ -13,6 +13,7 @@ import { ConfirmDialog } from "../ui/confirm-dialog";
 import { Alert, Spinner } from "../ui/feedback";
 import { Sheet } from "../ui/sheet";
 import { formatAmount, formatCustomer } from "../vendors/price-format";
+import { ProductImages } from "./product-images";
 
 type PartResponse = { product: Product; data: ProductVendor[]; customer_price: string | null; history: PriceChange[] };
 const NUMBER = /^\d+(\.\d{1,4})?$/;
@@ -41,6 +42,7 @@ export function ProductPanel({ productId, canEdit, edit = false, onClose, onSave
         <div className="space-y-4">
           {product.open_conflicts.length > 0 && <ConflictsNotice product={product} onSaved={changed} />}
           <PartDetails product={product} canEdit={canEdit} edit={edit} onSaved={changed} />
+          <ProductImages product={product} canEdit={canEdit} onSaved={changed} />
           <CustomerPrice product={product} price={data.customer_price} canEdit={canEdit} onSaved={changed} />
           <Vendors product={product} items={data.data} canEdit={canEdit} onSaved={changed} />
           <History history={data.history} currency={product.customer_currency ?? "USD"} />

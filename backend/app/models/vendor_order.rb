@@ -64,4 +64,15 @@ class VendorOrder < ApplicationRecord
     intimation_letter.attach(io: StringIO.new(VendorOrders::IntimationLetter.for_order(self)), filename: letter_file_name,
                              content_type: "application/pdf")
   end
+
+  # Rebuilds the saved PDFs from the current data: the PO, and the Intimation Letter only for a vendor at the 0.1% GST
+  # rate (a letter saved for any other vendor is removed).
+  def regenerate_documents!
+    attach_pdf
+    if vendor.intimation_letter?
+      attach_letter
+    elsif intimation_letter.attached?
+      intimation_letter.purge
+    end
+  end
 end

@@ -5,7 +5,7 @@ import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { EmailDraft, OrderUnit, ProductVendor, VendorOrderInfo, VendorOrderPlacementInfo, VendorOrderState } from "@/lib/types";
 import { formatDate, formatDateOnly, formatDateTime, formatQty, todayIst } from "@/lib/format";
-import { AlertIcon, DownloadIcon, FileIcon, MailIcon, PrintIcon } from "../icons";
+import { AlertIcon, DownloadIcon, FileIcon, MailIcon, PrintIcon, RefreshIcon } from "../icons";
 import { useSession } from "../session";
 import { useApi } from "../use-api";
 import { useToast } from "../toast";
@@ -49,12 +49,17 @@ export function VendorOrderSection({ orderId, manual = false, onPlaced }: { orde
         <header className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-100 px-5 py-3">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-muted">Vendor order</h3>
           {state && (
+            <span className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
             <span className="text-xs text-ink-muted">
               Order Qty <span className="tabular font-semibold text-ink">{state.order.qty !== null ? formatQty(state.order.qty) : "—"}</span>
               {state.order.combined ? <> (combined from {state.order.combined} orders)</> : null}
               {state.placements.length > 0 && <>{" · "}Ordered <span className="tabular font-semibold text-ink">{formatQty(state.order.ordered)}</span>
                 {" · "}Open <span className={`tabular font-semibold ${Number(state.order.remaining) > 0 ? "text-dec" : "text-inc"}`}>{formatQty(state.order.remaining)}</span></>}
               {" · "}MOQ <span className="tabular font-semibold text-ink">{state.moq !== null ? formatQty(state.moq) : "—"}</span>
+            </span>
+            {state.placements.length > 0 && (
+              <RegeneratePo orders={state.placements.flatMap((pl) => pl.vendor_orders)} onChanged={() => { reload(); onPlaced?.(); }} />
+            )}
             </span>
           )}
         </header>
@@ -239,14 +244,17 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
         {invalid.length > 0 && <p className="text-xs text-dec">Enter a quantity greater than 0 (up to 3 decimals) for each selected vendor.</p>}
         {!datesSet && <p className="text-xs text-dec">Choose a Vendor Ship Due Date for each selected vendor.</p>}
         {error && <Alert>{error}</Alert>}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-          <span className="text-xs text-ink-muted">
+        {/* The button stays on the right: beside the note when there is room, right-aligned under it otherwise. */}
+        <div className="flex flex-col gap-3 pt-1 sm:flex-row sm:items-center">
+          <span className="min-w-0 flex-1 text-xs text-ink-muted">
             Vendor Ship Due Date: today plus the vendor&apos;s lead time, unless changed; it is printed on the PO. Generating saves each vendor&apos;s
             PO (PDF), with an Intimation Letter for vendors at the 0.1% GST rate, and locks the allocation; the email draft is made from them when you open it.
           </span>
-          <Button variant="primary" size="sm" disabled={!ready || busy} onClick={place}>
-            {busy ? "Generating…" : "Generate PO"}
-          </Button>
+          <span className="shrink-0 self-end sm:self-center">
+            <Button variant="primary" size="sm" disabled={!ready || busy} onClick={place}>
+              {busy ? "Generating…" : "Generate PO"}
+            </Button>
+          </span>
         </div>
       </div>
 
@@ -353,6 +361,52 @@ function EmailDrafts({ placements }: { placements: VendorOrderPlacementInfo[] })
                      draft={data?.data ?? null} error={error?.message} />
       )}
     </section>
+  );
+}
+
+// Regenerate PO (Orders edit permission), in the Vendor order header: rebuilds the saved PO of every vendor order of this
+// order, and the Intimation Letter for a vendor at the 0.1% GST rate, from the current vendor, part and company details
+// (e.g. after correcting a vendor's address or GST rate). PO numbers, dates, quantities, prices and Vendor Ship Due
+// Dates stay as placed.
+function RegeneratePo({ orders, onChanged }: { orders: VendorOrderInfo[]; onChanged?: () => void }) {
+  const admin = can(useSession().user, "orders", "edit");
+  const notify = useToast();
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (!admin || orders.length === 0) return null;
+  const many = orders.length > 1;
+
+  async function regenerate() {
+    setBusy(true);
+    setError(null);
+    try {
+      for (const order of orders) await api.post(`/api/vendor_orders/${order.id}/regenerate`, {});
+      notify(many ? `${orders.length} POs regenerated.` : `PO ${orders[0]!.number} regenerated.`);
+      setConfirming(false);
+      onChanged?.();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not regenerate the PO.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <button type="button" onClick={() => { setError(null); setConfirming(true); }} aria-label="Regenerate PO" title="Regenerate PO"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-neutral-100 hover:text-ink">
+        <RefreshIcon size={15} />
+      </button>
+      {confirming && (
+        <ConfirmDialog title={many ? `Regenerate the ${orders.length} POs of this order?` : `Regenerate PO ${orders[0]!.number}?`}
+                       confirmLabel="Regenerate" busyLabel="Regenerating…" tone="primary" busy={busy} error={error}
+                       onConfirm={regenerate} onCancel={() => setConfirming(false)}>
+          The PO PDF{many ? "s are" : " is"} made again from the current vendor, part and company details, with the Intimation Letter only
+          for a vendor at the 0.1% GST rate. PO number{many ? "s" : ""}, date, quantity, price and Vendor Ship Due Date stay the same.
+        </ConfirmDialog>
+      )}
+    </>
   );
 }
 
