@@ -98,7 +98,8 @@ module Vendors
       problems = unreadable_values(row)
       pack = PackParser.pack_size(description: row[:description], moq: row[:moq], price: row[:price])
       moq = PackParser.moq(row[:moq], pack)
-      price = PackParser.price(row[:price], pack, currencies: CURRENCY_SYMBOLS)
+      # An amount without a currency is in the vendor's own currency (e.g. a Chinese vendor's "271.09" is USD).
+      price = PackParser.price(row[:price], pack, currencies: CURRENCY_SYMBOLS, default: vendors[name.downcase]&.currency.presence || "INR")
       product = Product.find_by(part_number: part)
       product_created = product.nil?
       product ||= Product.create!(part_number: part, source: "manual", created_by: @user)

@@ -11,20 +11,22 @@ import { NotificationBell } from "./notification-bell";
 import { useSession } from "./session";
 import { ToastProvider } from "./toast";
 import { Skeleton } from "./ui/skeleton";
+import { can, homePath, type Section } from "@/lib/permissions";
+import type { User } from "@/lib/types";
 import { useDismiss } from "./use-dismiss";
+import { Alert } from "./ui/feedback";
 import { UserMenu } from "./user-menu";
 
-const NAV = [
-  { href: "/", label: "Dashboard", icon: DashboardIcon, match: (p: string) => p === "/" },
-  { href: "/orders", label: "Orders", icon: TableIcon, match: (p: string) => p.startsWith("/orders") || p.startsWith("/uploads") },
-  { href: "/products", label: "Products", icon: BoxIcon, match: (p: string) => p.startsWith("/products") },
-  { href: "/vendors", label: "Vendors", icon: TruckIcon, match: (p: string) => p.startsWith("/vendors") },
-  { href: "/users", label: "Users", icon: UsersIcon, match: (p: string) => p.startsWith("/users"), adminOnly: true },
-  { href: "/settings", label: "Admin Settings", icon: SettingsIcon, match: (p: string) => p.startsWith("/settings"), adminOnly: true },
+// Each page's section (Users → a user → Permissions); Users itself is for admins only.
+const NAV: { href: string; label: string; icon: typeof DashboardIcon; match: (p: string) => boolean; section?: Section }[] = [
+  { href: "/", label: "Dashboard", icon: DashboardIcon, match: (p: string) => p === "/", section: "dashboard" },
+  { href: "/orders", label: "Orders", icon: TableIcon, match: (p: string) => p.startsWith("/orders") || p.startsWith("/uploads"), section: "orders" },
+  { href: "/products", label: "Products", icon: BoxIcon, match: (p: string) => p.startsWith("/products"), section: "products" },
+  { href: "/vendors", label: "Vendors", icon: TruckIcon, match: (p: string) => p.startsWith("/vendors"), section: "vendors" },
+  { href: "/users", label: "Users", icon: UsersIcon, match: (p: string) => p.startsWith("/users") },
+  { href: "/settings", label: "Admin Settings", icon: SettingsIcon, match: (p: string) => p.startsWith("/settings"), section: "settings" },
 ];
-
-// The Warehouse Manager uses only the Orders page (other pages are admin-only on the server too).
-const MANAGER_PATH = "/orders";
+const allowed = (user: User, item: (typeof NAV)[number]) => (item.section ? can(user, item.section) : user.role === "admin");
 
 // The business view (All / DTP / GMBH, top bar) wraps the whole app.
 export function AppShell({ children }: { children: ReactNode }) {
@@ -48,14 +50,16 @@ function Shell({ children }: { children: ReactNode }) {
   }, [loading, user, router]);
 
   const ready = !loading && !!user;
-  const manager = user?.role === "warehouse_manager";
-  const blocked = manager && !pathname.startsWith(MANAGER_PATH);
+  // A page the user has no access to (permission "none") sends them to the first one they have.
+  const page = NAV.find((item) => item.match(pathname));
+  const blocked = ready && !!page && !allowed(user, page);
+  const home = ready ? homePath(user) : null;
   useEffect(() => {
-    if (ready && blocked) router.replace(MANAGER_PATH);
-  }, [ready, blocked, router]);
-  // No menu until the session is known, so a signed-out visitor or the Warehouse Manager never sees other pages' links.
-  const items = !ready ? [] : manager ? NAV.filter((item) => item.href === MANAGER_PATH)
-    : NAV.filter((item) => !item.adminOnly || user?.role === "admin");
+    if (blocked && home) router.replace(home);
+  }, [blocked, home, router]);
+  const manager = user?.role === "warehouse_manager";
+  // No menu until the session is known, so a signed-out visitor never sees other pages' links.
+  const items = !ready ? [] : NAV.filter((item) => allowed(user, item));
   const current = items.find((item) => item.match(pathname));
 
   // An account created or reset by an admin chooses its own password before anything else.
@@ -137,7 +141,9 @@ function Shell({ children }: { children: ReactNode }) {
           <main className="flex-1 px-4 py-5 sm:px-6">
             {/* Keyed by path (and business view) so each page fades in, and reloads its data for another business. */}
             <div key={`${pathname}:${business}`} className="animate-fade-in">
-              {ready && !blocked ? children : (
+              {ready && !blocked ? children : ready && !home ? (
+                <Alert title="No access yet">Your account has no pages yet. Ask an admin to give you access in Users.</Alert>
+              ) : (
                 <div role="status" aria-label="Loading">
                   <Skeleton className="h-7 w-48" />
                   <Skeleton className="mt-3 h-4 w-96 max-w-full" />

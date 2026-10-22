@@ -7,7 +7,6 @@ module Api
       "description" => "products.description", "weight_kg" => "products.weight_kg"
     }.freeze
 
-    before_action -> { require_role(:admin) }, only: %i[create update]
     # Part details the SASH team adds or edits by hand (the Part Number never changes: orders match on it). An upload
     # only fills a blank Commodity Type, so an edited one stays.
     DETAILS = %i[description sash_part vendor_part commodity_type].freeze

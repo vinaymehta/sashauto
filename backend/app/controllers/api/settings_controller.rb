@@ -2,8 +2,6 @@ module Api
   # The Settings page (admins): business settings saved in the app instead of .env (AppSetting). Each value comes with
   # where it is from: "app" (saved here), "env" (.env) or "none". Secrets are never sent back, only whether they are set.
   class SettingsController < ApplicationController
-    before_action -> { require_role(:admin) }
-
     def index
       render json: { data: AppSetting::DEFINITIONS.map { |d| serialize(d) } }
     end

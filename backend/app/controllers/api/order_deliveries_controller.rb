@@ -3,8 +3,6 @@ module Api
   # number), the Warehouse Manager inbound / outbound. Only an admin removes a wrong mark. The Warehouse Manager's
   # marks email the admins (the India team); every mark shows in the admins' notification bell.
   class OrderDeliveriesController < ApplicationController
-    before_action -> { require_role(:admin) }, only: :destroy
-
     def create
       row = params[:manual] == "1" ? ManualOrder.active.find(params[:order_id]) : OrderRow.find(params[:order_id])
       kind = params.require(:kind).to_s

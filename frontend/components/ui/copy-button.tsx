@@ -24,13 +24,27 @@ export async function copyText(text: string) {
   }
 }
 
+// Copies formatted text (HTML, kept when pasted into an email) with its plain-text version; plain text only where the
+// browser cannot copy HTML.
+export async function copyHtml(html: string, text: string) {
+  try {
+    await navigator.clipboard.write([new ClipboardItem({
+      "text/html": new Blob([html], { type: "text/html" }), "text/plain": new Blob([text], { type: "text/plain" }),
+    })]);
+    return true;
+  } catch {
+    return copyText(text);
+  }
+}
+
 // Copy button that shows "Copied" for a moment. `small`: the compact style of the file buttons on a generated PO.
-export function CopyButton({ text, label = "Copy", small = false }: { text: string; label?: string; small?: boolean }) {
+// `html`: copied as formatted text too.
+export function CopyButton({ text, html, label = "Copy", small = false }: { text: string; html?: string; label?: string; small?: boolean }) {
   const notify = useToast();
   const [copied, setCopied] = useState(false);
 
   async function copy() {
-    if (!(await copyText(text))) {
+    if (!(await (html ? copyHtml(html, text) : copyText(text)))) {
       notify("Could not copy. Select the text and copy it instead.", "error");
       return;
     }

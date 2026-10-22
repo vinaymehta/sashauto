@@ -8,6 +8,8 @@ import { BellIcon, BoxIcon, ChevronDownIcon, ChevronLeftIcon, FileIcon, KeyIcon,
 import { TINTS, type Tint } from "../ui/tint";
 import { useApi } from "../use-api";
 import { useDismiss } from "../use-dismiss";
+import { can } from "@/lib/permissions";
+import { useSession } from "../session";
 import { PortalSyncButton } from "./portal-sync";
 import { SETTINGS_CATEGORIES, SETTINGS_SECTIONS, sectionHref, type SettingsSection } from "./sections";
 
@@ -32,6 +34,7 @@ function useCompanyName() {
 // a search over every settings page and field ("/" focuses it), and (on the main page) "Sync now" for the Deere portal.
 export function SettingsTopBar({ back = false }: { back?: boolean }) {
   const company = useCompanyName();
+  const canSync = can(useSession().user, "settings", "edit");
   return (
     <div className="flex flex-col gap-3 border-b border-line bg-gradient-to-r from-tint-violet via-white to-tint-aqua/60 px-4 py-3 sm:flex-row sm:items-center sm:px-6">
       <div className="flex shrink-0 items-center gap-3">
@@ -49,7 +52,7 @@ export function SettingsTopBar({ back = false }: { back?: boolean }) {
       </div>
       <div className="min-w-0 sm:mx-auto sm:w-full sm:max-w-md"><SettingsSearch /></div>
       {/* "Sync now" on the main Admin Settings page only (not on the pages inside it). */}
-      {back ? <div className="hidden w-48 xl:block" /> : <div className="shrink-0"><PortalSyncButton /></div>}
+      {back || !canSync ? <div className="hidden w-48 xl:block" /> : <div className="shrink-0"><PortalSyncButton /></div>}
     </div>
   );
 }

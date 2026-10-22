@@ -10,6 +10,7 @@ import { useToast } from "@/components/toast";
 import { useApi, useDebounced } from "@/components/use-api";
 import { useListQuery } from "@/components/use-list-query";
 import { ResetPasswordPanel, ROLE_LABEL, UserFormPanel } from "@/components/users/user-form-panel";
+import { PermissionsPanel } from "@/components/users/permissions-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -45,6 +46,8 @@ export default function UsersPage() {
   const filtered = q !== "" || Object.values(list.filters).some(Boolean);
 
   const [editing, setEditing] = useState<User | "new" | null>(null);
+  // The user whose permissions panel is open (a click on the row).
+  const [permissionsOf, setPermissionsOf] = useState<User | null>(null);
   const [resetting, setResetting] = useState<User | null>(null);
   const [toggling, setToggling] = useState<User | null>(null);
   const [busy, setBusy] = useState(false);
@@ -134,7 +137,8 @@ export default function UsersPage() {
                 {data.data.map((u) => {
                   const self = u.id === me?.id;
                   return (
-                    <tr key={u.id} className={u.active ? "" : "text-ink-muted"}>
+                    <tr key={u.id} onClick={() => setPermissionsOf(u)} aria-haspopup="dialog" title="Open permissions"
+                        className={`cursor-pointer transition-colors hover:bg-neutral-50 ${permissionsOf?.id === u.id ? "shadow-[inset_3px_0_0_var(--color-accent)]" : ""} ${u.active ? "" : "text-ink-muted"}`}>
                       <Td className="font-medium">
                         <span className="inline-flex items-center gap-2">{u.name}{self && <Badge>You</Badge>}</span>
                       </Td>
@@ -147,7 +151,7 @@ export default function UsersPage() {
                         </span>
                       </Td>
                       <Td className="tabular">{u.last_login_at ? formatDateTime(u.last_login_at) : <span className="text-ink-faint">Never</span>}</Td>
-                      <Td align="right">
+                      <Td align="right" onClick={(e) => e.stopPropagation()}>
                         <span className="inline-flex items-center gap-1">
                           <button type="button" className={iconButton} onClick={() => setEditing(u)} aria-label={`Edit ${u.name}`} title="Edit user">
                             <PencilIcon size={16} />
@@ -170,6 +174,10 @@ export default function UsersPage() {
         ) : null}
       </Panel>
 
+      {permissionsOf && (
+        <PermissionsPanel key={permissionsOf.id} user={permissionsOf} onClose={() => setPermissionsOf(null)}
+                          onSaved={() => { setPermissionsOf(null); reload(); }} />
+      )}
       {editing && (
         <UserFormPanel user={editing === "new" ? undefined : editing} isSelf={editing !== "new" && editing.id === me?.id}
                        onClose={() => setEditing(null)}

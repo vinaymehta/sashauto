@@ -28,7 +28,6 @@ module Api
       vendor_type: Vendor::TYPES.to_h { |t| [ t, Vendor.sanitize_sql([ "vendors.vendor_type = ?", t ]) ] }
     }.freeze
 
-    before_action -> { require_role(:admin) }, except: %i[index show]
     rate_limit to: 20, within: 1.hour, only: :import, store: RATE_LIMIT_STORE, by: -> { current_user&.id || request.remote_ip },
                with: -> { render_error "Too many imports in a short time. Try again later.", :too_many_requests }
 

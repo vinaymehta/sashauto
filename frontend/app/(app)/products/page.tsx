@@ -1,5 +1,6 @@
 "use client";
 
+import { can } from "@/lib/permissions";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import type { Paginated, Product, VendorImportResult } from "@/lib/types";
@@ -58,7 +59,7 @@ function ProductsView() {
   const [search, setSearch] = useState("");
   const q = useDebounced(search.trim());
 
-  const isAdmin = useSession().user?.role === "admin";
+  const isAdmin = can(useSession().user, "products", "edit"); // Products edit permission
   const { data, error, loading, reload } = useApi<Paginated<Product> & { facets?: { commodity_types: string[] }; customer_currency?: string }>("/api/products", {
     q, ...list.filters, sort: list.sort, direction: list.direction, page: list.page, per_page: list.perPage,
   });

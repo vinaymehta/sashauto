@@ -2,7 +2,6 @@ module Api
   # Vendor orders of one order row (the Orders page detail). Reading is open to signed-in users; generating the POs
   # and ticking "Order placed" is admin-only. POs are not emailed from the app.
   class VendorOrdersController < ApplicationController
-    before_action -> { require_role(:admin) }, only: %i[create preview preview_letter update]
     rate_limit to: 60, within: 1.hour, only: :create, store: RATE_LIMIT_STORE, by: -> { current_user&.id || request.remote_ip },
                with: -> { render_error "Too many placements in a short time. Try again later.", :too_many_requests }
 
@@ -27,7 +26,7 @@ module Api
           vendors: vendors.map { |vp| Serializers.product_vendor(vp) },
           placements: placements.map { |p| Serializers.vendor_order_placement(p) },
           warnings: placements.flat_map { |p| VendorOrders::Placer.moq_warnings(p) },
-          can_place: current_user.admin? && remaining.positive?
+          can_place: current_user.can?(:orders, :edit) && remaining.positive?
         }
       }
     end

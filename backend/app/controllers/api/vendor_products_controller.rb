@@ -4,7 +4,6 @@ module Api
     FIELDS = %i[sash_part vendor_part description pack_size moq moq_sets weight_kg price_amount set_price_amount
                 price_currency price_note available_qty].freeze
 
-    before_action -> { require_role(:admin) }, except: :index
     before_action :load_vendor
 
     def index

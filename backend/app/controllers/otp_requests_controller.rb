@@ -1,5 +1,5 @@
 class OtpRequestsController < ApplicationController
-  skip_before_action :require_login, :require_password_change_done, :limit_warehouse_manager
+  skip_before_action :require_login, :require_password_change_done, :check_section_access
 
   def index
     @requests = OtpHandoff.pending

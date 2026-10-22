@@ -9,6 +9,7 @@ export interface User {
   must_change_password: boolean; // created or reset by an admin: must choose a password before using the app
   last_login_at: string | null;
   created_at: string;
+  permissions: Record<"dashboard" | "orders" | "products" | "vendors" | "settings", "none" | "view" | "edit">; // in effect (admin: edit)
 }
 
 // Response of creating a user or resetting a password. When the email could not be sent, the password is
@@ -414,6 +415,9 @@ export interface OrdersSummary {
   no_qty: number; // open orders without a Qty (nothing to order) and no PO
   below_moq: number;
   aged: number;
+  dispatched: number; // dispatched from SASH Faridabad (any later status too)
+  in_transit: number; // dispatched, not yet delivered to SASH US
+  fulfilled: number; // delivered to Deere
 }
 
 export interface OrdersPage {
@@ -545,7 +549,10 @@ export interface VendorOrderPlacementInfo {
 export interface EmailDraft {
   to: string[];
   subject: string;
-  body: string;
+  body: string; // plain text
+  // The message by paragraph, with SASH's highlights: green / yellow (underlined) or strong (bold underlined).
+  paragraphs?: { text: string; style?: "green" | "yellow" | "strong" }[];
+  html?: string; // the same, formatted, for pasting into an email
 }
 
 export interface VendorOrderWarning { vendor_order_id?: number; vendor_id: number; vendor_name: string; message: string }

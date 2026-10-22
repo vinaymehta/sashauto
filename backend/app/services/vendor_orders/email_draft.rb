@@ -1,103 +1,88 @@
+require "erb"
+
 module VendorOrders
-  # The email an admin sends a vendor with its purchase order and Intimation Letter. The app never sends it: it is shown
-  # in the Order details (Email draft) to copy.
+  # The email an admin sends a vendor with its purchase order (and, for a vendor at the 0.1% GST rate, the Intimation
+  # Letter), in SASH's wording. The app never sends it: it is shown in the Order details (Email draft) to copy, with
+  # its highlights (copied as formatted text, so they stay when pasted into an email).
   #
-  #   EmailDraft.for_order(vendor_order)   # { to, subject, body }
+  #   EmailDraft.for_order(vendor_order)   # { to, subject, body, paragraphs, html }
   class EmailDraft
-    attr_reader :to, :subject, :body
+    # Days after which parts not supplied on time are shipped by Air at the vendor's cost.
+    AIR_SHIPMENT_DAYS = 75
+    # How a paragraph is marked, as in SASH's email: a green or yellow highlight (underlined), or bold underlined.
+    STYLES = {
+      "green" => "background-color:#66ff66;text-decoration:underline;",
+      "yellow" => "background-color:#ffff66;text-decoration:underline;",
+      "strong" => "font-weight:bold;text-decoration:underline;"
+    }.freeze
+
+    attr_reader :to, :subject, :paragraphs
 
     def self.for_order(order)
-      placement = order.vendor_order_placement
-      link = order.vendor.vendor_products.find_by(product_id: placement.product_id)
-      new(vendor: order.vendor, product: placement.product, link: link, number: order.number, date: order.created_at.to_date,
-          qty: order.qty, unit: order.unit, unit_price: order.unit_price, currency: order.price_currency,
-          required_by: order.ship_date || placement.ship_date, sender: placement.placed_by&.name)
+      new(vendor: order.vendor, number: order.number, sender: order.vendor_order_placement.placed_by&.name)
     end
 
-    def initialize(vendor:, product:, link:, number:, date:, qty:, unit:, unit_price:, currency:, required_by:, sender:)
+    def initialize(vendor:, number:, sender:)
       @vendor = vendor
-      @product = product
-      @link = link
       @number = number
-      @date = date
-      @qty = qty
-      @unit = unit
-      @unit_price = unit_price
-      @currency = currency.presence || "INR"
-      @required_by = required_by
       @sender = sender
       @company = AppConfig.company
       @to = vendor.email.to_s.split(/\s*[,;]\s*/).map(&:strip).reject(&:empty?)
       @subject = "Purchase Order #{number} - #{@company[:name]}"
-      @body = build_body
+      @paragraphs = build_paragraphs
+    end
+
+    # Plain text (a blank line between paragraphs; the signature lines together).
+    def body
+      paragraphs.map { |p| p[:text] }.join("\n\n")
+    end
+
+    # The same email as HTML, with its highlights, for pasting into an email.
+    def html
+      paragraphs.map do |p|
+        text = ERB::Util.html_escape(p[:text]).gsub("\n", "<br>")
+        text = %(<span style="#{STYLES.fetch(p[:style])}">#{text}</span>) if p[:style]
+        "<p style=\"margin:0 0 12px;\">#{text}</p>"
+      end.join
     end
 
     def as_json(*)
-      { to: to, subject: subject, body: body }
+      { to: to, subject: subject, body: body, paragraphs: paragraphs, html: html }
     end
 
     private
 
-    def build_body
-      contact = [ @vendor.salutation, @vendor.first_name, @vendor.last_name ].compact_blank.join(" ")
-      items = [
-        [ "Part Number", part_number ],
-        [ "Description", @link&.description.presence || @product&.description ],
-        [ "Quantity", "#{qty_text(@qty)} #{uom}" ],
-        [ "Unit Price", (@unit_price && "#{@currency} #{price_text(@unit_price)} per #{per}") ],
-        [ "Vendor Ship Due Date", @required_by&.strftime("%-d %b %Y") ]
-      ].select { |_, value| value.present? }
-      width = items.map { |label, _| label.size }.max
-      signature = [ @sender, @company[:name],
-                    [ @company[:phone], @company[:email] ].compact_blank.join(" | ").presence ].compact_blank
-
-      <<~TEXT
-        Dear #{contact.presence || 'Sir/Madam'},
-
-        Please find attached our Purchase Order No. #{@number} dated #{@date.strftime('%-d %b %Y')}#{letter_text}.
-
-        #{items.map { |label, value| "#{"#{label}:".ljust(width + 1)}  #{value}" }.join("\n")}
-
-        Kindly acknowledge this order and confirm the dispatch date.
-
-        Thanks & Regards,
-        #{signature.join("\n")}
-      TEXT
+    def build_paragraphs
+      [
+        { text: "#{greeting}," },
+        { text: "Please find PO #{@number} from SASH as attached." },
+        { text: "The Labels for the parts on this PO shall be Plain. Only mentioning the SASH Parts numbers.", style: "green" },
+        (if @vendor.intimation_letter?
+           { text: "The GST intimation letter is also attached. Request you to submit the same in your Department and send us back " \
+                   "the scanned copy of the Department receiving.", style: "yellow" }
+         end),
+        { text: "Kindly let us know via return email if you can send the parts on this PO by the mentioned date. If not, let us " \
+                "know the next firm, best date, as we need to enter that date into our system." },
+        { text: "At the same time, we would need to remind you that in case the correct parts are not supplied by you on time at " \
+                "a max of #{AIR_SHIPMENT_DAYS} days, they will come under a category where they shall have to be shipped by Air at " \
+                "your cost. It is at the discretion of the buyer whether to ask for supplying the entire lot or some quantity or " \
+                "maybe even not asking for shipment by Air. But, if that happens, the cost would be debited to your account.",
+          style: "strong" },
+        { text: "Thus, better to have the parts supplied on time." },
+        { text: "This implies for the parts in the current PO, or current open orders at your end and those parts' quantities " \
+                "that would be issued in future to you." },
+        { text: "Please confirm." },
+        { text: [ "Regards,", @sender, @company[:name], [ @company[:phone], @company[:email] ].compact_blank.join(" | ").presence ]
+                  .compact_blank.join("\n") }
+      ].compact
     end
 
-    # The Intimation Letter goes with the PO only for a vendor at the concessional GST rate of 0.1%.
-    def letter_text
-      @vendor.intimation_letter? ? ", together with the Intimation Letter for supply at the concessional GST rate of 0.1% (goods for export)" : ""
-    end
+    # "Dear Gaurav ji" for an Indian vendor's contact (first name), "Dear Gaurav" abroad, else "Dear Sir/Madam".
+    def greeting
+      name = @vendor.first_name.presence || @vendor.contact_name
+      return "Dear Sir/Madam" if name.blank?
 
-    # SASH's part number, then the vendor's own when it has one.
-    def part_number
-      ours = @link&.sash_part.presence || @product&.sash_part.presence || @product&.part_number
-      theirs = @link&.vendor_part.presence || @product&.vendor_part.presence
-      theirs && theirs != ours ? "#{ours} (your part no. #{theirs})" : ours
-    end
-
-    def pack
-      [ @link&.pack_size || @product&.pack_size || 1, 1 ].max
-    end
-
-    def uom
-      @unit == "pcs" || pack <= 1 ? "pcs" : "sets of #{pack} pcs"
-    end
-
-    def per
-      @unit == "pcs" || pack <= 1 ? "pc" : "set"
-    end
-
-    def qty_text(value)
-      number = value.to_d
-      number == number.round ? number.to_i.to_s : number.to_s("F")
-    end
-
-    def price_text(value)
-      decimals = value.to_d.round(4) == value.to_d.round(2) ? 2 : 4
-      whole, frac = format("%.#{decimals}f", value.to_d.round(decimals)).split(".")
-      "#{whole.reverse.scan(/\d{1,3}/).join(',').reverse}.#{frac}"
+      @vendor.gst_treatment == "overseas" ? "Dear #{name}" : "Dear #{name} ji"
     end
   end
 end

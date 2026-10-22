@@ -77,19 +77,20 @@ module Vendors
     end
 
     # Price per piece and per set (one may be derived), currency, and any leftover text as a note.
-    # Returns a Price with nil amounts when no amount can be read (the whole text becomes the note).
-    def price(value, pack, currencies:)
-      return Price.new(pc: nil, set: nil, currency: "INR", note: nil) if value.nil? || text(value).empty?
-      return Price.new(pc: (value.to_d / pack).round(4), set: value.to_d, currency: "INR", note: nil) if value.is_a?(Numeric)
+    # Returns a Price with nil amounts when no amount can be read (the whole text becomes the note). `default`: the
+    # currency of an amount written without one (the vendor's currency; INR for an Indian vendor).
+    def price(value, pack, currencies:, default: "INR")
+      return Price.new(pc: nil, set: nil, currency: default, note: nil) if value.nil? || text(value).empty?
+      return Price.new(pc: (value.to_d / pack).round(4), set: value.to_d, currency: default, note: nil) if value.is_a?(Numeric)
 
       t = text(value)
       # European style with the currency after the amount: "25,40€" → €25.40.
       if (m = t.match(/\A(\d+),(\d{1,2})\s*#{CURRENCY}\s*\z/i) || t.match(/\A(\d+)(?:\.(\d+))?\s*#{CURRENCY}\s*\z/i))
         set = "#{m[1]}.#{m[2] || 0}".to_d
-        return Price.new(pc: (set / pack).round(4), set: set, currency: currencies.fetch(m[3].to_s.upcase, "INR"), note: nil)
+        return Price.new(pc: (set / pack).round(4), set: set, currency: currencies.fetch(m[3].to_s.upcase, default), note: nil)
       end
       parts = price_parts(t)
-      currency = currencies.fetch(parts[:currency].to_s.upcase, "INR")
+      currency = currencies.fetch(parts[:currency].to_s.upcase, default)
       if parts[:pc] || parts[:set]
         pc = parts[:pc] || (parts[:set] / pack).round(4)
         set = parts[:set] || parts[:pc] * pack
@@ -98,9 +99,9 @@ module Vendors
       # A bare amount ("4.25", "GBP 4.04", "$1.5 EX CHINA"): the price of one set.
       if (m = t.match(/\A#{CURRENCY}?\s*(#{NUMBER})\s*(.*)\z/i))
         set = num(m[2])
-        return Price.new(pc: (set / pack).round(4), set: set, currency: currencies.fetch(m[1].to_s.upcase, "INR"), note: m[3].strip.presence)
+        return Price.new(pc: (set / pack).round(4), set: set, currency: currencies.fetch(m[1].to_s.upcase, default), note: m[3].strip.presence)
       end
-      Price.new(pc: nil, set: nil, currency: "INR", note: t.first(200))
+      Price.new(pc: nil, set: nil, currency: default, note: t.first(200))
     end
 
     # { pc:, set:, currency: } from "₹12 per pc (₹60 per Set)"-style text.

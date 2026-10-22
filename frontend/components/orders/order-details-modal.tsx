@@ -1,5 +1,6 @@
 "use client";
 
+import { can } from "@/lib/permissions";
 import { createContext, Fragment, useContext, useState, type ReactNode } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { OrderHistory, OrderRow, ScheduleGroup } from "@/lib/types";
@@ -213,7 +214,7 @@ function ScheduleTr({ r, current, description, today, member = false, manual = f
   removable?: boolean; takenOut?: boolean; anchorId?: number; onChanged?: () => void;
 }) {
   const notify = useToast();
-  const admin = useSession().user?.role === "admin";
+  const admin = can(useSession().user, "orders", "edit"); // Orders edit permission
   const [busy, setBusy] = useState(false);
   const age = r.qty === null ? null : ageGroup(r.firm_date, today); // as the Firm Date column
 
@@ -303,7 +304,7 @@ function CombinedTr({ group, members, expanded, description, onToggle }: {
 // orders of the same PO + Part + Type by hand (not after its PO is generated).
 function CombinedActions({ group, rows, onChanged }: { group: ScheduleGroup; rows: Map<number, OrderRow>; onChanged?: () => void }) {
   const notify = useToast();
-  const admin = useSession().user?.role === "admin";
+  const admin = can(useSession().user, "orders", "edit"); // Orders edit permission
   const [adding, setAdding] = useState(false);
   const [chosen, setChosen] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);

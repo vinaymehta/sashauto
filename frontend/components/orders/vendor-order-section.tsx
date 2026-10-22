@@ -1,5 +1,6 @@
 "use client";
 
+import { can } from "@/lib/permissions";
 import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { EmailDraft, OrderUnit, ProductVendor, VendorOrderInfo, VendorOrderPlacementInfo, VendorOrderState } from "@/lib/types";
@@ -359,7 +360,7 @@ function EmailDrafts({ placements }: { placements: VendorOrderPlacementInfo[] })
 // Removing the tick asks first. `onChanged`: after a change (the Orders list shows "Order placed" once every PO is ticked).
 function OrderPlacedTick({ order, onChanged }: { order: VendorOrderInfo; onChanged?: () => void }) {
   const notify = useToast();
-  const admin = useSession().user?.role === "admin";
+  const admin = can(useSession().user, "orders", "edit"); // Orders edit permission
   const [current, setCurrent] = useState(order);
   const [saving, setSaving] = useState(false);
   const [confirming, setConfirming] = useState(false);

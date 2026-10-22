@@ -1,5 +1,6 @@
 "use client";
 
+import { can } from "@/lib/permissions";
 import Link from "next/link";
 import { useSession } from "@/components/session";
 import { CATEGORY_STYLE, SettingsTopBar } from "@/components/settings/settings-chrome";
@@ -9,8 +10,8 @@ import { Alert } from "@/components/ui/feedback";
 
 // Admin Settings: every settings page in cards by category; a page opens the settings window (/settings/[section]).
 export default function SettingsPage() {
-  const admin = useSession().user?.role === "admin";
-  if (!admin) return <Alert title="Admins only">Only an admin can change the settings.</Alert>;
+  const admin = can(useSession().user, "settings");
+  if (!admin) return <Alert title="No access">You do not have access to Admin Settings.</Alert>;
 
   return (
     <div className="-mx-4 -my-5 min-h-[calc(100vh-3.5rem)] bg-neutral-50 sm:-mx-6">

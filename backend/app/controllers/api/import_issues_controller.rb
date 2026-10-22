@@ -4,7 +4,6 @@ module Api
   # vendor details / tax officer file that was not saved (kind "vendor_details") is linked to an existing vendor
   # (its details go onto that vendor) or added as a new vendor.
   class ImportIssuesController < ApplicationController
-    before_action -> { require_role(:admin) }, except: :index
     before_action :load_open_issue, except: :index
 
     def index

@@ -31,6 +31,9 @@ module AppConfig
 
   # Comma-separated. When blank, notifications go to every active Admin user.
   # SASH (the buyer) on vendor purchase order PDFs: header, delivery and invoice address.
+  # SASH's CIN and PAN (from its purchase orders), unless set in Admin Settings.
+  COMPANY_DEFAULTS = { cin: "U35123DL209PTC188497", pan: "AAMCS8709B" }.freeze
+
   def company
     {
       name: setting("COMPANY_NAME", "SASH Autotech Pvt. Ltd."),
@@ -38,7 +41,9 @@ module AppConfig
       gst: setting("COMPANY_GST", ""),
       phone: setting("COMPANY_PHONE", ""),
       email: setting("COMPANY_EMAIL", ""),
-      terms_url: setting("COMPANY_TERMS_URL", "")
+      terms_url: setting("COMPANY_TERMS_URL", ""),
+      cin: setting("COMPANY_CIN", COMPANY_DEFAULTS[:cin]),
+      pan: setting("COMPANY_PAN", COMPANY_DEFAULTS[:pan])
     }
   end
 

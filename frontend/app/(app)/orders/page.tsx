@@ -1,11 +1,12 @@
 "use client";
 
+import { can } from "@/lib/permissions";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { createContext, memo, Suspense, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import type { Dashboard, OrderRow, OrdersPage, OrdersSummary, Role, UploadChoice, UploadDetail } from "@/lib/types";
 import { formatCount, formatDate, formatQty } from "@/lib/format";
-import { AlertIcon, ArrowUpDownIcon, FileIcon, HistoryIcon, MapPinIcon, TableIcon } from "@/components/icons";
+import { AlertIcon, ArrowUpDownIcon, CheckIcon, FileIcon, HistoryIcon, MapPinIcon, TableIcon, TruckIcon } from "@/components/icons";
 import { AddressChangesTable } from "@/components/address-changes-table";
 import { ChangesTable } from "@/components/changes-table";
 import { MoqAlertsTable } from "@/components/moq-alerts-table";
@@ -167,6 +168,10 @@ function buildColumns(columns: { key: string; label: string }[], uploadId?: numb
   });
 }
 
+// Delivery tabs: the order rows with a fixed Status. Dispatched = left SASH Faridabad (whatever happened since, with the
+// SASH India Invoice No.), In transit = dispatched but not yet at SASH US, Orders fulfilled = delivered to Deere.
+const STATUS_TABS: Record<string, string> = { dispatched: "dispatched,inbound,outbound", transit: "dispatched", fulfilled: "outbound" };
+
 // Imported and manual orders have separate ids.
 const rowKey = (row: OrderRow) => `${row.manual ? "m" : "r"}${row.id}`;
 
@@ -181,6 +186,7 @@ const OrderTr = memo(function OrderTr({ row, columns, open, today, role, onChang
   return (
     <tr className={`${tint.className} ${open ? "shadow-[inset_3px_0_0_var(--color-accent)]" : ""}`} title={tint.title}>
       <Td><DeliveryCell row={row} role={role} onChanged={onChanged} /></Td>
+      <Td className="tabular">{row.deliveries?.dispatched?.invoice_number ?? <span className="text-neutral-300">—</span>}</Td>
       {columns.map((c) => (
         <Td key={c.key} align={c.align === "right" ? "right" : "left"}>{c.render(row)}</Td>
       ))}
@@ -211,16 +217,24 @@ function OrdersView() {
   const [search, setSearch] = useState("");
   const term = useDebounced(search.trim());
   const role = useSession().user?.role;
-  const admin = role === "admin";
+  const me = useSession().user;
+  // Orders edit permission: upload files, add orders, generate POs. Without it the Orders are view-only (delivery
+  // marks still follow the role).
+  const admin = can(me, "orders", "edit");
   // The Warehouse Manager sees only the order rows (no uploads, versions or detections) and marks deliveries.
-  const manager = role === "warehouse_manager";
+  const manager = !admin;
 
   // Which upload's order data is shown: null = the current data (latest upload + manual orders).
   const [uploadId, setUploadId] = useState<number | null>(null);
   const uploads = useApi<{ data: UploadChoice[] }>(manager ? null : "/api/uploads/history");
 
+  type TabKey = "orders" | "dispatched" | "transit" | "fulfilled" | "changes" | "addresses" | "moq";
+  const [tab, setTab] = useState<TabKey>(params.get("tab") === "changes" ? "changes" : "orders");
+  // On a delivery tab (current data only) the list has that tab's Status instead of the Status filter.
+  const statusTab = uploadId === null ? STATUS_TABS[tab] : undefined;
+
   const { data, error, loading, reload } = useApi<OrdersPage>("/api/orders", {
-    search: term, ...list.filters, today: todayParam(), sort: list.sort, direction: list.direction, page: list.page, per_page: list.perPage,
+    search: term, ...list.filters, status: statusTab ?? list.filters.status, today: todayParam(), sort: list.sort, direction: list.direction, page: list.page, per_page: list.perPage,
     upload_id: uploadId ?? undefined,
   });
 
@@ -286,7 +300,7 @@ function OrdersView() {
 
   // Detection results of the shown upload (formerly Upload / Detection), as tabs next to the order rows.
   // For the current data they include the detections of manual orders created/edited since the latest upload.
-  const dashboard = useApi<Dashboard>(manager ? null : "/api/dashboard");
+  const dashboard = useApi<Dashboard>(can(me, "dashboard") ? "/api/dashboard" : null);
   const latest = dashboard.data?.latest_upload;
   const current = uploadId === null || uploadId === latest?.id;
   const previous = useApi<{ data: UploadDetail }>(current ? null : `/api/uploads/${uploadId}`);
@@ -296,8 +310,15 @@ function OrdersView() {
   const quantityChanges = (shown?.stats.increase_count ?? 0) + (shown?.stats.decrease_count ?? 0) + (shown?.stats.new_row_count ?? 0) + (shown?.stats.missing_row_count ?? 0) + (manual?.quantity_changes ?? 0);
   const addressChanges = (shown?.stats.address_change_count ?? 0) + (manual?.address_changes ?? 0);
   const moqAlerts = (shown?.stats.moq_alert_count ?? 0) + (manual?.moq_alerts ?? 0);
+  // The delivery tabs fix the Status, so its filter is not offered there.
+  const listFilters = statusTab ? filters.filter((g) => g.key !== "status") : filters;
   const tabs = [
-    { key: "orders" as const, label: "Orders", icon: <TableIcon size={17} />, count: data?.meta.total ?? null },
+    { key: "orders" as const, label: "Orders", icon: <TableIcon size={17} />, count: statusTab ? null : data?.meta.total ?? null },
+    ...(uploadId === null && summary.data ? [
+      { key: "dispatched" as const, label: "Dispatched", icon: <TruckIcon size={17} />, count: summary.data.dispatched },
+      { key: "transit" as const, label: "In transit", icon: <TruckIcon size={17} />, count: summary.data.in_transit },
+      { key: "fulfilled" as const, label: "Orders fulfilled", icon: <CheckIcon size={17} />, count: summary.data.fulfilled },
+    ] : []),
     ...(!shown || (isFirst && quantityChanges + addressChanges === 0) ? [] : [
       { key: "changes" as const, label: "Quantity changes", icon: <ArrowUpDownIcon size={17} />, count: quantityChanges },
       { key: "addresses" as const, label: "Address changes", icon: <MapPinIcon size={17} />, count: addressChanges },
@@ -306,8 +327,6 @@ function OrdersView() {
       { key: "moq" as const, label: "MOQ alerts", icon: <AlertIcon size={17} />, count: moqAlerts },
     ]),
   ];
-  type TabKey = (typeof tabs)[number]["key"];
-  const [tab, setTab] = useState<TabKey>(params.get("tab") === "changes" ? "changes" : "orders");
   // Change type the Quantity changes tab starts filtered on (set by clicking a summary card).
   const [changeFilter, setChangeFilter] = useState<string | undefined>(undefined);
   // Fall back to the order rows when the chosen tab no longer exists (e.g. a new first upload).
@@ -400,9 +419,9 @@ function OrdersView() {
         <ListToolbar summary={data ? `${formatCount(data.meta.total)} order row${data.meta.total === 1 ? "" : "s"}` : ""}>
           <SearchInput label="Search orders" placeholder="Search PO, part, commodity, type, location…" value={search}
                        onSearch={(v) => { setSearch(v); list.resetPage(); }} className="w-full sm:w-80" />
-          <FilterMenu groups={filters} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
+          <FilterMenu groups={listFilters} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
         </ListToolbar>
-        <FilterChips groups={filters} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
+        <FilterChips groups={listFilters} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
         <AgeLegend value={list.filters.age} onChange={(v) => list.setFilter("age", v)} />
 
         {error ? (
@@ -423,6 +442,7 @@ function OrdersView() {
               <thead>
                 <tr>
                   <Th>Status</Th>
+                  <Th>SASH India Invoice</Th>
                   {COLUMNS.map((c) => (c.sortable === false
                     ? <Th key={c.key} align={c.align ?? "left"}>{c.header ?? c.label}</Th>
                     : <SortTh key={c.key} label={c.header ?? c.label} sortKey={c.key} align={c.align ?? "left"}

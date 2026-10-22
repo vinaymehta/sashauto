@@ -109,6 +109,11 @@ module Api
       open = rows.reject { |_, key, *| delivered.include?(key) }
       placed = VendorOrderPlacement.where(order_key: open.map { |r| r[1] }).distinct.pluck(:order_key).to_set
       imported_ids = open.reject(&:last).map(&:first)
+      # Delivery tabs, counted on the same rows as the Orders list (combined orders once): dispatched from Faridabad
+      # (any later status too), in transit (dispatched, not yet at the US warehouse) and fulfilled (delivered to Deere).
+      listed = dataset(UploadBatch.latest_for(current_business))
+      listed = listed.where("order_rows.manual OR order_rows.id NOT IN (?)", combined.hidden.to_a) if combined.hidden.any?
+      statuses = listed.group(Arel.sql(CURRENT_STATUS_SQL)).count
       render json: {
         open: open.size,
         po_pending: open.count { |_, key, qty, _| qty.to_d.positive? && !placed.include?(key) },
@@ -117,7 +122,10 @@ module Api
         no_qty: open.count { |_, key, qty, _| !qty.to_d.positive? && !placed.include?(key) },
         below_moq: (combined.open & imported_ids.to_set).size,
         aged: Ageing::Rules.in_bands(OrderRow.where(id: imported_ids), [ "red" ], request_today,
-                                     combined_ids: combined.groups.values.select(&:combined?).map(&:anchor_id)).count
+                                     combined_ids: combined.groups.values.select(&:combined?).map(&:anchor_id)).count,
+        dispatched: statuses.values_at("dispatched", "inbound", "outbound").compact.sum,
+        in_transit: statuses["dispatched"].to_i,
+        fulfilled: statuses["outbound"].to_i
       }
     end
 
@@ -208,7 +216,7 @@ module Api
         placed: VendorOrderPlacement.exists?(order_key: VendorOrderPlacement.order_key(anchor)),
         # The combined order's Firm Date: the day it reached the MOQ (its orders keep their own).
         firm_date: OrderFirmDate.find_by(order_key: Orders::FirmDates.combined_key(VendorOrderPlacement.order_key(anchor)))&.firm_on,
-        candidate_ids: current_user.admin? ? Orders::Merges.candidates(anchor, combined).map(&:id) : [] }
+        candidate_ids: current_user.can?(:orders, :edit) ? Orders::Merges.candidates(anchor, combined).map(&:id) : [] }
     end
 
     # The Firm Date of a listed row in SQL (sorting): the combined order's own date for a row that starts one, none for

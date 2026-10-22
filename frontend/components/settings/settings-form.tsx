@@ -16,7 +16,10 @@ import { CATEGORY_STYLE } from "./settings-chrome";
 
 // The settings of one group (a Settings page): every field with the value in use, and Save / Discard. A value saved
 // here replaces the one in .env. Secrets are never shown: type a new one to replace it.
-export function SettingsForm({ group, title, description, category }: { group: string; title: string; description: string; category?: string }) {
+// `readOnly`: Admin Settings view permission only (fields locked, no Save).
+export function SettingsForm({ group, title, description, category, readOnly = false }: {
+  group: string; title: string; description: string; category?: string; readOnly?: boolean;
+}) {
   const style = category ? CATEGORY_STYLE[category] : undefined;
   const Icon = style?.icon;
   const notify = useToast();
@@ -57,17 +60,18 @@ export function SettingsForm({ group, title, description, category }: { group: s
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {changed > 0 && <Button variant="ghost" onClick={() => setEdits({})} disabled={saving}>Discard</Button>}
-          <Button variant="primary" onClick={save} disabled={!changed || saving}>
+          {readOnly && <Badge>View only</Badge>}
+          {!readOnly && changed > 0 && <Button variant="ghost" onClick={() => setEdits({})} disabled={saving}>Discard</Button>}
+          {!readOnly && <Button variant="primary" onClick={save} disabled={!changed || saving}>
             {saving ? "Saving…" : changed ? `Save ${changed} change${changed === 1 ? "" : "s"}` : "Saved"}
-          </Button>
+          </Button>}
         </div>
       </header>
       {saveError && <div className="px-6 pt-4"><Alert>{saveError}</Alert></div>}
       {error ? <div className="p-6"><Alert title="Could not load the settings">{error.message}</Alert></div> : loading && !data ? (
         <div className="space-y-4 p-6">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-12 w-full rounded-lg" />)}</div>
       ) : (
-        <div className="divide-y divide-neutral-100">
+        <fieldset disabled={readOnly} className="divide-y divide-neutral-100">
           {items.map((item) => (
             <SettingRow key={item.key} item={item} value={edits[item.key]}
                         onChange={(value) => setEdits((e) => {
@@ -77,7 +81,7 @@ export function SettingsForm({ group, title, description, category }: { group: s
                           return next;
                         })} />
           ))}
-        </div>
+        </fieldset>
       )}
     </div>
   );

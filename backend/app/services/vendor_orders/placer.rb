@@ -89,7 +89,8 @@ module VendorOrders
       product, link, line = draft_line(vendor_id)
       PdfBuilder.preview(vendor: link.vendor, product: product, link: link, qty: line[:qty], unit: line[:unit],
                          unit_price: line[:unit] == "pcs" ? link.price_amount : link.set_price_amount,
-                         required_by: line[:ship_date] || default_ship_date(link.vendor), prepared_by: @user.name)
+                         required_by: line[:ship_date] || default_ship_date(link.vendor), prepared_by: @user.name,
+                         reference: @row.po_number)
     end
 
     # [product, vendor link, allocation line] of one vendor of the allocation.

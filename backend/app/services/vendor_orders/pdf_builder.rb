@@ -6,8 +6,14 @@ module VendorOrders
   # (SASH Faridabad delivers and is invoiced); currency and required-by date; the item line with unit cost and total;
   # notes. `draft` prints DRAFT (preview before placing).
   class PdfBuilder
-    Line = Data.define(:our_article, :vendor_article, :description, :qty, :uom, :unit_cost, :total, :note)
-    Po = Data.define(:number, :date, :vendor, :required_by, :currency, :prepared_by, :lines, :draft)
+    Line = Data.define(:our_article, :part_number, :vendor_article, :description, :qty, :uom, :unit_cost, :total, :note)
+    # `reference`: the customer's (Deere) PO number the order is for.
+    Po = Data.define(:number, :date, :vendor, :required_by, :currency, :prepared_by, :lines, :draft, :reference)
+
+    # The layout for a vendor: overseas vendors get the export purchase order (ExportPdfBuilder), others this one.
+    def self.layout_for(vendor)
+      vendor.gst_treatment == "overseas" ? ExportPdfBuilder : PdfBuilder
+    end
 
     # The SASH logo, as in the email header.
     LOGO = Rails.root.join("app/assets/images/sash-logo-email.png")
@@ -21,27 +27,30 @@ module VendorOrders
     def self.for_order(order)
       placement = order.vendor_order_placement
       link = order.vendor.vendor_products.find_by(product_id: placement.product_id)
-      new(po(number: order.number, date: order.created_at.to_date, vendor: order.vendor, required_by: order.ship_date || placement.ship_date,
-             currency: order.price_currency, prepared_by: placement.placed_by&.name,
-             product: placement.product, link: link, qty: order.qty, unit: order.unit, unit_price: order.unit_price,
-             note: order.price_note, draft: false)).render
+      layout_for(order.vendor).new(po(number: order.number, date: order.created_at.to_date, vendor: order.vendor,
+                                      required_by: order.ship_date || placement.ship_date, currency: order.price_currency,
+                                      prepared_by: placement.placed_by&.name, product: placement.product, link: link, qty: order.qty,
+                                      unit: order.unit, unit_price: order.unit_price, note: order.price_note, draft: false,
+                                      reference: placement.po_number)).render
     end
 
     # A preview (not saved) of the vendor order that placing would create.
-    def self.preview(vendor:, product:, link:, qty:, unit:, unit_price:, required_by:, prepared_by:)
-      new(po(number: "DRAFT", date: Date.current, vendor: vendor, required_by: required_by, currency: link&.price_currency || "INR",
-             prepared_by: prepared_by, product: product, link: link, qty: qty, unit: unit, unit_price: unit_price,
-             note: link&.price_note, draft: true)).render
+    def self.preview(vendor:, product:, link:, qty:, unit:, unit_price:, required_by:, prepared_by:, reference: nil)
+      layout_for(vendor).new(po(number: "DRAFT", date: Date.current, vendor: vendor, required_by: required_by,
+                                currency: link&.price_currency || "INR", prepared_by: prepared_by, product: product, link: link, qty: qty,
+                                unit: unit, unit_price: unit_price, note: link&.price_note, draft: true, reference: reference)).render
     end
 
-    def self.po(number:, date:, vendor:, required_by:, currency:, prepared_by:, product:, link:, qty:, unit:, unit_price:, note:, draft:)
+    def self.po(number:, date:, vendor:, required_by:, currency:, prepared_by:, product:, link:, qty:, unit:, unit_price:, note:, draft:,
+                reference: nil)
       pack = [ link&.pack_size || product&.pack_size || 1, 1 ].max
       uom = unit == "pcs" || pack <= 1 ? "PCS" : "SET of #{pack}"
-      line = Line.new(our_article: link&.sash_part || product&.sash_part, vendor_article: link&.vendor_part || product&.vendor_part,
+      line = Line.new(our_article: link&.sash_part || product&.sash_part, part_number: product&.part_number,
+                      vendor_article: link&.vendor_part || product&.vendor_part,
                       description: link&.description || product&.description, qty: qty, uom: uom, unit_cost: unit_price,
                       total: unit_price && unit_price * qty, note: note)
       Po.new(number: number, date: date, vendor: vendor, required_by: required_by, currency: currency, prepared_by: prepared_by,
-             lines: [ line ], draft: draft)
+             lines: [ line ], draft: draft, reference: reference)
     end
 
     def initialize(po)

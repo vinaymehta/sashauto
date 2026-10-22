@@ -1,5 +1,6 @@
 "use client";
 
+import { homePath } from "@/lib/permissions";
 import { BrandLogo } from "@/components/brand-logo";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent, type KeyboardEvent } from "react";
@@ -24,7 +25,7 @@ export default function LoginPage() {
 
   // Signed in (now or already): go to the user's start page — Orders for the Warehouse Manager, else the Dashboard.
   useEffect(() => {
-    if (!loading && user) router.replace(user.role === "warehouse_manager" ? "/orders" : "/");
+    if (!loading && user) router.replace(homePath(user) ?? "/");
   }, [loading, user, router]);
 
   const emailError = touched.email ? validateEmail(email) : null;

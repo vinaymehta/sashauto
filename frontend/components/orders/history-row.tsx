@@ -1,5 +1,6 @@
 "use client";
 
+import { can } from "@/lib/permissions";
 import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { OrderHistory, OrderRow } from "@/lib/types";
@@ -37,8 +38,7 @@ export function OrderDetailPanel({ row, onClose, onEdit, onDeleted, onPlaced }: 
   row: OrderRow; onClose: () => void; onEdit?: () => void; onDeleted?: () => void; onPlaced?: () => void;
 }) {
   const { data, error, loading, reload } = useApi<OrderHistory>(`/api/orders/${row.id}/history`, { manual: row.manual ? 1 : undefined });
-  const role = useSession().user?.role;
-  const admin = role === "admin";
+  const admin = can(useSession().user, "orders", "edit"); // Orders edit permission
   const notify = useToast();
   const [deleting, setDeleting] = useState(false);
   const [busy, setBusy] = useState(false);

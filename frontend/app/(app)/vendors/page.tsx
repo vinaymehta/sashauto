@@ -1,5 +1,6 @@
 "use client";
 
+import { can } from "@/lib/permissions";
 import { useState } from "react";
 import type { Paginated, Vendor, VendorImportResult } from "@/lib/types";
 import { formatCount } from "@/lib/format";
@@ -40,7 +41,7 @@ const iconButton = "inline-flex h-8 w-8 items-center justify-center rounded-md t
 // Vendors and the parts they supply. Click a vendor to see its parts in the side panel.
 // Admins can add and edit vendors (vendors are not deleted), manage their parts and import the vendor Excel file.
 export default function VendorsPage() {
-  const isAdmin = useSession().user?.role === "admin";
+  const isAdmin = can(useSession().user, "vendors", "edit"); // Vendors edit permission
   const list = useListQuery({}, 100, { key: "name", direction: "asc" });
   const [search, setSearch] = useState("");
   const q = useDebounced(search.trim());

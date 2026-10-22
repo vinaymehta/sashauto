@@ -1,5 +1,6 @@
 "use client";
 
+import { can } from "@/lib/permissions";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useSession } from "@/components/session";
@@ -11,10 +12,11 @@ import { Alert } from "@/components/ui/feedback";
 // The settings window of one page: the top bar (back to Admin Settings, search), the list of every settings page on
 // the left and the page's form on the right.
 export default function SettingsSectionPage() {
-  const admin = useSession().user?.role === "admin";
+  const me = useSession().user;
+  const admin = can(me, "settings");
   const { section: slug } = useParams<{ section: string }>();
   const section = SETTINGS_SECTIONS.find((s) => s.slug === slug);
-  if (!admin) return <Alert title="Admins only">Only an admin can change the settings.</Alert>;
+  if (!admin) return <Alert title="No access">You do not have access to Admin Settings.</Alert>;
   if (!section?.group) {
     return <Alert title="Settings page not found"><Link href="/settings" className="font-medium underline">Back to Admin Settings</Link></Alert>;
   }
@@ -29,7 +31,8 @@ export default function SettingsSectionPage() {
         {/* The form card starts next to the list, keeps a readable width and is only as tall as its fields. */}
         <div className="min-w-0 flex-1 md:p-6">
           <div className="max-w-5xl overflow-hidden bg-white md:rounded-xl md:border md:border-line md:shadow-card">
-            <SettingsForm key={section.slug} group={section.group} title={section.title} description={section.description} category={section.category} />
+            <SettingsForm key={section.slug} group={section.group} title={section.title} description={section.description} category={section.category}
+                          readOnly={!can(me, "settings", "edit")} />
           </div>
         </div>
       </div>

@@ -7,6 +7,12 @@ import { CloseIcon, MailIcon } from "../icons";
 import { CopyButton } from "../ui/copy-button";
 import { Alert, Spinner } from "../ui/feedback";
 
+const PARAGRAPH_STYLE = {
+  green: "bg-[#66ff66] underline",
+  yellow: "bg-[#ffff66] underline",
+  strong: "font-bold underline",
+} as const;
+
 // The email to send a vendor with its PO, in a window over the app like the PDF viewer: To, Subject and the message,
 // with Copy (the message) in the header. Closes on ✕, Escape or a click outside. `draft` is null while it loads.
 export function EmailViewer({ title, draft, error, onClose }: { title: string; draft: EmailDraft | null; error?: string | null; onClose: () => void }) {
@@ -30,7 +36,7 @@ export function EmailViewer({ title, draft, error, onClose }: { title: string; d
         <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3">
           <p className="flex min-w-0 items-center gap-2 truncate text-sm font-semibold text-ink"><MailIcon size={15} className="shrink-0 text-tint-violet-ink" />{title}</p>
           <div className="flex items-center gap-1">
-            {draft && <CopyButton text={draft.body} label="Copy" small />}
+            {draft && <CopyButton text={draft.body} html={draft.html} label="Copy" small />}
             <button type="button" onClick={onClose} aria-label="Close" className="rounded-md p-1.5 text-ink-muted hover:bg-subtle hover:text-ink">
               <CloseIcon size={18} />
             </button>
@@ -52,7 +58,18 @@ export function EmailViewer({ title, draft, error, onClose }: { title: string; d
                 <dd className="break-words text-ink">{draft.subject}</dd>
               </div>
             </dl>
-            <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words px-5 py-4 font-sans text-sm leading-6 text-ink">{draft.body}</pre>
+            {draft.paragraphs ? (
+              // As the email will look: SASH's highlighted and bold underlined lines.
+              <div className="min-h-0 flex-1 space-y-3 overflow-auto px-5 py-4 text-sm leading-6 text-ink">
+                {draft.paragraphs.map((p, i) => (
+                  <p key={i} className="whitespace-pre-wrap break-words">
+                    {p.style ? <span className={PARAGRAPH_STYLE[p.style]}>{p.text}</span> : p.text}
+                  </p>
+                ))}
+              </div>
+            ) : (
+              <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words px-5 py-4 font-sans text-sm leading-6 text-ink">{draft.body}</pre>
+            )}
           </>
         )}
       </div>

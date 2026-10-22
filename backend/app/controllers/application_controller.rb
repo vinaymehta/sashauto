@@ -9,7 +9,7 @@ class ApplicationController < ActionController::Base
   protect_from_forgery with: :exception
   before_action :require_login
   before_action :require_password_change_done
-  before_action :limit_warehouse_manager
+  before_action :check_section_access
 
   rescue_from ActionController::InvalidAuthenticityToken do
     render_error "Your session has expired. Reload the page and try again.", :unprocessable_content, code: "invalid_csrf_token"
@@ -66,16 +66,29 @@ class ApplicationController < ActionController::Base
     render_error "Choose a new password to continue.", :forbidden, code: "password_change_required"
   end
 
-  # What a Warehouse Manager may use: the Orders table (rows, order details) and inbound / outbound delivery marks.
-  # Uploads, detections (quantity / address / MOQ), dashboard, products, vendors and users are admin-only.
-  WAREHOUSE_MANAGER_ACTIONS = {
-    "api/sessions" => :all, "api/orders" => %w[index history by_po by_part], "api/order_deliveries" => %w[create]
+  # The section of the app each controller belongs to (User::SECTIONS; several: any of them). Reading (GET) needs view,
+  # anything else edit (User#can?). :all = every signed-in user; a controller not listed is for admins only.
+  SECTION_OF = {
+    "api/sessions" => :all, "api/activity" => :all,
+    "api/dashboard" => %w[dashboard], "api/stats" => %w[dashboard],
+    "api/orders" => %w[orders], "api/uploads" => %w[orders], "api/manual_orders" => %w[orders], "api/vendor_orders" => %w[orders],
+    "api/order_merges" => %w[orders], "api/order_deliveries" => %w[orders],
+    "api/products" => %w[products], "api/available_parts" => %w[products], "api/product_conflicts" => %w[products],
+    "api/vendors" => %w[vendors], "api/vendor_products" => %w[vendors products], "api/import_issues" => %w[products vendors],
+    "api/settings" => %w[settings], "api/portal_sync" => %w[settings]
   }.freeze
+  # Actions that only need view although they are not a GET: a delivery mark is set by the role it belongs to (the
+  # Warehouse Manager's inbound / outbound with view of the Orders; OrderDeliveriesController checks the kind).
+  VIEW_ACTIONS = { "api/order_deliveries" => %w[create] }.freeze
 
-  def limit_warehouse_manager
-    return unless current_user&.role == "warehouse_manager"
-    allowed = WAREHOUSE_MANAGER_ACTIONS[controller_path]
-    return if allowed == :all || allowed&.include?(action_name)
+  def check_section_access
+    return unless current_user
+    sections = SECTION_OF[controller_path]
+    return if sections == :all || current_user.admin?
+
+    level = request.get? || request.head? || VIEW_ACTIONS[controller_path]&.include?(action_name) ? "view" : "edit"
+    return if sections&.any? { |section| current_user.can?(section, level) }
+
     render_error "You do not have permission to do this.", :forbidden
   end
 

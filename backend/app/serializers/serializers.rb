@@ -4,6 +4,7 @@ module Serializers
 
   def user(user)
     user.slice(:id, :name, :email, :role, :active, :must_change_password, :last_login_at, :created_at)
+        .merge(permissions: user.effective_permissions)
   end
 
   def qty(value)

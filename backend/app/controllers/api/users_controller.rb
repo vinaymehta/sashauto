@@ -95,8 +95,11 @@ module Api
 
     private
 
+    # `permissions`: { section => "none" | "view" | "edit" } (Users → a user → Permissions).
     def user_params
-      params.permit(:name, :email, :role).to_h.symbolize_keys
+      attrs = params.permit(:name, :email, :role).to_h.symbolize_keys
+      attrs[:permissions] = params.require(:permissions).permit(*User::SECTIONS).to_h if params.key?(:permissions)
+      attrs
     end
 
     # An admin cannot lock themselves out, and the last active admin cannot be removed.

@@ -3,8 +3,6 @@ module Api
   # on its own (an order added by hand goes back to normal, unless that would put it straight back into this combined
   # order). Not possible once the PO is generated.
   class OrderMergesController < ApplicationController
-    before_action -> { require_role(:admin) }
-
     # POST /api/orders/:order_id/merges  { member_ids: [...] } — :order_id is the combined order's first order.
     def create
       anchor = OrderRow.find(params[:order_id])

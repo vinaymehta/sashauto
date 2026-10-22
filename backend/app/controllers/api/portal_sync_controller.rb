@@ -2,8 +2,6 @@ module Api
   # Admin Settings → Deere portal: the portal sync's current or last run, and "Run sync now", which starts
   # SecurePortalSyncJob right away (download each business's file from the Deere portal and upload it).
   class PortalSyncController < ApplicationController
-    before_action -> { require_role(:admin) }
-
     def show
       render json: { data: PortalSync.status.merge("running" => PortalSync.running?) }
     end
