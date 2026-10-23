@@ -11,27 +11,27 @@ import { Alert } from "../ui/feedback";
 import { Sheet } from "../ui/sheet";
 import { ROLE_LABEL } from "./user-form-panel";
 
-const LEVELS: { value: Level; label: string; hint: string }[] = [
-  { value: "none", label: "None", hint: "Hidden" },
-  { value: "view", label: "View", hint: "See only" },
-  { value: "edit", label: "Edit", hint: "See and change" },
-];
-
-// Users → a user: what they can do in each section of the app — None (the page is hidden), View (see it, change
-// nothing) or Edit. Admins always have full access. The server enforces the same rules.
+// Users → a user: each section of the app enabled (see and change it: "edit") or disabled (the page is hidden:
+// "none"). Admins always have everything enabled. The server enforces the same rules.
 export function PermissionsPanel({ user, onClose, onSaved }: { user: User; onClose: () => void; onSaved: (user: User) => void }) {
   const notify = useToast();
   const admin = user.role === "admin";
-  const [levels, setLevels] = useState<Record<Section, Level>>(() => ({ ...user.permissions }));
+  const enabledAt = (level: Level) => level !== "none";
+  const [enabled, setEnabled] = useState<Record<Section, boolean>>(
+    () => Object.fromEntries(SECTIONS.map((s) => [s.key, enabledAt(user.permissions[s.key])])) as Record<Section, boolean>,
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const changed = SECTIONS.some((s) => levels[s.key] !== user.permissions[s.key]);
+  const changed = SECTIONS.some((s) => enabled[s.key] !== enabledAt(user.permissions[s.key]));
 
   async function save() {
     setSaving(true);
     setError(null);
     try {
-      const res = await api.patch<{ data: User }>(`/api/users/${user.id}`, { permissions: levels });
+      const res = await api.patch<{ data: User }>(`/api/users/${user.id}`, {
+        // Enabled = see and change (edit), disabled = hidden (none).
+        permissions: Object.fromEntries(SECTIONS.map((s) => [s.key, enabled[s.key] ? "edit" : "none"])),
+      });
       notify(`Permissions of ${user.name} saved.`);
       onSaved(res.data);
     } catch (err) {
@@ -51,7 +51,7 @@ export function PermissionsPanel({ user, onClose, onSaved }: { user: User; onClo
         <header className="border-b border-neutral-100 px-5 py-3">
           <h3 className="text-sm font-semibold text-ink">Permissions</h3>
           <p className="mt-0.5 text-xs text-ink-muted">
-            {admin ? "Admins can see and change everything, and manage users." : "What this user can do in each part of the app. Users is for admins only."}
+            {admin ? "Admins can see and change everything, and manage users." : "Enable a part of the app to let this user see and change it; disabled parts are hidden. Users is for admins only."}
           </p>
         </header>
         {error && <div className="px-5 pt-3"><Alert>{error}</Alert></div>}
@@ -62,27 +62,27 @@ export function PermissionsPanel({ user, onClose, onSaved }: { user: User; onClo
                 <span className="block text-sm font-medium text-ink">{s.label}</span>
                 <span className="block text-xs text-ink-muted">{s.hint}</span>
               </span>
-              <span role="radiogroup" aria-label={`${s.label} access`} className="inline-flex rounded-md border border-line bg-neutral-50 p-0.5">
-                {LEVELS.map((l) => {
-                  const on = (admin ? "edit" : levels[s.key]) === l.value;
-                  return (
-                    <button key={l.value} type="button" role="radio" aria-checked={on} disabled={admin} title={l.hint}
-                            onClick={() => setLevels((current) => ({ ...current, [s.key]: l.value }))}
-                            className={`rounded px-3 py-1 text-xs font-semibold transition-colors disabled:cursor-default ${on
-                              ? l.value === "none" ? "bg-white text-ink shadow-sm" : l.value === "view" ? "bg-tint-aqua text-tint-aqua-ink shadow-sm" : "bg-accent text-white shadow-sm"
-                              : "text-ink-muted hover:text-ink"}`}>
-                      {l.label}
-                    </button>
-                  );
-                })}
-              </span>
+              {/* Enable / disable switch: enabled = see and change the page, disabled = page hidden. */}
+              {(() => {
+                const on = admin || enabled[s.key];
+                return (
+                  <button type="button" role="switch" aria-checked={on} aria-label={`${s.label}: ${on ? "enabled" : "disabled"}`} disabled={admin}
+                          onClick={() => setEnabled((current) => ({ ...current, [s.key]: !current[s.key] }))}
+                          className="inline-flex items-center gap-2.5 rounded-md px-1 py-1 disabled:cursor-default">
+                    <span className={`w-16 text-right text-xs font-semibold ${on ? "text-inc" : "text-ink-muted"}`}>{on ? "Enabled" : "Disabled"}</span>
+                    <span aria-hidden className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${on ? "bg-accent" : "bg-neutral-300"}`}>
+                      <span className={`absolute left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${on ? "translate-x-5" : "translate-x-0"}`} />
+                    </span>
+                  </button>
+                );
+              })()}
             </li>
           ))}
         </ul>
       </section>
       {!admin && user.role === "warehouse_manager" && (
         <p className="mt-3 text-xs text-ink-muted">
-          A Warehouse Manager sets the US delivery marks (Delivered to SASH US, Delivered to Deere) with Orders on View or Edit.
+          A Warehouse Manager sets the US delivery marks (Delivered to SASH US, Delivered to Deere) when Orders is enabled.
         </p>
       )}
     </Sheet>

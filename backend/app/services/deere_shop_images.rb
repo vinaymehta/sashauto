@@ -23,7 +23,7 @@ class DeereShopImages
   RESULT_TIMEOUT = 30       # the search results to appear
   NO_MATCH_SETTLE = 5       # results shown without this part for this long = not in the shop
   PRODUCT_PAGE_TIMEOUT = 60 # the product page (and its image) after clicking the result
-  PAUSE = 2 # seconds between products, to go easy on the shop
+  PAUSE = 3 # seconds after every request to the shop (page load, search, image download), to go easy on it
   MAX_BYTES = 5.megabytes
   TYPES = %w[image/jpeg image/png image/webp].freeze
   # The shop did not show what the script expects (no search box, product page not opening).
@@ -115,10 +115,12 @@ class DeereShopImages
     box.click
     box.send_keys([ :control, "a" ], :backspace)
     box.send_keys(query)
+    sleep PAUSE
     result = find_result(query)
     return false unless result
 
     @driver.execute_script("arguments[0].click();", result)
+    sleep PAUSE
     Selenium::WebDriver::Wait.new(timeout: PRODUCT_PAGE_TIMEOUT).until { @driver.current_url.include?("/p/") && @driver.find_elements(css: MAIN_IMAGE_CSS).any? }
     true
   rescue Selenium::WebDriver::Error::TimeoutError
@@ -178,6 +180,7 @@ class DeereShopImages
   # Downloads the image and adds it to the product (named after the part number), checking it is a real image.
   def attach(product, url)
     response = download(URI(url))
+    sleep PAUSE
     raise "image download failed (HTTP #{response.code})" unless response.is_a?(Net::HTTPSuccess)
     raise "image larger than #{MAX_BYTES / 1.megabyte} MB" if response.body.bytesize > MAX_BYTES
 
@@ -222,6 +225,6 @@ class DeereShopImages
   def open_page(url)
     @driver.get(url)
     Selenium::WebDriver::Wait.new(timeout: PAGE_TIMEOUT).until { @driver.execute_script("return document.readyState") == "complete" }
-    sleep 3 # the shop builds its page (and search box) with JavaScript after loading
+    sleep PAUSE # the shop builds its page (and search box) with JavaScript after loading
   end
 end

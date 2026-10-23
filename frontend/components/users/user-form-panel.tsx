@@ -36,6 +36,9 @@ export function UserFormPanel({ user, isSelf = false, onClose, onSaved, onResetP
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<UserCredentialsResponse | null>(null);
 
+  // A new user must choose their own password at first sign-in (on by default).
+  const [forceChange, setForceChange] = useState(true);
+
   async function save(e?: FormEvent) {
     e?.preventDefault();
     const problems: Record<string, string> = {};
@@ -57,7 +60,7 @@ export function UserFormPanel({ user, isSelf = false, onClose, onSaved, onResetP
         onClose();
         return;
       }
-      const res = await api.post<UserCredentialsResponse>("/api/users", { ...body, password: password || undefined });
+      const res = await api.post<UserCredentialsResponse>("/api/users", { ...body, password: password || undefined, force_password_change: forceChange });
       onSaved();
       if (res.email_sent) {
         notify(`${res.data.name} added. Sign-in details were emailed to ${res.data.email}.`);
@@ -111,6 +114,16 @@ export function UserFormPanel({ user, isSelf = false, onClose, onSaved, onResetP
         {!user && (
           <PasswordField value={password} onChange={setPassword} error={errors.password}
                          hint="Leave blank to generate one. It is emailed to the user." />
+        )}
+        {!user && (
+          <label className="flex cursor-pointer items-start gap-2.5 rounded-md border border-line bg-neutral-50 px-3 py-2.5 text-sm">
+            <input type="checkbox" checked={forceChange} onChange={(e) => setForceChange(e.target.checked)}
+                   className="mt-0.5 h-4 w-4 accent-[var(--color-accent)]" />
+            <span>
+              <span className="block font-medium text-ink">Ask them to set a new password at first sign-in</span>
+              <span className="block text-xs text-ink-muted">Recommended. They can&apos;t use the app until they replace the emailed password with their own.</span>
+            </span>
+          </label>
         )}
         <button type="submit" hidden />
       </form>

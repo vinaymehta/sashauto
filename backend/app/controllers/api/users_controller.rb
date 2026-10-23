@@ -31,7 +31,9 @@ module Api
 
     def create
       password = params[:password].presence || User.generate_password
-      user = User.new(user_params.merge(password: password, must_change_password: true, active: true, created_by: current_user))
+      # The new user must choose their own password at first sign-in, unless the admin unticked it.
+      force = params.key?(:force_password_change) ? ActiveModel::Type::Boolean.new.cast(params[:force_password_change]) : true
+      user = User.new(user_params.merge(password: password, must_change_password: force, active: true, created_by: current_user))
       if user.save
         audit("user.created", subject: user, email: user.email, role: user.role)
         render json: credentials_response(user, password, reset: false), status: :created

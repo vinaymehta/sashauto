@@ -7,9 +7,9 @@ export type Level = "none" | "view" | "edit";
 
 export const SECTIONS: { key: Section; label: string; href: string; hint: string }[] = [
   { key: "dashboard", label: "Dashboard", href: "/", hint: "Order figures, charts and what needs attention" },
-  { key: "orders", label: "Orders", href: "/orders", hint: "Order rows and uploads. Edit: upload files, add orders, generate POs, combine orders" },
-  { key: "products", label: "Products", href: "/products", hint: "Parts, prices and current inventory. Edit: add and change parts and prices" },
-  { key: "vendors", label: "Vendors", href: "/vendors", hint: "Vendors and their parts. Edit: add and change vendors, import vendor files" },
+  { key: "orders", label: "Orders", href: "/orders", hint: "Order rows, uploads, adding orders, generating POs and combining orders" },
+  { key: "products", label: "Products", href: "/products", hint: "Parts, prices, current inventory and images" },
+  { key: "vendors", label: "Vendors", href: "/vendors", hint: "Vendors, their parts and vendor file imports" },
   { key: "settings", label: "Admin Settings", href: "/settings", hint: "Company details, documents, alerts and the portal sync" },
 ];
 
