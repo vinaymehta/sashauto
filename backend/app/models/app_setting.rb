@@ -20,7 +20,6 @@ class AppSetting < ApplicationRecord
     define("COMPANY_GST", "GSTIN", "Company"),
     define("COMPANY_PHONE", "Phone", "Company"),
     define("COMPANY_EMAIL", "Email", "Company"),
-    define("COMPANY_REGISTERED_OFFICE", "Registered office", "Company", kind: :textarea, hint: "Footer of the Intimation Letter"),
     define("COMPANY_TERMS_URL", "Terms and conditions URL", "Company", hint: "Linked on purchase orders"),
     define("COMPANY_CIN", "CIN", "Company", hint: "Printed on purchase orders to overseas vendors", default: AppConfig::COMPANY_DEFAULTS[:cin]),
     define("COMPANY_PAN", "PAN", "Company", hint: "Printed on purchase orders to overseas vendors", default: AppConfig::COMPANY_DEFAULTS[:pan]),

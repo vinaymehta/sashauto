@@ -2,13 +2,21 @@ require "prawn"
 
 module VendorOrders
   # Intimation Letter sent with a vendor PO: tells the vendor (copy to its jurisdictional tax officer) that the goods
-  # are bought for export at the concessional GST rate of 0.1% (Notification No. 40/2017-Central Tax (Rate)). Layout of
-  # SASH's template: the SASH logo and company name, To, Copy to, subject, reference, PO No / Date, declaration, signature.
+  # are bought for export at the concessional GST rate of 0.1% (Notification No. 40/2017-Central Tax (Rate)). Printed on
+  # SASH's letterhead (the page background: its logo, name and line at the top, its addresses at the foot): To, Copy to,
+  # subject, reference, PO No / Date, declaration, signature.
   #
   #   IntimationLetter.for_order(vendor_order)   # the saved letter's PDF
   #   IntimationLetter.preview(vendor:)          # DRAFT, before the PO is generated
   class IntimationLetter
-    LOGO = Rails.root.join("app/assets/images/sash-logo-email.png") # the same SASH logo as on the purchase order
+    # SASH's letterhead, the whole A4 page from its Word letterhead ("Letter Head.doc", 200 dpi), as it shows there: the logo
+    # and name faded like a watermark over one thin line, the addresses at the foot. The background of every page; the
+    # letter is written between its header and its footer (MARGINS).
+    LETTERHEAD = Rails.root.join("app/assets/images/sash-letterhead.png")
+    LETTERHEAD_DPI = 200
+    # Just below the letterhead's rule (about 66 pt down) and just above its footer (about 73 pt up), so a letter with a long
+    # vendor or tax officer address still fits on one page.
+    MARGINS = [ 76, 50, 80, 50 ].freeze
     SIGNATURE = Rails.root.join("app/assets/images/intimation-signature.png")
     Letter = Data.define(:vendor, :po_number, :po_date, :draft)
 
@@ -21,7 +29,7 @@ module VendorOrders
     end
 
     # The export promotion council registration (RCMC), the export period and who signs, from Settings, else .env
-    # (INTIMATION_*, COMPANY_REGISTERED_OFFICE). Not set: left blank in the letter.
+    # (INTIMATION_*). Not set: left blank in the letter. The addresses at the foot come from the letterhead.
     def self.settings
       env = ->(name) { AppConfig.setting(name).to_s.strip }
       {
@@ -30,8 +38,7 @@ module VendorOrders
         rcmc_date: env.("INTIMATION_RCMC_DATE"),
         export_days: env.("INTIMATION_EXPORT_DAYS"),
         signatory_name: env.("INTIMATION_SIGNATORY_NAME"),
-        signatory_title: env.("INTIMATION_SIGNATORY_TITLE"),
-        registered_office: env.("COMPANY_REGISTERED_OFFICE")
+        signatory_title: env.("INTIMATION_SIGNATORY_TITLE")
       }
     end
 
@@ -42,29 +49,19 @@ module VendorOrders
     end
 
     def render
-      pdf = Prawn::Document.new(page_size: "A4", margin: [ 40, 50, 40, 50 ],
+      background = LETTERHEAD.exist? ? { background: LETTERHEAD.to_s, background_scale: 72.0 / LETTERHEAD_DPI } : {}
+      pdf = Prawn::Document.new(page_size: "A4", margin: MARGINS, **background,
                                 info: { Title: "Intimation Letter #{@letter.po_number}", Creator: @company[:name] })
       pdf.font "Helvetica", size: 10
-      header(pdf)
       addresses(pdf)
       subject(pdf)
       body(pdf)
       signature(pdf)
-      footer(pdf)
       watermark(pdf) if @letter.draft
       pdf.render
     end
 
     private
-
-    def header(pdf)
-      top = pdf.cursor
-      pdf.image LOGO.to_s, at: [ 0, top ], height: 30 if LOGO.exist?
-      pdf.text t(@company[:name]), size: 14, style: :bold, align: :center
-      pdf.move_down 10
-      pdf.text "Intimation Letter", size: 12, style: :bold, align: :center
-      pdf.move_down 14
-    end
 
     def addresses(pdf)
       vendor = @letter.vendor
@@ -134,27 +131,10 @@ module VendorOrders
       pdf.text "Yours faithfully,"
       pdf.text t("For #{@company[:name]}"), style: :bold
       pdf.move_down 4
-      pdf.image SIGNATURE.to_s, height: 60 if SIGNATURE.exist? && !@letter.draft
-      pdf.move_down(@letter.draft ? 60 : 4)
+      pdf.image SIGNATURE.to_s, height: 52 if SIGNATURE.exist? && !@letter.draft
+      pdf.move_down(@letter.draft ? 52 : 4)
       pdf.text t(@config[:signatory_name]), style: :bold if @config[:signatory_name].present?
       pdf.text t(@config[:signatory_title]) if @config[:signatory_title].present?
-    end
-
-    # Company address, phone / email and registered office, centred at the bottom of the page.
-    def footer(pdf)
-      lines = [
-        lines_of(@company[:address]).join(", ").presence,
-        [ ("Tel: #{@company[:phone]}" if @company[:phone].present?), ("E Mail: #{@company[:email]}" if @company[:email].present?) ].compact.join(", ").presence,
-        ("Regd. Off.: #{@config[:registered_office]}" if @config[:registered_office].present?)
-      ].compact
-      return if lines.empty?
-
-      pdf.bounding_box([ 0, 14 + (lines.size * 10) ], width: pdf.bounds.width) do
-        pdf.stroke_color "d1d5db"
-        pdf.stroke_horizontal_rule
-        pdf.move_down 4
-        lines.each { |line| pdf.text t(line), size: 8, align: :center, color: "4b5563" }
-      end
     end
 
     def watermark(pdf)
