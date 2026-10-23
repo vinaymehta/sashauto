@@ -83,6 +83,7 @@ module Vendors
           end
         end
       end
+      OverseasCurrency.apply! # overseas vendors are not on INR (their prices may be written without a currency)
       Result.new(vendors_created: counts[:vendors_created], products_created: counts[:products_created],
                  added: counts[:added], updated: counts[:updated], skipped: skipped.first(200), issues: issues)
     rescue Zip::Error, ArgumentError, Roo::Error => e

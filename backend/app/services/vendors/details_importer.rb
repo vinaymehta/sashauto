@@ -120,6 +120,7 @@ module Vendors
           end
         end
       end
+      OverseasCurrency.apply! # the details file marks vendors overseas but has no currency column
       Result.new(kind: @kind.to_s, **counts)
     rescue ActiveRecord::RecordInvalid => e
       raise InvalidFile, "Row for #{e.record.name}: #{e.record.errors.full_messages.to_sentence}. Nothing was imported."
