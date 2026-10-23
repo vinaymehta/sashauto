@@ -17,10 +17,19 @@ class DeereShopImages
   MAIN_IMAGE_CSS = ".imageContainer img".freeze
   # Deere's image server takes the size in the address: ask for a sharper one than the page shows (560 px).
   IMAGE_SIZE = 1000
-  RESULT_TIMEOUT = 10
+  # The shop is slow (its page and search box can take a minute to come up), so each step waits generously.
+  PAGE_TIMEOUT = 90         # a page to load
+  SEARCH_BOX_TIMEOUT = 60   # the search box to appear
+  RESULT_TIMEOUT = 30       # the search results to appear
+  NO_MATCH_SETTLE = 5       # results shown without this part for this long = not in the shop
+  PRODUCT_PAGE_TIMEOUT = 60 # the product page (and its image) after clicking the result
   PAUSE = 2 # seconds between products, to go easy on the shop
   MAX_BYTES = 5.megabytes
   TYPES = %w[image/jpeg image/png image/webp].freeze
+  # The shop did not show what the script expects (no search box, product page not opening).
+  class PageError < StandardError; end
+  # After this many failures in a row the shop is blocking us or has changed: the run stops instead of going on.
+  MAX_FAILURES_IN_A_ROW = 5
   # Lines in the Sidekiq log, tagged [deere_shop].
   def self.logger
     @logger ||= ActiveSupport::Logger.new($stdout).tap do |l|
@@ -42,17 +51,24 @@ class DeereShopImages
     started = Time.current
     @log.info("run started: #{products.size} products")
     open_page(HOME_URL)
+    failures_in_a_row = 0
     products.each_with_index do |product, i|
       query = search_term(product.part_number)
       @log.info("(#{i + 1}/#{products.size}) #{product.part_number}: searching #{query}")
       result = fetch(product, query)
       counts[result] += 1
       missed[result] << product.part_number if missed.key?(result)
+      failures_in_a_row = 0
       sleep PAUSE
     rescue StandardError => e
       counts[:failed] += 1
       missed[:failed] << product.part_number
       log_failure(product, e)
+      failures_in_a_row += 1
+      if failures_in_a_row >= MAX_FAILURES_IN_A_ROW
+        @log.error("stopping: #{failures_in_a_row} failures in a row (the shop is blocking us or has changed); #{products.size - i - 1} parts not tried")
+        break
+      end
       begin
         open_page(HOME_URL) # start the next product from a clean page
       rescue StandardError => e2
@@ -95,7 +111,7 @@ class DeereShopImages
   # Types the part number in the search box and clicks the result whose title starts with "<part number>:". False when
   # the shop shows no such result.
   def open_product_page(query)
-    box = @wait.until { @driver.find_elements(css: SEARCH_BOX_CSS).find(&:displayed?) }
+    box = search_box
     box.click
     box.send_keys([ :control, "a" ], :backspace)
     box.send_keys(query)
@@ -103,18 +119,46 @@ class DeereShopImages
     return false unless result
 
     @driver.execute_script("arguments[0].click();", result)
-    Selenium::WebDriver::Wait.new(timeout: 30).until { @driver.current_url.include?("/p/") && @driver.find_elements(css: MAIN_IMAGE_CSS).any? }
+    Selenium::WebDriver::Wait.new(timeout: PRODUCT_PAGE_TIMEOUT).until { @driver.current_url.include?("/p/") && @driver.find_elements(css: MAIN_IMAGE_CSS).any? }
     true
   rescue Selenium::WebDriver::Error::TimeoutError
-    false
+    # Only "no result for this part" is not found; a product page that does not open is a failure.
+    raise PageError, "the product page did not open after clicking the result"
   end
 
-  # The search dropdown's result for exactly this part number ("AL117012: …"), or nil.
+  # The shop's search box. Its absence means the shop did not show its normal page (an "Access Denied" / bot check
+  # page, a pop-up, or a changed site): a failure, with the page's title, not a part "not found".
+  def search_box
+    Selenium::WebDriver::Wait.new(timeout: SEARCH_BOX_TIMEOUT).until { @driver.find_elements(css: SEARCH_BOX_CSS).find(&:displayed?) }
+  rescue Selenium::WebDriver::Error::TimeoutError
+    raise PageError, "no search box on the page (title: #{@driver.title.inspect})"
+  end
+
+  # The search dropdown's result for exactly this part number ("AL117012: …"), or nil when the shop does not list it:
+  # its results for this search ("TOP RESULTS FOR "AL117012"") have been showing for NO_MATCH_SETTLE seconds without
+  # it. Results that are slow to come are waited for (RESULT_TIMEOUT); if none come at all it is a failure, not "not found".
   def find_result(query)
     xpath = "//*[@role='button'][.//h6[starts-with(normalize-space(.), '#{query.delete("'")}:')]]"
-    Selenium::WebDriver::Wait.new(timeout: RESULT_TIMEOUT).until { @driver.find_elements(xpath: xpath).find(&:displayed?) }
-  rescue Selenium::WebDriver::Error::TimeoutError
-    nil
+    deadline = Time.now + RESULT_TIMEOUT
+    shown_at = nil
+    loop do
+      match = @driver.find_elements(xpath: xpath).find(&:displayed?)
+      return match if match
+
+      if results_shown?(query)
+        shown_at ||= Time.now
+        return nil if Time.now - shown_at >= NO_MATCH_SETTLE
+      end
+      raise PageError, "no search results appeared within #{RESULT_TIMEOUT}s" if Time.now > deadline
+
+      sleep 0.5
+    end
+  end
+
+  # The dropdown shows the shop's results for this search ("TOP RESULTS FOR "AL117012"", or a no-results message).
+  def results_shown?(query)
+    text = @driver.execute_script("return document.body ? document.body.innerText : '';").to_s.upcase
+    text.include?(%(RESULTS FOR "#{query.upcase}")) || text.include?("NO RESULTS")
   end
 
   def main_image_src
@@ -177,7 +221,7 @@ class DeereShopImages
 
   def open_page(url)
     @driver.get(url)
-    @wait.until { @driver.execute_script("return document.readyState") == "complete" }
+    Selenium::WebDriver::Wait.new(timeout: PAGE_TIMEOUT).until { @driver.execute_script("return document.readyState") == "complete" }
     sleep 3 # the shop builds its page (and search box) with JavaScript after loading
   end
 end
