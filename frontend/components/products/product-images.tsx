@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, ApiError } from "@/lib/api";
 import type { Product, ProductImage } from "@/lib/types";
-import { ChevronLeftIcon, ChevronRightIcon, CloseIcon, PlusIcon, TrashIcon } from "../icons";
+import { ChevronLeftIcon, ChevronRightIcon, CloseIcon, ImageOffIcon, PlusIcon, TrashIcon } from "../icons";
 import { useToast } from "../toast";
 import { Button } from "../ui/button";
 import { ConfirmDialog } from "../ui/confirm-dialog";
@@ -81,9 +81,12 @@ export function ProductImages({ product, canEdit, onSaved }: { product: Product;
       </header>
       {error && <div className="px-5 pt-3"><Alert>{error}</Alert></div>}
       {images.length === 0 ? (
-        <p className="px-5 py-5 text-sm text-ink-muted">
-          No images yet.{canEdit && " Add photos of the part: JPG, PNG, WebP or GIF, up to 5 MB each."}
-        </p>
+        <div className="flex items-center gap-3 px-5 py-5 text-sm text-ink-muted">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md border border-dashed border-line bg-neutral-50 text-ink-faint">
+            <ImageOffIcon size={20} />
+          </span>
+          <p>No images yet.{canEdit && " Add photos of the part: JPG, PNG, WebP or GIF, up to 5 MB each."}</p>
+        </div>
       ) : (
         <ul className="grid grid-cols-3 gap-3 p-4 sm:grid-cols-4">
           {images.map((image, i) => (
