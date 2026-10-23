@@ -46,16 +46,16 @@ module Api
       # Every imported row of the upload(s) (not only the current row of each PO + Part + Type).
       dataset = dataset(batches)
       columns = source_columns(batches.first)
-      # Orders inside a combined order (Orders::Combiner) are listed under its first order, not on their own.
+      # Every row of the file is listed on its own, as in the file; the rows of a combined order (Orders::Combiner) share
+      # its PO, status and Firm Date.
       combined = Orders::Combiner.for_batches(batches.map(&:id))
+      load_combined_orders(combined)
       scope = filter(search(dataset, (params[:search].presence || params[:q]).to_s.strip.first(100)), combined)
-      scope = scope.where("order_rows.manual OR order_rows.id NOT IN (?)", combined.hidden.to_a) if combined.hidden.any?
-      scope, sort, direction = apply_sort(scope, sorts_for(columns).merge("firm_date" => firm_date_sql(combined), "ship_date" => ship_date_sql(combined)),
-                                          default: DEFAULT_SORT)
+      scope, sort, direction = apply_sort(scope, sorts_for(columns).merge("firm_date" => firm_date_sql), default: DEFAULT_SORT)
       # Manual orders are always listed first; each part keeps the chosen sort.
       scope = scope.reorder(Arel.sql("order_rows.manual DESC"), *scope.order_values)
 
-      rows, meta = if filtered? || combined.hidden.any?
+      rows, meta = if filtered?
         paginate(scope)
       else
         # Stored rows of the upload (row_count is the number after merging identical rows, not what is listed).
@@ -68,13 +68,14 @@ module Api
       ordered = ordered_by_key(rows)
       order_placed = VendorOrderPlacement.order_placed_keys(ordered.keys)
       deliveries = deliveries_by_key(rows)
-      # A combined order's row shows the combined order's Firm Date (the day it reached the MOQ).
+      # A combined order's rows show the combined order's Firm Date (the day it reached the MOQ).
       # (By position: an imported row and a manual order can share an id.)
-      firm_keys = rows.map { |row| firm_key(row, combined) }
+      firm_keys = rows.map { |row| firm_key(row) }
       firm_dates = Orders::FirmDates.for_keys(firm_keys)
       descriptions = Product.where(part_number: rows.map(&:part_number).uniq).pluck(:part_number, :description).to_h
       render json: {
         data: rows.each_with_index.map do |row, i|
+          # The order's PO and status (a combined order's on each of its rows).
           key = placement_key(row)
           Serializers.order_row(row, source: true).merge(placed: ordered.key?(key), order_placed: order_placed.include?(key),
                                                          ordered_qty: Serializers.qty(ordered[key]),
@@ -94,36 +95,39 @@ module Api
       }
     end
 
-    # Cards above the Orders table, for the current order data (latest upload + manual orders), counting the orders as
-    # listed (a combined order once). open: Firm / Order orders not yet delivered to Deere (outbound); po_pending: open
-    # ones with a Qty and no PO generated yet; below_moq: open ones (single or combined) still below the MOQ; aged:
-    # open ones 90+ days since their Firm Date (age group red, on the browser's `today`).
+    # Cards above the Orders table, for the current order data (latest upload + manual orders), counting rows of the
+    # order file (a combined order counts each of its rows, which share its PO and status). open: Firm / Order rows not
+    # yet delivered to Deere (outbound); po_pending: open ones with a Qty and no PO generated yet; below_moq: open ones
+    # whose order (single or combined) is still below the MOQ; aged: open ones 90+ days since their order's Firm Date
+    # (age group red, on the browser's `today`).
     def summary
       batch_ids = UploadBatch.latest_for(current_business).map(&:id)
       combined = Orders::Combiner.for_batches(batch_ids)
-      rows = OrderRow.where(upload_batch_id: batch_ids, order_type: %w[Firm Order]).where.not(id: combined.hidden.to_a)
-                     .pluck(:id, :group_key, :po_line_number, :ship_date, :qty)
-                     .map { |id, g, line, ship, qty| [ id, Digest::SHA256.hexdigest([ g, line, ship.iso8601 ].join(OrderRows::Normalizer::KEY_SEPARATOR)), qty, false ] }
+      load_combined_orders(combined)
+      anchor_of = @anchor_of
+      imported = OrderRow.where(upload_batch_id: batch_ids, order_type: %w[Firm Order]).pluck(:id, :group_key, :po_line_number, :ship_date, :qty)
+      keys = imported.to_h { |id, g, line, ship, _| [ id, Digest::SHA256.hexdigest([ g, line, ship.iso8601 ].join(OrderRows::Normalizer::KEY_SEPARATOR)) ] }
+      rows = imported.map { |id, *, qty| [ id, keys[anchor_of.fetch(id, id)], qty, false ] }
       rows += manual_orders.where(order_type: %w[Firm Order]).pluck(:id, :qty)
                          .map { |id, qty| [ id, VendorOrderPlacement.order_key(ManualOrder.new(id: id)), qty, true ] }
       delivered = OrderDelivery.active.where(kind: "outbound", order_key: rows.map { |r| r[1] }).distinct.pluck(:order_key).to_set
       open = rows.reject { |_, key, *| delivered.include?(key) }
       placed = VendorOrderPlacement.where(order_key: open.map { |r| r[1] }).distinct.pluck(:order_key).to_set
-      imported_ids = open.reject(&:last).map(&:first)
-      # Delivery tabs, counted on the same rows as the Orders list (combined orders once): in transit (dispatched from
-      # Faridabad, not yet at the US warehouse) and fulfilled (delivered to Deere).
-      listed = dataset(UploadBatch.latest_for(current_business))
-      listed = listed.where("order_rows.manual OR order_rows.id NOT IN (?)", combined.hidden.to_a) if combined.hidden.any?
-      statuses = listed.group(Arel.sql(CURRENT_STATUS_SQL)).count
+      # The orders of the open rows (a combined order's first row for each of its rows).
+      open_orders = open.reject(&:last).map { |id, *| anchor_of.fetch(id, id) }
+      aged = Ageing::Rules.in_bands(OrderRow.where(id: open_orders.uniq), [ "red" ], request_today,
+                                    combined_ids: combined.groups.values.select(&:combined?).map(&:anchor_id)).pluck(:id).to_set
+      # Delivery tabs, counted on the same rows (a combined order's status for each of its rows): in transit (dispatched
+      # from Faridabad, not yet at the US warehouse) and fulfilled (delivered to Deere).
+      statuses = dataset(UploadBatch.latest_for(current_business)).group(Arel.sql(status_sql)).count
       render json: {
         open: open.size,
         po_pending: open.count { |_, key, qty, _| qty.to_d.positive? && !placed.include?(key) },
         # The rest of the open orders: with a vendor PO, or without a Qty (nothing to order).
         po_generated: open.count { |_, key, *| placed.include?(key) },
         no_qty: open.count { |_, key, qty, _| !qty.to_d.positive? && !placed.include?(key) },
-        below_moq: (combined.open & imported_ids.to_set).size,
-        aged: Ageing::Rules.in_bands(OrderRow.where(id: imported_ids), [ "red" ], request_today,
-                                     combined_ids: combined.groups.values.select(&:combined?).map(&:anchor_id)).count,
+        below_moq: open_orders.count { |id| combined.open.include?(id) },
+        aged: open_orders.count { |id| aged.include?(id) },
         in_transit: statuses["dispatched"].to_i,
         fulfilled: statuses["outbound"].to_i
       }
@@ -178,26 +182,40 @@ module Api
     # Status filter (status=none,received,…); without it, fulfilled orders (outbound) are left out.
     def filter_by_status(scope)
       statuses = multi_param(:status, STATUSES)
-      return scope.where("#{CURRENT_STATUS_SQL} <> 'outbound'") if statuses.empty?
+      return scope.where("#{status_sql} <> 'outbound'") if statuses.empty?
 
-      scope.where("#{CURRENT_STATUS_SQL} IN (?)", statuses)
+      scope.where("#{status_sql} IN (?)", statuses)
     end
 
-    # For an imported row that starts a combined order: the combined Qty and its orders; below_moq when the order
-    # (single or combined) is still below the part's MOQ.
+    # The rows of the combined orders (Orders::Combiner): @anchor_of (row id => the combined order's first row) and
+    # @combined_keys (row id => the combined order's placement key, its first row's: its PO, status and Firm Date are
+    # recorded there).
+    def load_combined_orders(combined)
+      @anchor_of = {}
+      @combined_keys = {}
+      combined.groups.each_value do |g|
+        next unless g.combined?
+
+        key = VendorOrderPlacement.order_key(g.members.find { |m| m.id == g.anchor_id })
+        g.members.each do |m|
+          @anchor_of[m.id] = g.anchor_id
+          @combined_keys[m.id] = key
+        end
+      end
+    end
+
+    # For an imported row: below_moq when its order (single or combined) is still below the part's MOQ; for a row of a
+    # combined order, member_of: the combined order's first row (what its PO and status are recorded on), its total Qty
+    # and how many rows it combines.
     def combined_info(row, combined)
       return {} if row[:manual]
 
-      group = combined.groups[row.id]
-      info = { below_moq: combined.open.include?(row.id), moq: group && Serializers.qty(group.moq) }
+      anchor_id = @anchor_of.fetch(row.id, row.id)
+      group = combined.groups[anchor_id]
+      info = { below_moq: combined.open.include?(anchor_id), moq: group && Serializers.qty(group.moq) }
       return info unless group&.combined?
 
-      # A combined order's Ship Date is its last order's.
-      info.merge(ship_date: group.ship_date, combined: { total: Serializers.qty(group.total), moq: Serializers.qty(group.moq),
-                             members: group.members.map do |m|
-                               { id: m.id, po_line_number: m.po_line_number, ship_date: m.ship_date, qty: Serializers.qty(m.qty),
-                                 manual: group.manual_ids.include?(m.id) }
-                             end })
+      info.merge(member_of: { id: anchor_id, total: Serializers.qty(group.total), count: group.members.size })
     end
 
     # Order details header of a row's PO Number + Part Number + Type: the part's Description and MOQ (sets, and pieces
@@ -220,32 +238,56 @@ module Api
         candidate_ids: current_user.can?(:orders, :edit) ? Orders::Merges.candidates(anchor, combined).map(&:id) : [] }
     end
 
-    # The Firm Date of a listed row in SQL (sorting): the combined order's own date for a row that starts one, none for
-    # manual orders (as shown on the page).
-    # The Ship Date of a listed row in SQL: a combined order's last Ship Date on its first row (Combiner::Group#ship_date).
-    def ship_date_sql(combined)
-      lasts = combined.groups.values.select(&:combined?).map { |g| "WHEN #{Integer(g.anchor_id)} THEN DATE '#{g.ship_date.iso8601}'" }
-      return "order_rows.ship_date" if lasts.empty?
-
-      "(CASE WHEN order_rows.manual THEN order_rows.ship_date ELSE (CASE order_rows.id #{lasts.join(' ')} ELSE order_rows.ship_date END) END)"
+    # The Firm Date of a listed row in SQL (sorting, filters): the combined order's own date for its rows, none for manual
+    # orders (as shown on the page).
+    def firm_date_sql
+      "(SELECT f.firm_on FROM order_firm_dates f WHERE NOT order_rows.manual AND f.order_key = #{firm_key_sql})"
     end
 
-    def firm_date_sql(combined)
-      key = Orders::FirmDates.key_sql("order_rows")
-      anchors = combined.groups.values.select(&:combined?).map { |g| Integer(g.anchor_id) }
-      key = "CASE WHEN order_rows.id IN (#{anchors.join(',')}) THEN #{Orders::FirmDates.combined_key_sql(key)} ELSE #{key} END" if anchors.any?
-      "(SELECT f.firm_on FROM order_firm_dates f WHERE NOT order_rows.manual AND f.order_key = #{key})"
+    # The Firm Date key of a listed row in SQL: the combined order's own key (FirmDates.combined_key) for its rows.
+    def firm_key_sql
+      own = Orders::FirmDates.key_sql("order_rows")
+      return own if @combined_keys.empty?
+
+      firm = @combined_keys.transform_values { |key| Orders::FirmDates.combined_key(key) }
+      "(CASE WHEN order_rows.manual THEN #{own} ELSE (CASE order_rows.id #{when_ids(firm)} ELSE #{own} END) END)"
     end
 
-    # Key of a listed row's Firm Date: the combined order's own key when the row starts a combined order.
-    def firm_key(row, combined)
+    # The placement key of a listed row in SQL (VendorOrderPlacement.order_key): by id for manual orders, the combined
+    # order's for its rows.
+    def order_key_sql
+      own = Orders::FirmDates.key_sql("order_rows")
+      imported = @combined_keys.empty? ? own : "(CASE order_rows.id #{when_ids(@combined_keys)} ELSE #{own} END)"
+      "(CASE WHEN order_rows.manual THEN encode(sha256(convert_to('manual' || chr(31) || order_rows.id::text, 'UTF8')), 'hex') ELSE #{imported} END)"
+    end
+
+    # The current status of a listed row in SQL (CURRENT_STATUS_SQL): the combined order's for its rows.
+    def status_sql
+      return CURRENT_STATUS_SQL if @combined_keys.empty?
+
+      ids = @combined_keys.keys.map { |id| Integer(id) }.join(",")
+      combined = "COALESCE((SELECT d.kind FROM order_deliveries d WHERE d.removed_at IS NULL AND d.order_key = (CASE order_rows.id #{when_ids(@combined_keys)} END) " \
+                 "ORDER BY array_position(ARRAY['received', 'dispatched', 'inbound', 'outbound']::varchar[], d.kind) DESC LIMIT 1), 'none')"
+      "(CASE WHEN NOT order_rows.manual AND order_rows.id IN (#{ids}) THEN #{combined} ELSE #{CURRENT_STATUS_SQL} END)"
+    end
+
+    # "WHEN id THEN 'value' …" of a CASE order_rows.id.
+    def when_ids(values)
+      values.map { |id, value| "WHEN #{Integer(id)} THEN #{OrderRow.connection.quote(value)}" }.join(" ")
+    end
+
+    # Key of a listed row's Firm Date: the combined order's own key for its rows.
+    def firm_key(row)
       key = placement_key(row)
-      !row[:manual] && combined.groups[row.id]&.combined? ? Orders::FirmDates.combined_key(key) : key
+      !row[:manual] && @combined_keys.key?(row.id) ? Orders::FirmDates.combined_key(key) : key
     end
 
-    # Placement key of a listed row (an imported row, or a manual order listed with `manual`).
+    # Placement key of a listed row (an imported row, or a manual order listed with `manual`): the combined order's (its
+    # first row's) for the rows of a combined order.
     def placement_key(row)
-      VendorOrderPlacement.order_key(row[:manual] ? ManualOrder.new(id: row.id) : row)
+      return VendorOrderPlacement.order_key(ManualOrder.new(id: row.id)) if row[:manual]
+
+      @combined_keys&.dig(row.id) || VendorOrderPlacement.order_key(row)
     end
 
     # Sets ordered so far (Generate PO) per placement key of the listed rows (in one query).
@@ -392,20 +434,20 @@ module Api
       scope = scope.where(order_type: types) if types.any?
       scope = scope.where(ship_to_location: ship_tos) if ship_tos.any?
       scope = scope.where(commodity_type: commodities) if commodities.any?
-      scope = filter_by_age(scope, combined_ids: combined.groups.values.select(&:combined?).map(&:anchor_id), manual_column: true)
+      ages = multi_param(:age, AGE_GROUPS)
+      scope = Ageing::Rules.in_bands(scope, ages, request_today, firm_key: firm_key_sql) if ages.any?
       scope = filter_by_status(scope)
       scope = filter_by_po(scope)
-      scope = filter_by_combined(scope, combined)
+      scope = filter_by_combined(scope)
       scope = filter_by_moq(scope, combined)
-      scope = filter_by_timing(scope, combined)
+      scope = filter_by_timing(scope)
       scope = filter_by_source(scope)
       scope = filter_by_vendor(scope)
-      scope = filter_by_firm_date(scope, combined)
+      scope = filter_by_firm_date(scope)
       from = iso_date(params[:ship_date_from])
       to = iso_date(params[:ship_date_to])
-      ship = ship_date_sql(combined)
-      scope = scope.where("#{ship} >= ?", from) if from
-      scope = scope.where("#{ship} <= ?", to) if to
+      scope = scope.where("order_rows.ship_date >= ?", from) if from
+      scope = scope.where("order_rows.ship_date <= ?", to) if to
       scope
     end
 
@@ -424,7 +466,8 @@ module Api
       values = multi_param(:moq, %w[below reached])
       return scope if values.empty? || values.size == 2
 
-      open_ids = combined.open.to_a.map { |id| Integer(id) }
+      # Every row of an order still below the MOQ (a combined order's rows too).
+      open_ids = combined.open.flat_map { |id| combined.groups[id].members.map(&:id) }.map { |id| Integer(id) }
       below = "((NOT order_rows.manual AND order_rows.id IN (#{open_ids.presence&.join(',') || 'NULL'})) OR " \
               "(order_rows.manual AND order_rows.qty > 0 AND order_rows.qty < #{MOQ_SQL}))"
       values == [ "below" ] ? scope.where(below) : scope.where("order_rows.qty > 0 AND #{MOQ_SQL} IS NOT NULL AND NOT #{below}")
@@ -432,12 +475,12 @@ module Api
 
     # Ship timing filter (timing=overdue,next30): ship date before today, or from today to 30 days ahead (today = the
     # browser's IST date, as the age colours).
-    def filter_by_timing(scope, combined)
+    def filter_by_timing(scope)
       values = multi_param(:timing, %w[overdue next30])
       return scope if values.empty?
 
       today = request_today
-      ship = ship_date_sql(combined)
+      ship = "order_rows.ship_date"
       conditions = values.map do |v|
         v == "overdue" ? ActiveRecord::Base.sanitize_sql([ "#{ship} < ?", today ]) : ActiveRecord::Base.sanitize_sql([ "#{ship} BETWEEN ? AND ?", today, today + 30 ])
       end
@@ -462,26 +505,26 @@ module Api
     end
 
     # Firm Date range filter (firm_date_from / firm_date_to): by the Firm Date shown (a combined order's own).
-    def filter_by_firm_date(scope, combined)
+    def filter_by_firm_date(scope)
       from = iso_date(params[:firm_date_from])
       to = iso_date(params[:firm_date_to])
       return scope unless from || to
 
-      firm = firm_date_sql(combined)
+      firm = firm_date_sql
       scope = scope.where("#{firm} >= ?", from) if from
       scope = scope.where("#{firm} <= ?", to) if to
       scope
     end
 
-    # Combined filter (combined=yes,no): orders that are a combined order (listed as its first row), or the others.
-    def filter_by_combined(scope, combined)
+    # Combined filter (combined=yes,no): the rows of combined orders, or the others.
+    def filter_by_combined(scope)
       values = multi_param(:combined, %w[yes no])
       return scope if values.empty? || values.size == 2
 
-      anchors = combined.groups.values.select(&:combined?).map(&:anchor_id)
-      return values == [ "yes" ] ? scope.none : scope if anchors.empty?
+      ids = @combined_keys.keys
+      return values == [ "yes" ] ? scope.none : scope if ids.empty?
 
-      condition = scope.sanitize_sql_array([ "NOT order_rows.manual AND order_rows.id IN (?)", anchors ])
+      condition = scope.sanitize_sql_array([ "NOT order_rows.manual AND order_rows.id IN (?)", ids ])
       values == [ "yes" ] ? scope.where(condition) : scope.where.not(condition)
     end
 
@@ -492,9 +535,7 @@ module Api
       values = multi_param(:po, %w[none generated no_qty])
       return scope if values.empty? || values.size == 3
 
-      # The order's placement key (VendorOrderPlacement.order_key) in SQL: by id for manual orders.
-      key = "CASE WHEN order_rows.manual THEN encode(sha256(convert_to('manual' || chr(31) || order_rows.id::text, 'UTF8')), 'hex') " \
-            "ELSE #{Orders::FirmDates.key_sql('order_rows')} END"
+      key = order_key_sql
       placed = "EXISTS (SELECT 1 FROM vendor_order_placements p WHERE p.order_key = #{key})"
       conditions = { "none" => "NOT #{placed} AND order_rows.qty > 0", "generated" => placed,
                      "no_qty" => "NOT #{placed} AND (order_rows.qty IS NULL OR order_rows.qty <= 0)" }

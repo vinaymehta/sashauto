@@ -57,23 +57,15 @@ const text = (value: string | null) => value ?? dash;
 const date = (value: string | null) => (value ? formatDate(value) : dash);
 const qty = (value: string | null) => (value === null ? dash : formatQty(value));
 
-// Qty of an order. A combined order (below-MOQ orders of the same PO + Part + Type combined until the MOQ) shows
-// its total in bold; its orders, and whether it is below the MOQ, are shown in Order details.
+// Qty of the row, as in the file (a row of a combined order too: its total is on the Combined tag and in Order details).
 function QtyCell({ row }: { row: OrderRow }) {
-  const c = row.combined;
-  return (
-    <span className="inline-flex items-center justify-end">
-      <span className={c ? "font-semibold" : ""} title={c ? `Combined from ${c.members.length} orders — see Order details` : undefined}>
-        {qty(c ? c.total : row.qty)}
-      </span>
-    </span>
-  );
+  return <span className="inline-flex items-center justify-end">{qty(row.qty)}</span>;
 }
 
 // "PO generated" when its POs order the whole Qty, "Order placed" once every PO is also ticked as sent to the vendor,
 // else how much is ordered (the rest is still open).
 function OrderedBadge({ row }: { row: OrderRow }) {
-  const total = Number(row.combined ? row.combined.total : row.qty ?? 0);
+  const total = Number(row.member_of?.total ?? row.qty ?? 0);
   const ordered = Number(row.ordered_qty ?? 0);
   if (ordered >= total) return row.order_placed ? <Badge tone="dark">Order placed</Badge> : <Badge tone="up">PO generated</Badge>;
   return <span title={`${formatQty(String(total - ordered))} still to order`}><Badge tone="warn">PO {formatQty(String(ordered))} of {formatQty(String(total))}</Badge></span>;
@@ -88,7 +80,7 @@ function UnitLink({ row }: { row: OrderRow }) {
   const label = <span className="block max-w-64 truncate" title={row.unit ?? undefined}>{text(row.unit)}</span>;
   if (!place || !row.unit?.trim()) return label;
   return (
-    <button type="button" onClick={(e) => { e.stopPropagation(); place(row); }}
+    <button type="button" onClick={(e) => { e.stopPropagation(); place(combinedOrder(row)); }}
             className="max-w-full text-left font-medium text-ink underline decoration-neutral-300 underline-offset-2 transition-colors hover:text-accent hover:decoration-accent">
       {label}
     </button>
@@ -109,10 +101,11 @@ const typedColumns = (uploadId?: number): Record<string, Omit<Column, "key" | "l
     render: (r) => (
       <span className="inline-flex items-center gap-1.5">
         <OrderDetailsLink row={r} />
-        {r.combined && (
-          <span title={`Combined from ${r.combined.members.length} orders — see Order details`}
+        {/* On every row of a combined order. */}
+        {r.member_of && (
+          <span title={`Combined from ${r.member_of.count} orders (total Qty ${formatQty(r.member_of.total)}) — see Order details`}
                 className="inline-flex items-center whitespace-nowrap rounded border border-tint-violet-ink/25 bg-tint-violet px-2 py-0.5 text-xs font-medium text-tint-violet-ink">
-            Combined · {r.combined.members.length}
+            Combined · {r.member_of.count}
           </span>
         )}
         {r.below_moq && (
@@ -175,6 +168,10 @@ const STATUS_TABS: Record<string, string> = { transit: "dispatched", fulfilled: 
 // Imported and manual orders have separate ids.
 const rowKey = (row: OrderRow) => `${row.manual ? "m" : "r"}${row.id}`;
 
+// A row of a combined order stands for the combined order (its first row, with the total Qty) when it opens Order
+// details or Place order or sets the Status: the PO and Status are recorded there. Other rows as they are.
+const combinedOrder = (row: OrderRow): OrderRow => (row.member_of ? { ...row, id: row.member_of.id, qty: row.member_of.total } : row);
+
 // One table row. Memoized: the page re-renders when the dashboard, upload list or tabs load or change, and
 // re-rendering every cell of 50 rows × all Excel columns each time blocked the browser for over a second.
 // One order row (not clickable itself): the PO Number opens its details and the Unit opens Place order. The first
@@ -185,7 +182,8 @@ const OrderTr = memo(function OrderTr({ row, columns, open, today, role, onChang
   const tint = ageRowProps(row.qty === null ? null : row.firm_date, today); // as the Firm Date column
   return (
     <tr className={`${tint.className} ${open ? "shadow-[inset_3px_0_0_var(--color-accent)]" : ""}`} title={tint.title}>
-      <Td><DeliveryCell row={row} role={role} onChanged={onChanged} /></Td>
+      {/* A row of a combined order sets the combined order's Status. */}
+      <Td><DeliveryCell row={combinedOrder(row)} role={role} onChanged={onChanged} /></Td>
       <Td className="tabular">{row.deliveries?.dispatched?.invoice_number ?? <span className="text-neutral-300">—</span>}</Td>
       {columns.map((c) => (
         <Td key={c.key} align={c.align === "right" ? "right" : "left"}>{c.render(row)}</Td>
@@ -197,7 +195,7 @@ const OrderTr = memo(function OrderTr({ row, columns, open, today, role, onChang
 // ?tab=changes opens the Quantity changes tab (e.g. "View all" on the Dashboard).
 // Filter keys a link to the Orders page may set.
 const LINKABLE_FILTERS = ["type", "status", "source", "timing", "ship_date_from", "ship_date_to", "firm_date_from", "firm_date_to", "age",
-  "po", "vendor", "moq", "combined", "commodity_type", "ship_to"];
+  "po", "vendor", "moq", "combined", "ship_to"];
 
 export default function OrdersPage() {
   return (
@@ -263,7 +261,6 @@ function OrdersView() {
     { section: "Purchasing", key: "vendor", label: "Vendor", options: (facets?.vendors ?? []).map((v) => ({ value: String(v.id), label: v.name })) },
     { section: "Purchasing", key: "moq", label: "MOQ", options: [{ value: "below", label: "Below MOQ" }, { value: "reached", label: "Reached MOQ" }] },
     { section: "Purchasing", key: "combined", label: "Combined", options: [{ value: "yes", label: "Combined orders" }, { value: "no", label: "Not combined" }] },
-    { section: "Part & delivery", key: "commodity_type", label: "Commodity Type", options: (facets?.commodity_types ?? []).map((v) => ({ value: v, label: v })) },
     { section: "Part & delivery", key: "ship_to", label: "Ship To Location", options: (facets?.ship_to_locations ?? []).map((v) => ({ value: v, label: v })) },
   ];
   const filtered = term !== "" || Object.values(list.filters).some(Boolean);
@@ -293,6 +290,8 @@ function OrdersView() {
   // Row whose order details are open in the side panel; manual order being edited.
   const [selected, setSelected] = useState<OrderRow | null>(null);
   const [editing, setEditing] = useState<OrderRow | null>(null);
+  // A row of a combined order opens the combined order.
+  const openOrder = useCallback((r: OrderRow) => setSelected(combinedOrder(r)), []);
   const [today] = useState(() => new Date());
   // Row whose Place order panel is open.
   const [placing, setPlacing] = useState<OrderRow | null>(null);
@@ -416,7 +415,7 @@ function OrdersView() {
         ) : (
         <>
         <ListToolbar summary={data ? `${formatCount(data.meta.total)} order row${data.meta.total === 1 ? "" : "s"}` : ""}>
-          <SearchInput label="Search orders" placeholder="Search PO, part, commodity, type, location…" value={search}
+          <SearchInput label="Search orders" placeholder="Search PO, part, type, location…" value={search}
                        onSearch={(v) => { setSearch(v); list.resetPage(); }} className="w-full sm:w-80" />
           <FilterMenu groups={listFilters} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
         </ListToolbar>
@@ -435,7 +434,7 @@ function OrdersView() {
           />
         ) : data ? (
           <div className={`transition-opacity duration-200 ${loading ? "opacity-50" : ""}`}>
-            <OpenOrderContext.Provider value={setSelected}>
+            <OpenOrderContext.Provider value={openOrder}>
             <PlaceOrderContext.Provider value={manager ? null : setPlacing}>
             <Table dense>
               <thead>
@@ -451,7 +450,7 @@ function OrdersView() {
               </thead>
               <tbody>
                 {data.data.map((row) => (
-                  <OrderTr key={rowKey(row)} row={row} columns={COLUMNS} open={selectedKey === rowKey(row)} today={today}
+                  <OrderTr key={rowKey(row)} row={row} columns={COLUMNS} open={selectedKey === rowKey(combinedOrder(row))} today={today}
                            role={role} onChanged={refresh} />
                 ))}
               </tbody>

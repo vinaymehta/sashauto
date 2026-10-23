@@ -41,12 +41,12 @@ module Ageing
     # PO Line Number and Ship Date (order rows, snapshot rows, quantity changes): the Firm Date is found by order key.
     # `combined_ids`: order rows that start a combined order (Orders::Combiner); they use the combined order's own Firm
     # Date, as the Orders page shows it. `manual_column`: the scope has a `manual` column (the Orders list), whose
-    # manual orders are never combined.
-    def in_bands(scope, bands, today, combined_ids: [], manual_column: false)
+    # manual orders are never combined. `firm_key`: the Firm Date key in SQL, instead (the Orders list's own).
+    def in_bands(scope, bands, today, combined_ids: [], manual_column: false, firm_key: nil)
       dates = bands.map { |band| OrderFirmDate.where(firm_on: firm_date_range(band, today)) }.reduce(:or)
       table = scope.quoted_table_name
       key = Orders::FirmDates.key_sql(table)
-      firm_key = if combined_ids.any?
+      firm_key ||= if combined_ids.any?
         anchor = "#{table}.id IN (#{combined_ids.map { |id| Integer(id) }.join(',')})#{" AND NOT #{table}.manual" if manual_column}"
         "CASE WHEN #{anchor} THEN #{Orders::FirmDates.combined_key_sql(key)} ELSE #{key} END"
       else

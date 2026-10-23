@@ -357,6 +357,9 @@ export interface OrderRow {
   moq?: string | null; // the part's MOQ (sets), sent with below_moq
   // First order of a combined order: the combined Qty and its orders (below-MOQ orders combined until the MOQ).
   combined?: { total: string; moq: string; members: { id: number; po_line_number: string; ship_date: string; qty: string; manual: boolean }[] };
+  // Orders list: a row of a combined order (listed on its own, with its own values from the file): the combined order's
+  // first row (its PO and Status are recorded there), total Qty and number of rows. Its PO and Status are the combined order's.
+  member_of?: { id: number; total: string; count: number };
   firm_date?: string | null; // from the order file, else the day the order (or the combined order it starts) first reached the MOQ
   deliveries?: Partial<Record<DeliveryKind, OrderDeliveryInfo>>; // Orders list only
 }

@@ -2,7 +2,8 @@ require "bigdecimal"
 
 module Dashboard
   # Operations figures of the dashboard, from the current order data (the latest upload and active manual orders),
-  # counting orders as the Orders page lists them: a combined order (Orders::Combiner) once, valued at all of its rows.
+  # a combined order (Orders::Combiner) as one order valued at all of its rows. Counts are rows of the order file (as in
+  # the file): a combined order of 3 rows counts 3.
   # Open = a Firm or Order order not yet delivered to Deere (no active outbound mark). Values are Qty × Unit Price ÷ 100
   # (in the business's currency, Settings), as in Dashboard::Money.
   #
@@ -18,8 +19,10 @@ module Dashboard
     TYPES = %w[Firm Order].freeze
     STATUSES = %w[none received dispatched inbound].freeze
     # One listed order: its anchor row (or manual order), every row's value summed, and the keys of its marks.
-    # unpriced: a row of it has no Unit Price (nor a customer price), so its value leaves that row out.
-    Order = Data.define(:id, :manual, :key, :firm_key, :po_number, :po_line_number, :part_number, :order_type, :ship_date, :qty, :value, :unpriced)
+    # unpriced: a row of it has no Unit Price (nor a customer price), so its value leaves that row out. rows: its rows of the
+    # order file (1 unless combined).
+    Order = Data.define(:id, :manual, :key, :firm_key, :po_number, :po_line_number, :part_number, :order_type, :ship_date, :qty, :value, :unpriced,
+                        :rows)
 
     def self.call(today: Time.find_zone!(AppConfig.ageing_time_zone).today, view: "all")
       new(today, view).call
@@ -97,7 +100,7 @@ module Dashboard
                   po_number: row[2], po_line_number: row[3], part_number: row[4], order_type: row[5],
                   ship_date: members.map { |m| m[6] }.max, # a combined order ships with its last order
                   qty: members.sum { |m| m[7].to_d }, value: members.filter_map { |m| values[m[0]] }.sum(BigDecimal("0")),
-                  unpriced: members.any? { |m| values[m[0]].nil? })
+                  unpriced: members.any? { |m| values[m[0]].nil? }, rows: members.size)
       end + manual_orders
     end
 
@@ -108,7 +111,7 @@ module Dashboard
         key = VendorOrderPlacement.order_key(ManualOrder.new(id: id))
         amount = value(qty, price, prices[part])
         Order.new(id: id, manual: true, key: key, firm_key: key, po_number: po, po_line_number: line, part_number: part, order_type: type,
-                  ship_date: ship, qty: qty.to_d, value: amount || BigDecimal("0"), unpriced: amount.nil?)
+                  ship_date: ship, qty: qty.to_d, value: amount || BigDecimal("0"), unpriced: amount.nil?, rows: 1)
       end
     end
 
@@ -174,7 +177,7 @@ module Dashboard
     end
 
     def bucket(list)
-      { count: list.size, value: money(list.sum(BigDecimal("0"), &:value)) }
+      { count: list.sum(&:rows), value: money(list.sum(BigDecimal("0"), &:value)) }
     end
 
     # Qty × price per 100 pcs ÷ 100: the order's own Unit Price, else the part's customer price; nil without either.
