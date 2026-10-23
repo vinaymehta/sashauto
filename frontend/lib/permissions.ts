@@ -5,8 +5,9 @@ import type { User } from "./types";
 export type Section = "dashboard" | "orders" | "products" | "vendors" | "settings";
 export type Level = "none" | "view" | "edit";
 
-export const SECTIONS: { key: Section; label: string; href: string; hint: string }[] = [
-  { key: "dashboard", label: "Dashboard", href: "/", hint: "Order figures, charts and what needs attention" },
+// `viewOnly`: nothing on the page can be changed, so it has only View.
+export const SECTIONS: { key: Section; label: string; href: string; hint: string; viewOnly?: boolean }[] = [
+  { key: "dashboard", label: "Dashboard", href: "/", hint: "Order figures, charts and what needs attention", viewOnly: true },
   { key: "orders", label: "Orders", href: "/orders", hint: "Order rows, uploads, adding orders, generating POs and combining orders" },
   { key: "products", label: "Products", href: "/products", hint: "Parts, prices, current inventory and images" },
   { key: "vendors", label: "Vendors", href: "/vendors", hint: "Vendors, their parts and vendor file imports" },

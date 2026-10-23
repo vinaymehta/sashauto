@@ -78,7 +78,8 @@ export function PermissionsPanel({ user, onClose, onSaved }: { user: User; onClo
                 </span>
                 <span className="flex items-center gap-6">
                   {box("view", level !== "none")}
-                  {box("edit", level === "edit")}
+                  {/* A view-only section (the Dashboard) has nothing to edit. */}
+                  {s.viewOnly ? <span className="w-12 text-center text-ink-faint" title="Nothing to edit here">—</span> : box("edit", level === "edit")}
                 </span>
               </li>
             );
