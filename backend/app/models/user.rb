@@ -7,9 +7,10 @@ class User < ApplicationRecord
   # permissions are managed by admins only; admins always have edit everywhere.
   SECTIONS = %w[dashboard orders products vendors settings].freeze
   LEVELS = %w[none view edit].freeze
-  # A section not set for a user: what the role had before permissions (the Warehouse Manager sees the Orders and sets
-  # its own delivery marks).
-  ROLE_DEFAULTS = { "warehouse_manager" => { "orders" => "view" } }.freeze
+  # A section not set for a user (every non-admin role): everything enabled except Admin Settings — the Dashboard to see
+  # (nothing on it to edit), Orders, Products and Vendors to see and change. An admin changes it per user (Users →
+  # Permissions).
+  DEFAULT_PERMISSIONS = { "dashboard" => "view", "orders" => "edit", "products" => "edit", "vendors" => "edit", "settings" => "none" }.freeze
 
   has_secure_password
 
@@ -39,7 +40,7 @@ class User < ApplicationRecord
   def permission(section)
     return "edit" if admin?
 
-    LEVELS.include?(permissions[section.to_s]) ? permissions[section.to_s] : ROLE_DEFAULTS.dig(role, section.to_s) || "none"
+    LEVELS.include?(permissions[section.to_s]) ? permissions[section.to_s] : DEFAULT_PERMISSIONS.fetch(section.to_s, "none")
   end
 
   # True when the user's level for the section is at least `level` ("view" or "edit").
