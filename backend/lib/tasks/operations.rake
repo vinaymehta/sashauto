@@ -147,3 +147,13 @@ namespace :orders do
     end
   end
 end
+
+namespace :products do
+  desc "Fetch product images from shop.deere.com (Sidekiq job). LIMIT=20 for a test batch, PART=JXAL117012 for one part"
+  task deere_images: :environment do
+    DeereShopImagesJob.perform_later(ENV["LIMIT"].presence, ENV["PART"].presence)
+    puts "Started: products without an image get the main image from shop.deere.com."
+    puts "Follow it with: journalctl -u sashauto-sidekiq -f | grep deere_shop"
+    puts "Failed products are reported to Bugsnag (DeereShopImages); parts not in the shop are listed when the run ends."
+  end
+end
