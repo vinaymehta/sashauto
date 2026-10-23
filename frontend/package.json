@@ -9,6 +9,8 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@bugsnag/js": "9.1.0",
+    "@bugsnag/plugin-react": "9.1.0",
     "next": "16.3.7",
     "react": "19.2.8",
     "react-dom": "19.2.8",

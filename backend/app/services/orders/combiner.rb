@@ -17,6 +17,8 @@ module Orders
     Group = Data.define(:anchor_id, :members, :total, :moq, :manual_ids, :removed_ids) do
       def combined? = members.size > 1
       def below_moq? = total < moq
+      # A combined order ships with its last order: the latest Ship Date of its members.
+      def ship_date = members.map(&:ship_date).max
     end
     Result = Data.define(:groups, :hidden, :open, :firm)
 

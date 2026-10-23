@@ -9,7 +9,7 @@ import { Sheet } from "./ui/sheet";
 import { useDismiss } from "./use-dismiss";
 import { ChangePasswordForm } from "./users/change-password-form";
 
-const ROLE_LABEL = { admin: "Admin", warehouse_manager: "Warehouse Manager" } as const;
+const ROLE_LABEL = { admin: "Admin", warehouse_manager: "Warehouse Manager", employee: "Employee" } as const;
 
 function initials(name: string) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("") || "?";

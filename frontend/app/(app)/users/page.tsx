@@ -26,7 +26,7 @@ import { Pagination, Table, Td, Th } from "@/components/ui/table";
 const iconButton = "inline-flex h-8 w-8 items-center justify-center rounded-md text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-ink";
 
 const FILTERS: FilterGroup[] = [
-  { key: "role", label: "Role", options: [{ value: "admin", label: "Admin" }, { value: "warehouse_manager", label: "Warehouse Manager" }] },
+  { key: "role", label: "Role", options: [{ value: "admin", label: "Admin" }, { value: "warehouse_manager", label: "Warehouse Manager" }, { value: "employee", label: "Employee" }] },
   { key: "status", label: "Status", options: [{ value: "active", label: "Active" }, { value: "inactive", label: "Inactive" }] },
 ];
 

@@ -50,7 +50,8 @@ module Api
       combined = Orders::Combiner.for_batches(batches.map(&:id))
       scope = filter(search(dataset, (params[:search].presence || params[:q]).to_s.strip.first(100)), combined)
       scope = scope.where("order_rows.manual OR order_rows.id NOT IN (?)", combined.hidden.to_a) if combined.hidden.any?
-      scope, sort, direction = apply_sort(scope, sorts_for(columns).merge("firm_date" => firm_date_sql(combined)), default: DEFAULT_SORT)
+      scope, sort, direction = apply_sort(scope, sorts_for(columns).merge("firm_date" => firm_date_sql(combined), "ship_date" => ship_date_sql(combined)),
+                                          default: DEFAULT_SORT)
       # Manual orders are always listed first; each part keeps the chosen sort.
       scope = scope.reorder(Arel.sql("order_rows.manual DESC"), *scope.order_values)
 
@@ -109,8 +110,8 @@ module Api
       open = rows.reject { |_, key, *| delivered.include?(key) }
       placed = VendorOrderPlacement.where(order_key: open.map { |r| r[1] }).distinct.pluck(:order_key).to_set
       imported_ids = open.reject(&:last).map(&:first)
-      # Delivery tabs, counted on the same rows as the Orders list (combined orders once): dispatched from Faridabad
-      # (any later status too), in transit (dispatched, not yet at the US warehouse) and fulfilled (delivered to Deere).
+      # Delivery tabs, counted on the same rows as the Orders list (combined orders once): in transit (dispatched from
+      # Faridabad, not yet at the US warehouse) and fulfilled (delivered to Deere).
       listed = dataset(UploadBatch.latest_for(current_business))
       listed = listed.where("order_rows.manual OR order_rows.id NOT IN (?)", combined.hidden.to_a) if combined.hidden.any?
       statuses = listed.group(Arel.sql(CURRENT_STATUS_SQL)).count
@@ -123,7 +124,6 @@ module Api
         below_moq: (combined.open & imported_ids.to_set).size,
         aged: Ageing::Rules.in_bands(OrderRow.where(id: imported_ids), [ "red" ], request_today,
                                      combined_ids: combined.groups.values.select(&:combined?).map(&:anchor_id)).count,
-        dispatched: statuses.values_at("dispatched", "inbound", "outbound").compact.sum,
         in_transit: statuses["dispatched"].to_i,
         fulfilled: statuses["outbound"].to_i
       }
@@ -192,7 +192,8 @@ module Api
       info = { below_moq: combined.open.include?(row.id), moq: group && Serializers.qty(group.moq) }
       return info unless group&.combined?
 
-      info.merge(combined: { total: Serializers.qty(group.total), moq: Serializers.qty(group.moq),
+      # A combined order's Ship Date is its last order's.
+      info.merge(ship_date: group.ship_date, combined: { total: Serializers.qty(group.total), moq: Serializers.qty(group.moq),
                              members: group.members.map do |m|
                                { id: m.id, po_line_number: m.po_line_number, ship_date: m.ship_date, qty: Serializers.qty(m.qty),
                                  manual: group.manual_ids.include?(m.id) }
@@ -221,6 +222,14 @@ module Api
 
     # The Firm Date of a listed row in SQL (sorting): the combined order's own date for a row that starts one, none for
     # manual orders (as shown on the page).
+    # The Ship Date of a listed row in SQL: a combined order's last Ship Date on its first row (Combiner::Group#ship_date).
+    def ship_date_sql(combined)
+      lasts = combined.groups.values.select(&:combined?).map { |g| "WHEN #{Integer(g.anchor_id)} THEN DATE '#{g.ship_date.iso8601}'" }
+      return "order_rows.ship_date" if lasts.empty?
+
+      "(CASE WHEN order_rows.manual THEN order_rows.ship_date ELSE (CASE order_rows.id #{lasts.join(' ')} ELSE order_rows.ship_date END) END)"
+    end
+
     def firm_date_sql(combined)
       key = Orders::FirmDates.key_sql("order_rows")
       anchors = combined.groups.values.select(&:combined?).map { |g| Integer(g.anchor_id) }
@@ -388,14 +397,15 @@ module Api
       scope = filter_by_po(scope)
       scope = filter_by_combined(scope, combined)
       scope = filter_by_moq(scope, combined)
-      scope = filter_by_timing(scope)
+      scope = filter_by_timing(scope, combined)
       scope = filter_by_source(scope)
       scope = filter_by_vendor(scope)
       scope = filter_by_firm_date(scope, combined)
       from = iso_date(params[:ship_date_from])
       to = iso_date(params[:ship_date_to])
-      scope = scope.where(ship_date: from..) if from
-      scope = scope.where(ship_date: ..to) if to
+      ship = ship_date_sql(combined)
+      scope = scope.where("#{ship} >= ?", from) if from
+      scope = scope.where("#{ship} <= ?", to) if to
       scope
     end
 
@@ -422,13 +432,16 @@ module Api
 
     # Ship timing filter (timing=overdue,next30): ship date before today, or from today to 30 days ahead (today = the
     # browser's IST date, as the age colours).
-    def filter_by_timing(scope)
+    def filter_by_timing(scope, combined)
       values = multi_param(:timing, %w[overdue next30])
       return scope if values.empty?
 
       today = request_today
-      ranges = values.map { |v| v == "overdue" ? ...today : today..(today + 30) }
-      ranges.map { |range| scope.where(ship_date: range) }.reduce(:or)
+      ship = ship_date_sql(combined)
+      conditions = values.map do |v|
+        v == "overdue" ? ActiveRecord::Base.sanitize_sql([ "#{ship} < ?", today ]) : ActiveRecord::Base.sanitize_sql([ "#{ship} BETWEEN ? AND ?", today, today + 30 ])
+      end
+      scope.where(conditions.map { |c| "(#{c})" }.join(" OR "))
     end
 
     # Source filter (source=upload,manual): rows of the uploaded file, or manual orders.

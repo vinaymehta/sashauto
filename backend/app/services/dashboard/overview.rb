@@ -94,7 +94,8 @@ module Dashboard
         key = row_key.(row)
         members.each { |m| @anchor_keys[row_key.(m)] = key } if members.size > 1
         Order.new(id: anchor_id, manual: false, key: key, firm_key: members.size > 1 ? Orders::FirmDates.combined_key(key) : key,
-                  po_number: row[2], po_line_number: row[3], part_number: row[4], order_type: row[5], ship_date: row[6],
+                  po_number: row[2], po_line_number: row[3], part_number: row[4], order_type: row[5],
+                  ship_date: members.map { |m| m[6] }.max, # a combined order ships with its last order
                   qty: members.sum { |m| m[7].to_d }, value: members.filter_map { |m| values[m[0]] }.sum(BigDecimal("0")),
                   unpriced: members.any? { |m| values[m[0]].nil? })
       end + manual_orders

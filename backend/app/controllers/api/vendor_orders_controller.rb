@@ -17,7 +17,7 @@ module Api
       render json: {
         data: {
           order: { id: row.id, po_number: row.po_number, po_line_number: row.po_line_number, part_number: row.part_number,
-                   order_type: row.order_type, ship_date: row.ship_date, qty: Serializers.qty(order_qty(row)),
+                   order_type: row.order_type, ship_date: ship_date(row), qty: Serializers.qty(order_qty(row)),
                    ordered: Serializers.qty(ordered), remaining: Serializers.qty(remaining),
                    combined: combined_group(row)&.members&.size },
           # Order Qty counts sets; the part's MOQ in sets and pieces, and how many pieces make a set.
@@ -34,7 +34,8 @@ module Api
     def create
       row = order
       allocations = params.permit(allocations: %i[vendor_id qty unit ship_date]).fetch(:allocations, [])
-      result = VendorOrders::Placer.call(row: row, allocations: allocations, user: current_user, order_qty: order_qty(row))
+      result = VendorOrders::Placer.call(row: row, allocations: allocations, user: current_user, order_qty: order_qty(row),
+                                         ship_date: ship_date(row))
       placement = result.placement
       audit("vendor_order.placed", subject: placement, po_number: placement.po_number, part_number: placement.part_number,
             vendor_orders: placement.vendor_orders.map { |vo| { number: vo.number, vendor_id: vo.vendor_id, qty: vo.qty.to_s } })
@@ -47,7 +48,8 @@ module Api
     def preview
       row = order
       pdf = VendorOrders::Placer.preview(row: row, allocations: params.permit(allocations: %i[vendor_id qty unit ship_date]).fetch(:allocations, []),
-                                         user: current_user, vendor_id: params.require(:vendor_id), order_qty: order_qty(row))
+                                         user: current_user, vendor_id: params.require(:vendor_id), order_qty: order_qty(row),
+                                         ship_date: ship_date(row))
       send_data pdf, filename: "purchase-order-draft.pdf", type: "application/pdf", disposition: "inline"
     rescue VendorOrders::Placer::Invalid => e
       render_error e.message, :unprocessable_content
@@ -123,6 +125,11 @@ module Api
     # Qty to place: a combined order's total, else the row's Qty.
     def order_qty(row)
       combined_group(row)&.total || row.qty
+    end
+
+    # Ship Date of the order: a combined order's last Ship Date, else the row's.
+    def ship_date(row)
+      combined_group(row)&.ship_date || row.ship_date
     end
 
     def placements_for(row)

@@ -1,5 +1,6 @@
 class User < ApplicationRecord
-  ROLES = %w[admin warehouse_manager].freeze
+  # Employee: no access until an admin gives it permissions.
+  ROLES = %w[admin warehouse_manager employee].freeze
   MINIMUM_PASSWORD_LENGTH = 12
 
   # Sections of the app a user can be given: none (hidden), view (see, change nothing) or edit. Users and their

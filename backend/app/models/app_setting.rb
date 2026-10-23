@@ -24,6 +24,13 @@ class AppSetting < ApplicationRecord
     define("COMPANY_TERMS_URL", "Terms and conditions URL", "Company", hint: "Linked on purchase orders"),
     define("COMPANY_CIN", "CIN", "Company", hint: "Printed on purchase orders to overseas vendors", default: AppConfig::COMPANY_DEFAULTS[:cin]),
     define("COMPANY_PAN", "PAN", "Company", hint: "Printed on purchase orders to overseas vendors", default: AppConfig::COMPANY_DEFAULTS[:pan]),
+    define("PO_TERMS", "PO Terms and Conditions", "Purchase Order", kind: :textarea, default: AppConfig::PO_TERMS_DEFAULT,
+           hint: "Printed at the foot of purchase orders to Indian vendors. One paragraph per line; start a line with * for bold, " \
+                 "with (a) for an indented item; {company} and {terms_url} are filled in"),
+    define("EXPORT_PO_REQUIREMENTS", "Overseas PO Requirements", "Purchase Order", kind: :textarea,
+           default: AppConfig::EXPORT_PO_REQUIREMENTS_DEFAULT,
+           hint: "The numbered Requirements on purchase orders to overseas vendors, one per line; start a line with * to print it " \
+                 "on a black bar; {company} is filled in"),
     define("INTIMATION_RCMC_COUNCIL", "Export promotion council", "Intimation Letter", hint: "e.g. EEPC INDIA"),
     define("INTIMATION_RCMC_NO", "RCMC number", "Intimation Letter"),
     define("INTIMATION_RCMC_DATE", "RCMC date", "Intimation Letter", hint: "As printed, e.g. 01/04/2026"),

@@ -31,6 +31,8 @@ gem "bootsnap", require: false
 
 # Vendor purchase order PDFs (pure Ruby, no system packages)
 gem "prawn", "~> 2.5"
+# Error tracking (Bugsnag): reports errors when BUGSNAG_API_KEY is set.
+gem "bugsnag", "~> 6.30"
 
 # Loads backend/.env into ENV (all environments). Real environment variables always win over .env.
 gem "dotenv", "~> 3.1"

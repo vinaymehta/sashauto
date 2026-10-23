@@ -22,12 +22,14 @@ module VendorOrders
     Result = Data.define(:placement, :warnings)
 
     # `order_qty`: the Qty to place — a combined order's total (Orders::Combiner); the row's own Qty by default.
-    def self.call(row:, allocations:, user:, order_qty: nil)
-      new(row, allocations, user, order_qty).call
+    # `ship_date`: the order's Ship Date — a combined order's last one; the row's own by default.
+    def self.call(row:, allocations:, user:, order_qty: nil, ship_date: nil)
+      new(row, allocations, user, order_qty, ship_date).call
     end
 
-    def initialize(row, allocations, user, order_qty = nil)
+    def initialize(row, allocations, user, order_qty = nil, ship_date = nil)
       @order_qty = order_qty
+      @ship_date = ship_date || row.ship_date
       @row = row
       @allocations = Array(allocations)
       @user = user
@@ -58,14 +60,14 @@ module VendorOrders
         placement = VendorOrderPlacement.create!(
           order_key: key, **order_reference, product: product,
           po_number: @row.po_number, po_line_number: @row.po_line_number, part_number: @row.part_number,
-          order_type: @row.order_type, ship_date: @row.ship_date, due_date: @row.due_date, unit: @row.unit&.strip,
+          order_type: @row.order_type, ship_date: @ship_date, due_date: @row.due_date, unit: @row.unit&.strip,
           order_qty: order_qty, allocated_qty: total, moq: product && (product.moq_sets || product.moq),
           placed_by: @user, placed_at: Time.current
         )
         lines.each do |line|
           link = links.fetch(line[:vendor_id])
           VendorOrder.create!(vendor_order_placement: placement, vendor: link.vendor,
-                              number: VendorOrder.po_number(@row.po_number, link.vendor, @row.ship_date),
+                              number: VendorOrder.po_number(@row.po_number, link.vendor, @ship_date),
                               qty: line[:qty], unit: line[:unit], ship_date: line[:ship_date] || default_ship_date(link.vendor),
                               unit_price: line[:unit] == "pcs" ? link.price_amount : link.set_price_amount,
                               price_currency: link.price_currency, price_note: link.price_note, email_status: "not_sent")
@@ -81,8 +83,8 @@ module VendorOrders
     end
 
     # The PDF that placing would create for one vendor of the allocation (not saved, marked DRAFT).
-    def self.preview(row:, allocations:, user:, vendor_id:, order_qty: nil)
-      new(row, allocations, user, order_qty).preview(Integer(vendor_id, exception: false))
+    def self.preview(row:, allocations:, user:, vendor_id:, order_qty: nil, ship_date: nil)
+      new(row, allocations, user, order_qty, ship_date).preview(Integer(vendor_id, exception: false))
     end
 
     def preview(vendor_id)

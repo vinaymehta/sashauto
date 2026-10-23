@@ -2,7 +2,7 @@ require "bigdecimal"
 
 module Dashboard
   # Money figures of the dashboard, each with the series for its graph. Orders are counted as the Orders page lists
-  # them (Dashboard::Overview): a combined order once, at the total of its rows and on its first row's ship date.
+  # them (Dashboard::Overview): a combined order once, at the total of its rows and on its last row's ship date.
   # - open_sale: Deere orders still to deliver, i.e. Firm and Order orders of the latest upload, and active manual
   #   orders, without an active "Delivered to Deere" (outbound) mark. Value = Qty × Unit Price ÷ 100 (Deere prices per
   #   100 pcs; in the business's currency, Settings). by_date: value per ship date (the graph groups it by week or month).
@@ -52,10 +52,10 @@ module Dashboard
                      .map { |g, line, part, qty, ship, price| [ order_key(g, line, ship), Sale.new(part, qty, price, ship) ] }
       sales = rows + manual_orders(ship_date: series_from..@today)
       values = values_of(sales.map(&:last))
-      # Rows of one combined order count as one order: its first (earliest) ship date, the total value.
+      # Rows of one combined order count as one order: its last ship date, the total value.
       anchors = @overview.anchor_keys
       orders = sales.zip(values).group_by { |(key, _), _| anchors[key] || key }.values.map do |list|
-        [ list.map { |(_, sale), _| sale.ship_date }.min, list.sum(BigDecimal("0")) { |_, v| v || 0 }, list.any? { |_, v| v.nil? } ]
+        [ list.map { |(_, sale), _| sale.ship_date }.max, list.sum(BigDecimal("0")) { |_, v| v || 0 }, list.any? { |_, v| v.nil? } ]
       end
       ytd = orders.select { |ship, *| ship >= from }
       totals(ytd).merge(from: from, to: @today, series_from: series_from, by_date: by_date(orders))

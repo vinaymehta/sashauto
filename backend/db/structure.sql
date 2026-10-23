@@ -1101,7 +1101,7 @@ CREATE TABLE public.users (
     created_by_id bigint,
     deleted_at timestamp(6) without time zone,
     permissions jsonb DEFAULT '{}'::jsonb NOT NULL,
-    CONSTRAINT users_role_valid CHECK (((role)::text = ANY (ARRAY[('admin'::character varying)::text, ('warehouse_manager'::character varying)::text])))
+    CONSTRAINT users_role_valid CHECK (((role)::text = ANY ((ARRAY['admin'::character varying, 'warehouse_manager'::character varying, 'employee'::character varying])::text[])))
 );
 
 
@@ -3014,6 +3014,7 @@ ALTER TABLE ONLY public.address_changes
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261023000001'),
 ('20261022000002'),
 ('20261022000001'),
 ('20261021000004'),

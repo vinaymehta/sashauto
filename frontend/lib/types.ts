@@ -1,4 +1,4 @@
-export type Role = "admin" | "warehouse_manager";
+export type Role = "admin" | "warehouse_manager" | "employee";
 
 export interface User {
   id: number;
@@ -423,7 +423,6 @@ export interface OrdersSummary {
   no_qty: number; // open orders without a Qty (nothing to order) and no PO
   below_moq: number;
   aged: number;
-  dispatched: number; // dispatched from SASH Faridabad (any later status too)
   in_transit: number; // dispatched, not yet delivered to SASH US
   fulfilled: number; // delivered to Deere
 }

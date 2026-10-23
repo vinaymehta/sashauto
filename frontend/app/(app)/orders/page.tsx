@@ -168,9 +168,9 @@ function buildColumns(columns: { key: string; label: string }[], uploadId?: numb
   });
 }
 
-// Delivery tabs: the order rows with a fixed Status. Dispatched = left SASH Faridabad (whatever happened since, with the
-// SASH India Invoice No.), In transit = dispatched but not yet at SASH US, Orders fulfilled = delivered to Deere.
-const STATUS_TABS: Record<string, string> = { dispatched: "dispatched,inbound,outbound", transit: "dispatched", fulfilled: "outbound" };
+// Delivery tabs: the order rows with a fixed Status. In transit = dispatched from SASH Faridabad (with the SASH India
+// Invoice No.) but not yet at SASH US, Orders fulfilled = delivered to Deere.
+const STATUS_TABS: Record<string, string> = { transit: "dispatched", fulfilled: "outbound" };
 
 // Imported and manual orders have separate ids.
 const rowKey = (row: OrderRow) => `${row.manual ? "m" : "r"}${row.id}`;
@@ -228,7 +228,7 @@ function OrdersView() {
   const [uploadId, setUploadId] = useState<number | null>(null);
   const uploads = useApi<{ data: UploadChoice[] }>(manager ? null : "/api/uploads/history");
 
-  type TabKey = "orders" | "dispatched" | "transit" | "fulfilled" | "changes" | "addresses" | "moq";
+  type TabKey = "orders" | "transit" | "fulfilled" | "changes" | "addresses" | "moq";
   const [tab, setTab] = useState<TabKey>(params.get("tab") === "changes" ? "changes" : "orders");
   // On a delivery tab (current data only) the list has that tab's Status instead of the Status filter.
   const statusTab = uploadId === null ? STATUS_TABS[tab] : undefined;
@@ -315,7 +315,6 @@ function OrdersView() {
   const tabs = [
     { key: "orders" as const, label: "Orders", icon: <TableIcon size={17} />, count: statusTab ? null : data?.meta.total ?? null },
     ...(uploadId === null && summary.data ? [
-      { key: "dispatched" as const, label: "Dispatched", icon: <TruckIcon size={17} />, count: summary.data.dispatched },
       { key: "transit" as const, label: "In transit", icon: <TruckIcon size={17} />, count: summary.data.in_transit },
       { key: "fulfilled" as const, label: "Orders fulfilled", icon: <CheckIcon size={17} />, count: summary.data.fulfilled },
     ] : []),

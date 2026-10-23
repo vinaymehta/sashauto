@@ -8,16 +8,6 @@ module VendorOrders
     SYMBOLS = { "USD" => "$", "GBP" => "£", "EUR" => "€", "CNY" => "¥", "INR" => "Rs." }.freeze
     # Amount in words: [currency, minor unit] ("USD Five Hundred Seventy Two and Cents Fifty Only").
     WORDS = { "USD" => %w[USD Cents], "GBP" => %w[GBP Pence], "EUR" => %w[EUR Cents], "CNY" => %w[CNY Fen], "INR" => %w[INR Paise] }.freeze
-    REQUIREMENTS = [
-      "All parts should be without any marking of OE Logo / OE Name / Supplier Logo / Supplier Part No.",
-      "Please supply quantities strictly as per this purchase order. Any dispatch of excess quantities must be approved by " \
-      "%<company>s in writing otherwise material will be returned at your cost.",
-      "SASH part no. to be labelled. If packed in carton then quantity to be mentioned on the carton.",
-      "It is mandatory to share PDI first, pickup will be done after the report is approved by quality team.",
-      "Company will not be responsible for the rejected material after one week, after notification.",
-      "All disputes are settled within Faridabad jurisdiction.",
-      "PO number must be mentioned on your Tax Invoice"
-    ].freeze
     BLACK = "000000"
     SHADE = "ddd9c4"
 
@@ -152,7 +142,7 @@ module VendorOrders
 
     def requirements_height(pdf, w)
       text_w = requirements_width(w)
-      18 + REQUIREMENTS.sum { |rule| pdf.height_of(t(format(rule, company: @company[:name])), width: text_w - 8, size: 8) + 5 }
+      18 + requirements_list.sum { |rule, _| pdf.height_of(t(rule), width: text_w - 8, size: 8) + 5 }
     end
 
     # "Requirements :-" and SASH's supply rules (the last one white on black), across the item columns.
@@ -160,10 +150,10 @@ module VendorOrders
       text_w = requirements_width(w)
       pdf.text_box "Requirements :-", at: [ xs[1] + 4, y ], width: text_w, size: 10, style: :bold
       y -= 18
-      REQUIREMENTS.each_with_index do |rule, i|
-        text = t(format(rule, company: @company[:name]))
+      requirements_list.each_with_index do |(rule, highlight), i|
+        text = t(rule)
         height = pdf.height_of(text, width: text_w - 8, size: 8) + 2
-        if i == REQUIREMENTS.size - 1
+        if highlight
           pdf.fill_color BLACK
           pdf.fill_rectangle([ xs[1] + 2, y + 1 ], text_w * 0.55, height + 1)
           white { pdf.text_box text, at: [ xs[1] + 4, y ], width: text_w * 0.55 - 4, size: 8, style: :bold }
@@ -212,6 +202,13 @@ module VendorOrders
       end
       pdf.stroke_rectangle([ 0, top - 18 ], @w, 14)
       pdf.text_box "This is a Computer Generated Document", at: [ 0, top - 21 ], width: @w, align: :center, size: 7
+    end
+
+    # [text, highlighted] for each requirement (Admin Settings → Purchase Order, one per line; "* " = on a black bar).
+    def requirements_list
+      @requirements_list ||= AppConfig.export_po_requirements.split("\n").map(&:strip).reject(&:empty?).map do |line|
+        [ line.delete_prefix("* ").gsub("{company}", @company[:name].to_s), line.start_with?("* ") ]
+      end
     end
 
     # Text drawn in white (on a black bar), then back to black.

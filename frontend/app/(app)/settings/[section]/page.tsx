@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { useSession } from "@/components/session";
 import { SettingsNav, SettingsTopBar } from "@/components/settings/settings-chrome";
 import { SettingsForm } from "@/components/settings/settings-form";
+import { PoTermsEditor } from "@/components/settings/po-terms-editor";
 import { SETTINGS_SECTIONS } from "@/components/settings/sections";
 import { Alert } from "@/components/ui/feedback";
 
@@ -31,8 +32,14 @@ export default function SettingsSectionPage() {
         {/* The form card starts next to the list, keeps a readable width and is only as tall as its fields. */}
         <div className="min-w-0 flex-1 md:p-6">
           <div className="max-w-5xl overflow-hidden bg-white md:rounded-xl md:border md:border-line md:shadow-card">
-            <SettingsForm key={section.slug} group={section.group} title={section.title} description={section.description} category={section.category}
-                          readOnly={!can(me, "settings", "edit")} />
+            {/* Purchase Order has its own editor (tabs, line by line, with a preview); every other page is a list of fields. */}
+            {section.slug === "purchase-order" ? (
+              <PoTermsEditor key={section.slug} title={section.title} description={section.description} category={section.category}
+                             readOnly={!can(me, "settings", "edit")} />
+            ) : (
+              <SettingsForm key={section.slug} group={section.group} title={section.title} description={section.description} category={section.category}
+                            readOnly={!can(me, "settings", "edit")} />
+            )}
           </div>
         </div>
       </div>

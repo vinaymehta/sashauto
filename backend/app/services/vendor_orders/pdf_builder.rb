@@ -189,7 +189,7 @@ module VendorOrders
     end
 
     COLUMNS = [
-      [ "Our Article No", 78, :left ], [ "Vendor Part No.", 78, :left ], [ "Item Description", 0, :left ],
+      [ "SASH Part No.", 78, :left ], [ "Vendor Part No.", 78, :left ], [ "Item Description", 0, :left ],
       [ "Qty", 40, :right ], [ "UOM", 52, :center ], [ "Unit Cost", 62, :right ], [ "Line Total", 70, :right ]
     ].freeze
 
@@ -210,7 +210,7 @@ module VendorOrders
         x += widths[i]
       end
       row_top = top - 18
-      body_height = 200 # leaves the totals (with the GST row) and the terms on one page
+      body_height = 215 # the item and GST rows; leaves the total and the terms on one page
       @po.lines.each do |line|
         values = [ line.our_article, line.vendor_article, line.description, qty(line.qty), line.uom, unit_cost(line.unit_cost), money(line.total) ]
         x = 0
@@ -222,6 +222,12 @@ module VendorOrders
                                    color: GREY, overflow: :shrink_to_fit if line.note.present?
         row_top -= 44
       end
+      # GST as a row of the table: at the vendor's rate, on the lines' total ("-" when the vendor has no rate).
+      gst_label = gst_rate ? "GST (#{gst_rate_text(gst_rate)}%)" : "GST (rate not set)"
+      pdf.stroke_color LINE
+      pdf.stroke_horizontal_line(widths[0..1].sum, pdf.bounds.width, at: row_top - 2)
+      pdf.text_box gst_label, at: [ widths[0..1].sum + 4, row_top - 7 ], width: widths[2] - 8, style: :bold
+      pdf.text_box gst_amount ? money(gst_amount) : "-", at: [ widths[0..5].sum + 4, row_top - 7 ], width: widths[6] - 8, align: :right, style: :bold
       # Column grid down to the totals, like a printed order form.
       pdf.stroke_color LINE
       pdf.stroke_rectangle([ 0, top ], pdf.bounds.width, 18 + body_height)
@@ -233,17 +239,22 @@ module VendorOrders
       pdf.move_cursor_to top - 18 - body_height
     end
 
+    # The vendor's GST rate (nil: not set) and the GST on the lines' total.
+    def gst_rate = @po.vendor.gst_rate
+
+    def lines_total = @po.lines.sum { |l| l.total || 0 }
+
+    def gst_amount
+      gst_rate && (lines_total * gst_rate.to_d / 100).round(2)
+    end
+
+    # Below the table: the total with GST (GST itself is a row of the table).
     def totals(pdf)
-      total = @po.lines.sum { |l| l.total || 0 }
       widths = column_widths(pdf)
       label_x = widths[0..2].sum
       label_w = widths[3] + widths[4] + widths[5]
       top = pdf.cursor
-      # GST at the vendor's rate (blank when the vendor has none), then the total with GST.
-      rate = @po.vendor.gst_rate
-      gst = rate && (total * rate.to_d / 100).round(2)
-      rows = [ [ "Total", money(total) ], [ rate ? "GST (#{gst_rate_text(rate)}%)" : "GST", gst ? money(gst) : "-" ],
-               [ "Total (#{@po.currency})", money(total + (gst || 0)) ] ]
+      rows = [ [ "Total (#{@po.currency})", money(lines_total + (gst_amount || 0)) ] ]
       rows.each_with_index do |(label, value), i|
         y = top - (i * 18)
         pdf.fill_color i == rows.size - 1 ? HEADER_FILL : "ffffff"
@@ -261,10 +272,9 @@ module VendorOrders
       pdf.move_cursor_to top - (rows.size * 18) - 14
     end
 
-    # Supply instructions and the terms the order is issued under (SASH's own wording; the terms address comes from
-    # COMPANY_TERMS_URL in .env when set), in a box below a separator line.
+    # The terms the order is issued under (AppConfig.po_terms, editable in Admin Settings → Purchase Order), below a
+    # separator line.
     def footer(pdf)
-      name = @company[:name]
       pdf.move_down 2
       pdf.text "Please include the PO number on your invoice.", align: :right, style: :bold
       pdf.move_down 10
@@ -274,35 +284,33 @@ module VendorOrders
 
       body = { size: 7.5, leading: 1.5, align: :justify, color: "374151" }
       pdf.fill_color "111827"
-      pdf.text "PLEASE SUPPLY THE ABOVE GOODS AND QUOTE THIS PURCHASE ORDER NUMBER WITH YOUR DELIVERY AND INVOICE. " \
-               "DELIVERIES WITHOUT THIS NUMBER MAY BE REFUSED.", style: :bold, size: 8, leading: 1.5
-      pdf.move_down 6
-      pdf.text t("Subject to #{name}'s Terms and Conditions of Purchase"), style: :bold, size: 8.5
-      pdf.move_down 3
-      pdf.text "This order is issued under, and governed by:", **body
-      pdf.move_down 2
-      [
-        [ "(a)", "the terms of any written supply agreement in force between #{name} and the Supplier for the goods or services on this order; or" ],
-        [ "(b)", "where there is no such agreement, #{name}'s Terms and Conditions of Purchase in effect on the date of this order, together " \
-                 "with any special conditions or attachments referred to in this order." ]
-      ].each do |label, text|
-        top = pdf.cursor
-        pdf.text_box label, at: [ 8, top ], width: 18, size: 7.5, color: "374151"
-        pdf.bounding_box([ 26, top ], width: pdf.bounds.width - 26) { pdf.text t(text), **body }
-        pdf.move_down 2
-      end
-      pdf.move_down 3
-      paragraphs = [
-        (@company[:terms_url].present? ? "The Terms and Conditions of Purchase are available at #{@company[:terms_url]}." : nil),
-        "By supplying the goods or services on this order, the Supplier accepts the terms that apply to it.",
-        "Terms printed on the Supplier's quotation, invoice, delivery note or other documents do not apply unless #{name} agrees " \
-        "to them in writing."
-      ].compact
-      paragraphs.each do |text|
-        pdf.text t(text), **body
-        pdf.move_down 2
+      # SASH's terms (Admin Settings → Purchase Order): "* " = bold, "(a) " = indented item.
+      po_terms_lines.each do |line|
+        if line.start_with?("* ")
+          pdf.move_down 3
+          pdf.text t(line.delete_prefix("* ")), style: :bold, size: 8, leading: 1.5
+          pdf.move_down 2
+        elsif (m = line.match(/\A(\([a-z0-9]{1,3}\))\s+(.*)\z/i))
+          top = pdf.cursor
+          pdf.text_box m[1], at: [ 8, top ], width: 18, size: 7.5, color: "374151"
+          pdf.bounding_box([ 26, top ], width: pdf.bounds.width - 26) { pdf.text t(m[2]), **body }
+          pdf.move_down 2
+        else
+          pdf.text t(line), **body
+          pdf.move_down 2
+        end
       end
       pdf.fill_color "000000"
+    end
+
+    # The PO terms, one paragraph per line, with {company} / {terms_url} filled in (a line about the terms address is left
+    # out when there is none).
+    def po_terms_lines
+      AppConfig.po_terms.split("\n").map(&:strip).reject(&:empty?).filter_map do |line|
+        next if line.include?("{terms_url}") && @company[:terms_url].blank?
+
+        line.gsub("{company}", @company[:name].to_s).gsub("{terms_url}", @company[:terms_url].to_s)
+      end
     end
 
     def watermark(pdf)

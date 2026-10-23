@@ -17,6 +17,8 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     description: "Name, address, GSTIN and contact details on purchase orders, letters and emails." },
   { slug: "businesses", title: "Businesses", category: "Organization", group: "Businesses",
     description: "Currency of DTP's and GMBH's Deere prices, used on the dashboard." },
+  { slug: "purchase-order", title: "Purchase Order", category: "Documents", group: "Purchase Order",
+    description: "Terms and Conditions on purchase orders, and the Requirements on overseas purchase orders." },
   { slug: "intimation-letter", title: "Intimation Letter", category: "Documents", group: "Intimation Letter",
     description: "Export council registration, export period and signatory printed on the letter." },
   { slug: "notifications", title: "Alerts and Slack", category: "Notifications", group: "Notifications",

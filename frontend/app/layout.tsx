@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Archivo_Black, Inter } from "next/font/google";
+import { BugsnagBoundary } from "@/components/bugsnag";
 import { SessionProvider } from "@/components/session";
 import "./globals.css";
 
@@ -17,7 +18,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${inter.variable} ${brand.variable} h-full`}>
       <body className="min-h-full">
-        <SessionProvider>{children}</SessionProvider>
+        <BugsnagBoundary><SessionProvider>{children}</SessionProvider></BugsnagBoundary>
       </body>
     </html>
   );
