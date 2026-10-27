@@ -670,7 +670,7 @@ export interface AppSettingItem {
   key: string;
   label: string;
   group: string;
-  kind: "text" | "textarea" | "secret" | "select";
+  kind: "text" | "textarea" | "secret" | "select" | "html";
   hint: string | null;
   options: string[] | null;
   default_value: string | null; // what applies when not set (shown on the page)

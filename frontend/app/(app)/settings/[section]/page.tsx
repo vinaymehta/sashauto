@@ -32,7 +32,7 @@ export default function SettingsSectionPage() {
         {/* The form card starts next to the list, keeps a readable width and is only as tall as its fields. */}
         <div className="min-w-0 flex-1 md:p-6">
           <div className="max-w-5xl overflow-hidden bg-white md:rounded-xl md:border md:border-line md:shadow-card">
-            {/* Purchase Order has its own editor (tabs, line by line, with a preview); every other page is a list of fields. */}
+            {/* Purchase Order has its own editor (PO format, WYSIWYG wording, PDF preview); every other page is a list of fields. */}
             {section.slug === "purchase-order" ? (
               <PoTermsEditor key={section.slug} title={section.title} description={section.description} category={section.category}
                              readOnly={!can(me, "settings", "edit")} />

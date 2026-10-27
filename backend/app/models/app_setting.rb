@@ -13,7 +13,7 @@ class AppSetting < ApplicationRecord
   CURRENCIES = %w[USD EUR INR GBP].freeze
 
   # Every setting the page shows, in page order. kind: text, textarea (address lines), secret (never sent back to the
-  # browser), select (options).
+  # browser), select (options), html (rich text, VendorOrders::RichText).
   DEFINITIONS = [
     define("COMPANY_NAME", "Company name", "Company", hint: "On purchase orders, Intimation Letters and emails"),
     define("COMPANY_ADDRESS", "Address", "Company", kind: :textarea, hint: "Delivery and invoice address on purchase orders"),
@@ -23,13 +23,22 @@ class AppSetting < ApplicationRecord
     define("COMPANY_TERMS_URL", "Terms and conditions URL", "Company", hint: "Linked on purchase orders"),
     define("COMPANY_CIN", "CIN", "Company", hint: "Printed on purchase orders to overseas vendors", default: AppConfig::COMPANY_DEFAULTS[:cin]),
     define("COMPANY_PAN", "PAN", "Company", hint: "Printed on purchase orders to overseas vendors", default: AppConfig::COMPANY_DEFAULTS[:pan]),
-    define("PO_TERMS", "PO Terms and Conditions", "Purchase Order", kind: :textarea, default: AppConfig::PO_TERMS_DEFAULT,
-           hint: "Printed at the foot of purchase orders to Indian vendors. One paragraph per line; start a line with * for bold, " \
-                 "with (a) for an indented item; {company} and {terms_url} are filled in"),
-    define("EXPORT_PO_REQUIREMENTS", "Overseas PO Requirements", "Purchase Order", kind: :textarea,
-           default: AppConfig::EXPORT_PO_REQUIREMENTS_DEFAULT,
-           hint: "The numbered Requirements on purchase orders to overseas vendors, one per line; start a line with * to print it " \
-                 "on a black bar; {company} is filled in"),
+    define("PO_FORMAT", "PO format for Indian vendors", "Purchase Order", kind: :select, options: AppConfig::PO_FORMATS, default: "sash",
+           hint: "sash: SASH's purchase order form; standard: the app's own layout with Terms and Conditions. Overseas vendors always get the export form"),
+    define("PO_DELIVERY_TERMS", "Terms of Delivery (India PO)", "Purchase Order", default: AppConfig::PO_DELIVERY_TERMS_DEFAULT,
+           hint: "In the Terms of Delivery box of the SASH format PO"),
+    define("PO_PAYMENT_TERMS", "Mode/Terms of Payment (India PO)", "Purchase Order", default: AppConfig::PO_PAYMENT_TERMS_DEFAULT,
+           hint: "On the SASH format PO when the vendor has no payment terms of its own"),
+    define("INDIA_PO_REQUIREMENTS", "Requirements (India PO)", "Purchase Order", kind: :html, default: AppConfig::EXPORT_PO_REQUIREMENTS_DEFAULT,
+           hint: "The numbered Requirements on the SASH format PO; highlight = a black bar; {company} is filled in"),
+    define("INDIA_PO_NOTICES", "Notices (India PO)", "Purchase Order", kind: :html, default: AppConfig::PO_NOTICES_DEFAULT,
+           hint: "At the foot of the SASH format PO: the first paragraph beside the PAN, the others across the page"),
+    define("PO_TERMS", "Terms and Conditions (India PO, Standard format)", "Purchase Order", kind: :html, default: AppConfig::PO_TERMS_DEFAULT,
+           hint: "At the foot of Standard format POs; {company} and {terms_url} are filled in"),
+    define("EXPORT_PO_REQUIREMENTS", "Requirements (overseas PO)", "Purchase Order", kind: :html, default: AppConfig::EXPORT_PO_REQUIREMENTS_DEFAULT,
+           hint: "The numbered Requirements on overseas POs; highlight = a black bar; {company} is filled in"),
+    define("EXPORT_PO_NOTICES", "Notices (overseas PO)", "Purchase Order", kind: :html, default: AppConfig::PO_NOTICES_DEFAULT,
+           hint: "At the foot of overseas POs: the first paragraph beside the PAN, the others across the page"),
     define("INTIMATION_RCMC_COUNCIL", "Export promotion council", "Intimation Letter", hint: "e.g. EEPC INDIA"),
     define("INTIMATION_RCMC_NO", "RCMC number", "Intimation Letter"),
     define("INTIMATION_RCMC_DATE", "RCMC date", "Intimation Letter", hint: "As printed, e.g. 01/04/2026"),

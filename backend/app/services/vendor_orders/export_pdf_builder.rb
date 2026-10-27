@@ -13,7 +13,6 @@ module VendorOrders
 
     def render
       pdf = Prawn::Document.new(page_size: "A4", margin: [ 30, 30, 30, 30 ], info: { Title: "Purchase Order #{@po.number}", Creator: @company[:name] })
-      @pdf_ref = pdf
       pdf.font("Helvetica")
       pdf.font_size(8)
       pdf.stroke_color BLACK
@@ -55,12 +54,25 @@ module VendorOrders
       cell(pdf, left + mid, top - 26, mid, 26, "Other Reference(s)", [ [ @po.reference.to_s, :bold ] ])
       delivery(pdf, left, top - 52, mid, 74)
       cell(pdf, left + mid, top - 52, mid, 30, "Destination", [])
-      cell(pdf, left + mid, top - 82, mid, 44, "Mode/Terms of Payment", [ vendor.payment_terms.to_s ])
+      cell(pdf, left + mid, top - 82, mid, 44, "Mode/Terms of Payment", [])
+      pdf.text_box t(payment_terms), at: [ left + mid + 3, top - 96 ], width: mid - 6, height: 26, align: :center, style: :bold,
+                                     size: 8.5, overflow: :shrink_to_fit
       cell(pdf, left, top - 126, @w - left, 54, "Terms of Delivery", [])
+      pdf.text_box t(terms_of_delivery), at: [ left + 3, top - 140 ], width: @w - left - 6, height: 36, align: :center, valign: :center,
+                                         style: :bold, size: 9, overflow: :shrink_to_fit
       pdf.stroke_rectangle([ left, top - 180 ], @w - left, 20)
       pdf.text_box "All Items are for Export", at: [ left, top - 186 ], width: @w - left, align: :center
       pdf.move_cursor_to top - 200
     end
+
+    # The Mode/Terms of Payment box: the vendor's payment terms.
+    def payment_terms = @po.vendor.payment_terms.to_s
+
+    # The Terms of Delivery box (empty on the export PO).
+    def terms_of_delivery = ""
+
+    # Before the Rate and Amount ("$ 12.50"); blank on the Indian PO.
+    def currency_symbol = "#{SYMBOLS.fetch(@po.currency.to_s, "#{@po.currency} ")} "
 
     # A bordered cell: a small label, then its lines (a line is text, or [text, :bold]).
     def cell(pdf, x, y, width, height, label, rows)
@@ -103,12 +115,12 @@ module VendorOrders
       COLUMNS.each_with_index do |(label, _, _), i|
         pdf.text_box label, at: [ xs[i] + 2, top - 3 ], width: w[i] - 4, height: head_h - 4, style: :bold, align: i == 1 ? :left : :center
       end
-      sym = SYMBOLS.fetch(@po.currency.to_s, "#{@po.currency} ")
+      sym = currency_symbol
       row_top = top - head_h - 3
       @po.lines.each_with_index do |line, n|
         per = line.uom.to_s.start_with?("PCS") ? "Nos." : "Sets"
         values = [ (n + 1).to_s, line.description, line.part_number, line.vendor_article,
-                   qty(line.qty), line.unit_cost ? "#{sym} #{unit_cost(line.unit_cost)}" : "", per, line.total ? "#{sym} #{money(line.total)}" : "" ]
+                   qty(line.qty), line.unit_cost ? "#{sym}#{unit_cost(line.unit_cost)}" : "", per, line.total ? "#{sym}#{money(line.total)}" : "" ]
         values.each_with_index do |value, i|
           pdf.text_box t(value), at: [ xs[i] + 3, row_top ], width: w[i] - 6, height: 34, align: COLUMNS[i][2] == :left ? :left : (i >= 5 ? :right : :center),
                                  overflow: :shrink_to_fit
@@ -132,7 +144,7 @@ module VendorOrders
       total_y = top - head_h - body_h
       pdf.text_box "Total", at: [ xs[1] + 3, total_y - 5 ], width: w[1] - 6
       pdf.text_box qty(@po.lines.sum { |l| l.qty.to_d }), at: [ xs[4] + 3, total_y - 5 ], width: w[4] - 6, align: :center, style: :bold
-      pdf.text_box "#{sym} #{money(total)}", at: [ xs[7] + 3, total_y - 4 ], width: w[7] - 6, align: :right, style: :bold, size: 10
+      pdf.text_box "#{sym}#{money(total)}", at: [ xs[7] + 3, total_y - 4 ], width: w[7] - 6, align: :right, style: :bold, size: 10
       pdf.move_cursor_to total_y - 18
       @total = total
     end
@@ -142,24 +154,19 @@ module VendorOrders
 
     def requirements_height(pdf, w)
       text_w = requirements_width(w)
-      18 + requirements_list.sum { |rule, _| pdf.height_of(t(rule), width: text_w - 8, size: 8) + 5 }
+      18 + requirement_blocks.sum { |block| pdf.height_of_formatted(RichText.fragments(pdf, block, size: 8, t: method(:t)), width: text_w - 8) + 5 }
     end
 
-    # "Requirements :-" and SASH's supply rules (the last one white on black), across the item columns.
+    # "Requirements :-" and SASH's supply rules (Admin Settings → Purchase Order; highlighted text on a black bar),
+    # numbered in the Sl No. column, across the item columns.
     def requirements(pdf, xs, w, y)
       text_w = requirements_width(w)
       pdf.text_box "Requirements :-", at: [ xs[1] + 4, y ], width: text_w, size: 10, style: :bold
       y -= 18
-      requirements_list.each_with_index do |(rule, highlight), i|
-        text = t(rule)
-        height = pdf.height_of(text, width: text_w - 8, size: 8) + 2
-        if highlight
-          pdf.fill_color BLACK
-          pdf.fill_rectangle([ xs[1] + 2, y + 1 ], text_w * 0.55, height + 1)
-          white { pdf.text_box text, at: [ xs[1] + 4, y ], width: text_w * 0.55 - 4, size: 8, style: :bold }
-        else
-          pdf.text_box text, at: [ xs[1] + 4, y ], width: text_w - 8, size: 8
-        end
+      requirement_blocks.each_with_index do |block, i|
+        fragments = RichText.fragments(pdf, block, size: 8, t: method(:t))
+        height = pdf.height_of_formatted(fragments, width: text_w - 8) + 2
+        pdf.formatted_text_box fragments, at: [ xs[1] + 4, y ], width: text_w - 8, height: height + 2
         pdf.text_box (i + 1).to_s, at: [ xs[0] + 2, y ], width: w[0] - 4, align: :right, size: 8
         y -= height + 3
       end
@@ -174,50 +181,66 @@ module VendorOrders
       pdf.move_cursor_to top - 44
     end
 
-    # PAN, the lead / asbestos free notice and the signatory box.
+    # PAN, the first notice (Admin Settings → Purchase Order; e.g. lead / asbestos free) and the signatory box.
     def signature_row(pdf)
       top = pdf.cursor
       height = 56
       pdf.stroke_rectangle([ 0, top ], @w, height)
       pdf.text_box t("Company's PAN : #{@company[:pan]}"), at: [ 3, top - 26 ], width: 150
-      pdf.fill_color BLACK
-      pdf.fill_rectangle([ 150, top - 14 ], 230, 38)
-      white do
-        pdf.text_box "All parts supplied by you must be Lead Free (this includes powder coating & paint also) and Asbestos free.",
-                     at: [ 156, top - 18 ], width: 218, height: 32, align: :center, valign: :center, style: :bold, size: 8.5
-      end
+      notice(pdf, notice_blocks.first, x: 150, y: top - 14, width: 230, height: 38) if notice_blocks.any?
       pdf.stroke_rectangle([ @w - 140, top - 4 ], 140, height - 4)
       pdf.text_box t("for #{@company[:name]}"), at: [ @w - 138, top - 7 ], width: 136, align: :center, style: :bold, size: 7.5
+      signature(pdf, @w - 140, top - 16)
       pdf.text_box "Authorised Signatory", at: [ @w - 138, top - 46 ], width: 134, align: :right, size: 7.5
       pdf.move_cursor_to top - height
     end
 
+    # The signature over "Authorised Signatory" (none on the export PO).
+    def signature(pdf, x, y); end
+
+    # The other notices across the page (e.g. pallets / skids), then "This is a Computer Generated Document".
     def notices(pdf)
       top = pdf.cursor
+      notice_blocks.drop(1).each do |block|
+        height = [ pdf.height_of_formatted(notice_fragments(pdf, block), width: @w - 12) + 8, 18 ].max
+        notice(pdf, block, x: 0, y: top, width: @w, height: height)
+        top -= height
+      end
+      pdf.stroke_rectangle([ 0, top ], @w, 14)
+      pdf.text_box "This is a Computer Generated Document", at: [ 0, top - 3 ], width: @w, align: :center, size: 7
+    end
+
+    # A notice in its box: a highlighted one white on black filling the box, others as they are, centred.
+    def notice(pdf, block, x:, y:, width:, height:)
+      if block.highlighted?
+        pdf.fill_color BLACK
+        pdf.fill_rectangle([ x, y ], width, height)
+      end
+      fragments = notice_fragments(pdf, block)
+      pdf.formatted_text_box fragments, at: [ x + 6, y - 2 ], width: width - 12, height: height - 4, align: :center, valign: :center,
+                                        overflow: :shrink_to_fit
       pdf.fill_color BLACK
-      pdf.fill_rectangle([ 0, top ], @w, 18)
-      white do
-        pdf.text_box "Any Pallet/Skids MUST be of plywood/ pinewood. Pinewood with fumigation. No Jungle wood to be used for any skid / pallet.",
-                     at: [ 0, top - 5 ], width: @w, align: :center, style: :bold, size: 8.5
-      end
-      pdf.stroke_rectangle([ 0, top - 18 ], @w, 14)
-      pdf.text_box "This is a Computer Generated Document", at: [ 0, top - 21 ], width: @w, align: :center, size: 7
     end
 
-    # [text, highlighted] for each requirement (Admin Settings → Purchase Order, one per line; "* " = on a black bar).
-    def requirements_list
-      @requirements_list ||= AppConfig.export_po_requirements.split("\n").map(&:strip).reject(&:empty?).map do |line|
-        [ line.delete_prefix("* ").gsub("{company}", @company[:name].to_s), line.start_with?("* ") ]
+    # A notice's text: on a black box the whole text is white (the box is the bar).
+    def notice_fragments(pdf, block)
+      RichText.fragments(pdf, block, size: 8.5, t: method(:t)).map do |fragment|
+        block.highlighted? ? fragment.except(:callback).merge(color: "FFFFFF") : fragment
       end
     end
 
-    # Text drawn in white (on a black bar), then back to black.
-    def white
-      @pdf_ref.fill_color "ffffff"
-      yield
-    ensure
-      @pdf_ref.fill_color BLACK
+    # The Requirements and the notices (Admin Settings → Purchase Order, the overseas PO's), with {company} filled in.
+    def requirement_blocks
+      @requirement_blocks ||= RichText.blocks(requirements_text, list: true, company: @company[:name], terms_url: @company[:terms_url])
     end
+
+    def notice_blocks
+      @notice_blocks ||= RichText.blocks(notices_text, company: @company[:name], terms_url: @company[:terms_url])
+    end
+
+    def requirements_text = AppConfig.export_po_requirements
+
+    def notices_text = AppConfig.export_po_notices
 
     # "USD Five Hundred Seventy Two and Cents Fifty Only".
     def words_for(amount)

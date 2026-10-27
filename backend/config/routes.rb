@@ -71,6 +71,7 @@ Rails.application.routes.draw do
     # Business settings (Admin Settings, admins).
     get "settings", to: "settings#index"
     patch "settings", to: "settings#update"
+    post "settings/po_preview", to: "settings#po_preview"
     # Deere portal sync: status, and "Run sync now" (Admin Settings → Deere portal).
     resource :portal_sync, only: %i[show create], controller: :portal_sync
     resources :products, only: %i[index create update] do

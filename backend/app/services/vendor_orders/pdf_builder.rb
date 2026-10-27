@@ -10,9 +10,12 @@ module VendorOrders
     # `reference`: the customer's (Deere) PO number the order is for.
     Po = Data.define(:number, :date, :vendor, :required_by, :currency, :prepared_by, :lines, :draft, :reference)
 
-    # The layout for a vendor: overseas vendors get the export purchase order (ExportPdfBuilder), others this one.
+    # The layout for a vendor: overseas vendors get the export purchase order (ExportPdfBuilder); Indian vendors SASH's
+    # form (IndiaPdfBuilder), or this one when Admin Settings → Purchase Order says "standard" (AppConfig.po_format).
     def self.layout_for(vendor)
-      vendor.gst_treatment == "overseas" ? ExportPdfBuilder : PdfBuilder
+      return ExportPdfBuilder if vendor.gst_treatment == "overseas"
+
+      AppConfig.po_format == "standard" ? PdfBuilder : IndiaPdfBuilder
     end
 
     # The SASH logo, as in the email header.
@@ -282,35 +285,29 @@ module VendorOrders
       pdf.stroke_horizontal_rule
       pdf.move_down 8
 
-      body = { size: 7.5, leading: 1.5, align: :justify, color: "374151" }
-      pdf.fill_color "111827"
-      # SASH's terms (Admin Settings → Purchase Order): "* " = bold, "(a) " = indented item.
-      po_terms_lines.each do |line|
-        if line.start_with?("* ")
-          pdf.move_down 3
-          pdf.text t(line.delete_prefix("* ")), style: :bold, size: 8, leading: 1.5
-          pdf.move_down 2
-        elsif (m = line.match(/\A(\([a-z0-9]{1,3}\))\s+(.*)\z/i))
-          top = pdf.cursor
-          pdf.text_box m[1], at: [ 8, top ], width: 18, size: 7.5, color: "374151"
-          pdf.bounding_box([ 26, top ], width: pdf.bounds.width - 26) { pdf.text t(m[2]), **body }
-          pdf.move_down 2
-        else
-          pdf.text t(line), **body
-          pdf.move_down 2
+      # SASH's terms (Admin Settings → Purchase Order, RichText): bold paragraphs and headings a little apart; list
+      # items and paragraphs starting "(a) " as indented points.
+      RichText.blocks(AppConfig.po_terms, company: @company[:name], terms_url: @company[:terms_url]).each do |block|
+        marker = block.marker
+        runs = block.runs
+        if marker.nil? && (m = block.text.match(/\A\s*(\([a-z0-9]{1,3}\))\s+/i))
+          marker = m[1]
+          runs = [ runs.first.merge(text: runs.first[:text].sub(/\A\s*\([a-z0-9]{1,3}\)\s+/i, "")), *runs.drop(1) ]
         end
+        heading = block.kind == :heading || runs.all? { |r| r[:text].strip.empty? || r[:styles].include?(:bold) }
+        pdf.fill_color heading ? "111827" : "374151"
+        fragments = RichText.fragments(pdf, block.with(runs: runs), size: heading ? 8 : 7.5, t: method(:t))
+        if marker
+          top = pdf.cursor
+          pdf.text_box marker, at: [ 8, top ], width: 18, size: 7.5
+          pdf.bounding_box([ 26, top ], width: pdf.bounds.width - 26) { pdf.formatted_text fragments, leading: 1.5, align: :justify }
+        else
+          pdf.move_down 1 if heading
+          pdf.formatted_text fragments, leading: 1.5, align: heading ? :left : :justify
+        end
+        pdf.move_down 2
       end
       pdf.fill_color "000000"
-    end
-
-    # The PO terms, one paragraph per line, with {company} / {terms_url} filled in (a line about the terms address is left
-    # out when there is none).
-    def po_terms_lines
-      AppConfig.po_terms.split("\n").map(&:strip).reject(&:empty?).filter_map do |line|
-        next if line.include?("{terms_url}") && @company[:terms_url].blank?
-
-        line.gsub("{company}", @company[:name].to_s).gsub("{terms_url}", @company[:terms_url].to_s)
-      end
     end
 
     def watermark(pdf)
