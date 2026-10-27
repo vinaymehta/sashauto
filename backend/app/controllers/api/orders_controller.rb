@@ -80,6 +80,7 @@ module Api
           Serializers.order_row(row, source: true).merge(placed: ordered.key?(key), order_placed: order_placed.include?(key),
                                                          ordered_qty: Serializers.qty(ordered[key]),
                                                          deliveries: deliveries.fetch(key, {}),
+                                                         **row_invoice(deliveries.dig(key, "dispatched"), row),
                                                          firm_date: firm_dates[firm_keys[i]], business: row[:business],
                                                          part_description: descriptions[row.part_number],
                                                          **combined_info(row, combined))
@@ -288,6 +289,23 @@ module Api
       return VendorOrderPlacement.order_key(ManualOrder.new(id: row.id)) if row[:manual]
 
       @combined_keys&.dig(row.id) || VendorOrderPlacement.order_key(row)
+    end
+
+    # The SASH India invoice shown on a listed row (dispatch_invoice) and all of the row's invoices (dispatch_invoices).
+    # A Dispatched mark with its invoices one by one (invoice_lines, from the dispatched orders list): those sent for
+    # this row (a combined order's rows each show their own), the one with the row's Qty shown (Deere's Qty is what is
+    # still open, so an earlier part shipment has another Qty), else the latest. Otherwise the mark's invoice number.
+    def row_invoice(dispatched, row)
+      return { dispatch_invoice: nil, dispatch_invoices: [] } unless dispatched
+      if dispatched[:invoice_lines].blank?
+        return { dispatch_invoice: dispatched[:invoice_number], dispatch_invoices: [ dispatched[:invoice_number] ].compact }
+      end
+
+      own = row[:manual] ? placement_key(row) : VendorOrderPlacement.order_key(row)
+      lines = dispatched[:invoice_lines].select { |line| line["order_key"] == own }.sort_by { |line| line["date"].to_s }
+      shown = lines.find { |line| row.qty && line["qty"].present? && BigDecimal(line["qty"]) == row.qty } || lines.last
+      { dispatch_invoice: shown&.dig("invoice"),
+        dispatch_invoices: lines.map { |line| "#{line['invoice']} (#{line['date']}#{", Qty #{line['qty']}" if line['qty']})" }.uniq }
     end
 
     # Sets ordered so far (Generate PO) per placement key of the listed rows (in one query).

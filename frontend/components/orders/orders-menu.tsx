@@ -3,7 +3,7 @@
 import { useCallback, useRef, useState, type ReactNode } from "react";
 import type { UploadChoice } from "@/lib/types";
 import { formatDateTime } from "@/lib/format";
-import { CheckIcon, ChevronDownIcon, DownloadIcon, PlusIcon, UploadIcon } from "../icons";
+import { CheckIcon, ChevronDownIcon, DownloadIcon, PlusIcon, TruckIcon, UploadIcon } from "../icons";
 import { useDismiss } from "../use-dismiss";
 import { BUSINESS_LABEL } from "@/lib/business";
 
@@ -68,13 +68,17 @@ export function UploadPicker({ uploads, latestId, selectedId, onSelect }: {
 }
 
 // Orders page actions: upload a file, create an order (admin; `onCreate`), download the shown upload.
-export function OrderActions({ downloadId, onUpload, onCreate }: { downloadId?: number; onUpload: () => void; onCreate?: () => void }) {
+// `onImportDispatched`: Import dispatched list (admins, who set Dispatched).
+export function OrderActions({ downloadId, onUpload, onCreate, onImportDispatched }: {
+  downloadId?: number; onUpload: () => void; onCreate?: () => void; onImportDispatched?: () => void;
+}) {
   return (
     <Dropdown label="Actions" width="w-56">
       {(close) => (
         <div className="py-1">
           <Item icon={<UploadIcon size={16} />} onClick={() => { close(); onUpload(); }}>Upload file</Item>
           {onCreate && <Item icon={<PlusIcon size={16} />} onClick={() => { close(); onCreate(); }}>Create order</Item>}
+          {onImportDispatched && <Item icon={<TruckIcon size={16} />} onClick={() => { close(); onImportDispatched(); }}>Import dispatched list</Item>}
           {downloadId !== undefined && (
             <a role="menuitem" href={`/api/uploads/${downloadId}/download`} download onClick={close}
                className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-base text-ink transition-colors hover:bg-canvas">

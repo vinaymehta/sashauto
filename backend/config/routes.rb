@@ -48,7 +48,9 @@ Rails.application.routes.draw do
         get :by_part
       end
     end
-    resources :order_deliveries, only: :destroy
+    resources :order_deliveries, only: :destroy do
+      post :import, on: :collection
+    end
     resources :manual_orders, only: %i[show create update destroy] do
       get :fields, on: :collection
     end

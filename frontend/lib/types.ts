@@ -211,6 +211,8 @@ export interface OrderDeliveryInfo {
   delivered_on: string;
   note: string | null;
   invoice_number: string | null; // SASH India invoice number (dispatched)
+  // Its invoices one by one with the order row each was sent for (dispatched orders list import; empty otherwise).
+  invoice_lines?: { invoice: string; date: string; qty: string | null; order_key: string }[];
   marked_by: string | null;
   created_at: string;
 }
@@ -362,6 +364,9 @@ export interface OrderRow {
   member_of?: { id: number; total: string; count: number };
   firm_date?: string | null; // from the order file, else the day the order (or the combined order it starts) first reached the MOQ
   deliveries?: Partial<Record<DeliveryKind, OrderDeliveryInfo>>; // Orders list only
+  // Orders list: the SASH India invoice shown for this row, and all its invoices (with date and Qty) when it was sent in parts.
+  dispatch_invoice?: string | null;
+  dispatch_invoices?: string[];
 }
 
 // One field of the manual order form: an Excel column of the Supplier Requirements export.
@@ -428,6 +433,15 @@ export interface OrdersSummary {
   aged: number;
   in_transit: number; // dispatched, not yet delivered to SASH US
   fulfilled: number; // delivered to Deere
+}
+
+// Orders → Import dispatched list: rows of the file, orders marked Dispatched (and from how many rows), and the rows
+// skipped with the reason.
+export interface DispatchImportResult {
+  rows: number;
+  orders_marked: number;
+  rows_marked: number;
+  skipped: { row: number; po_number: string | null; part_number: string | null; invoice_number: string | null; date: string | null; reason: string }[];
 }
 
 export interface OrdersPage {

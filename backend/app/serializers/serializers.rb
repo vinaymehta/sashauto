@@ -81,7 +81,7 @@ module Serializers
   end
 
   def order_delivery(delivery)
-    delivery.slice(:id, :kind, :delivered_on, :note, :invoice_number, :created_at)
+    delivery.slice(:id, :kind, :delivered_on, :note, :invoice_number, :invoice_lines, :created_at)
             .merge(label: delivery.label, marked_by: delivery.marked_by&.name)
   end
 

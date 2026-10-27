@@ -42,6 +42,29 @@ module Api
       already_marked(kind)
     end
 
+    # SASH India's list of dispatched orders (.xlsx, Orders::DispatchImport): the matching orders are marked Dispatched
+    # with their invoice numbers; the rows that could not be matched come back with the reason. Admins only (they set
+    # Dispatched).
+    def import
+      unless OrderDelivery::ROLE_KINDS.fetch(current_user.role, []).include?("dispatched")
+        return render_error("Only an admin can import the dispatched orders.", :forbidden)
+      end
+      file = params.require(:file)
+      unless file.respond_to?(:path) && File.extname(file.original_filename.to_s).casecmp?(".xlsx")
+        return render_error("Choose an .xlsx file.", :unprocessable_content, code: "invalid_file")
+      end
+      if file.size > AppConfig.max_upload_bytes
+        return render_error("The file is larger than #{AppConfig.max_upload_bytes / 1.megabyte} MB.", :unprocessable_content, code: "invalid_file")
+      end
+
+      result = Orders::DispatchImport.call(path: file.path, user: current_user)
+      audit("order.dispatched_list_imported", filename: file.original_filename.to_s.first(255), rows: result.rows,
+                                              orders_marked: result.orders_marked, skipped: result.skipped.size)
+      render json: { data: result.to_h }
+    rescue Orders::DispatchImport::InvalidFile => e
+      render_error e.message, :unprocessable_content, code: "invalid_file"
+    end
+
     def destroy
       delivery = OrderDelivery.active.find(params[:id])
       later = OrderDelivery::KINDS.drop(OrderDelivery::KINDS.index(delivery.kind) + 1)

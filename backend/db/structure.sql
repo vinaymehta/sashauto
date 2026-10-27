@@ -609,6 +609,7 @@ CREATE TABLE public.order_deliveries (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     invoice_number character varying(64),
+    invoice_lines jsonb DEFAULT '[]'::jsonb NOT NULL,
     CONSTRAINT order_deliveries_dispatch_invoice CHECK ((((kind)::text <> 'dispatched'::text) OR (invoice_number IS NOT NULL))),
     CONSTRAINT order_deliveries_kind_valid CHECK (((kind)::text = ANY ((ARRAY['received'::character varying, 'dispatched'::character varying, 'inbound'::character varying, 'outbound'::character varying])::text[]))),
     CONSTRAINT order_deliveries_one_order CHECK (((order_row_id IS NULL) <> (manual_order_id IS NULL)))
@@ -3014,6 +3015,7 @@ ALTER TABLE ONLY public.address_changes
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261027000001'),
 ('20261023000001'),
 ('20261022000002'),
 ('20261022000001'),

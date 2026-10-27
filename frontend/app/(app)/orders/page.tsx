@@ -2,8 +2,8 @@
 
 import { can } from "@/lib/permissions";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { createContext, memo, Suspense, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { createContext, memo, Suspense, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Dashboard, OrderRow, OrdersPage, OrdersSummary, Role, UploadChoice, UploadDetail } from "@/lib/types";
 import { formatCount, formatDate, formatQty } from "@/lib/format";
 import { AlertIcon, ArrowUpDownIcon, CheckIcon, FileIcon, HistoryIcon, MapPinIcon, TableIcon, TruckIcon } from "@/components/icons";
@@ -12,6 +12,7 @@ import { ChangesTable } from "@/components/changes-table";
 import { MoqAlertsTable } from "@/components/moq-alerts-table";
 import { cell, OrderDetailPanel, PlaceOrderPanel } from "@/components/orders/history-row";
 import { CreateOrderPanel, UploadOrdersPanel } from "@/components/orders/create-order-panel";
+import { DispatchImportPanel } from "@/components/orders/dispatch-import-panel";
 import { OrderActions, UploadPicker } from "@/components/orders/orders-menu";
 import { DeliveryCell } from "@/components/orders/delivery-cell";
 import { OpenOrderContext, OrderDetailsLink } from "@/components/orders/order-details-modal";
@@ -184,7 +185,13 @@ const OrderTr = memo(function OrderTr({ row, columns, open, today, role, onChang
     <tr className={`${tint.className} ${open ? "shadow-[inset_3px_0_0_var(--color-accent)]" : ""}`} title={tint.title}>
       {/* A row of a combined order sets the combined order's Status. */}
       <Td><DeliveryCell row={combinedOrder(row)} role={role} onChanged={onChanged} /></Td>
-      <Td className="tabular">{row.deliveries?.dispatched?.invoice_number ?? <span className="text-neutral-300">—</span>}</Td>
+      {/* The invoice sent for this row (a combined order's rows each show their own); all of them on hover when it was
+          sent in parts. */}
+      <Td className="tabular">
+        {row.dispatch_invoice
+          ? <span className="block max-w-40 truncate whitespace-nowrap" title={(row.dispatch_invoices ?? []).length > 1 ? `Sent in parts:\n${row.dispatch_invoices!.join("\n")}` : row.dispatch_invoice}>{row.dispatch_invoice}</span>
+          : <span className="text-neutral-300">—</span>}
+      </Td>
       {columns.map((c) => (
         <Td key={c.key} align={c.align === "right" ? "right" : "left"}>{c.render(row)}</Td>
       ))}
@@ -331,7 +338,16 @@ function OrdersView() {
   const activeTab: TabKey = tabs.some((t) => t.key === tab) ? tab : "orders";
 
   // ?upload=1 (the dashboard's "Upload new file") opens the upload panel.
-  const [panel, setPanel] = useState<"upload" | "create" | null>(() => (params.get("upload") === "1" && !manager ? "upload" : null));
+  const [panel, setPanel] = useState<"upload" | "create" | "dispatched" | null>(() => (params.get("upload") === "1" && !manager ? "upload" : null));
+  // …once: ?upload=1 is then dropped from the address, so the panel does not open again when the page is shown anew
+  // (switching DTP / GMBH re-mounts it).
+  const router = useRouter();
+  useEffect(() => {
+    if (params.get("upload") !== "1") return;
+    const rest = new URLSearchParams(params.toString());
+    rest.delete("upload");
+    router.replace(rest.size ? `/orders?${rest}` : "/orders", { scroll: false });
+  }, [params, router]);
   const reloadDashboard = dashboard.reload;
   const reloadUploads = uploads.reload;
   const onFinished = useCallback((upload: UploadDetail) => {
@@ -362,13 +378,15 @@ function OrdersView() {
             <BusinessPicker />
             {!manager && <>
             <UploadPicker uploads={uploads.data?.data ?? []} latestId={latest?.id} selectedId={uploadId} onSelect={chooseUpload} />
-            <OrderActions downloadId={source?.upload_id} onUpload={() => setPanel("upload")} onCreate={admin ? () => setPanel("create") : undefined} />
+            <OrderActions downloadId={source?.upload_id} onUpload={() => setPanel("upload")} onCreate={admin ? () => setPanel("create") : undefined}
+                          onImportDispatched={role === "admin" ? () => setPanel("dispatched") : undefined} />
             </>}
           </div>
         )}
       />
 
       {panel === "upload" && <UploadOrdersPanel onClose={() => setPanel(null)} onUploaded={onFinished} />}
+      {panel === "dispatched" && <DispatchImportPanel onClose={() => setPanel(null)} onImported={refresh} />}
       {(panel === "create" || editing) && (
         <CreateOrderPanel key={editing ? `edit-${editing.id}` : "create"} order={editing ?? undefined}
                           onClose={() => { setPanel(null); setEditing(null); }} onSaved={onManualSaved}
