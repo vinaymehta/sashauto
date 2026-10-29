@@ -110,8 +110,12 @@ module Serializers
                available_qty: qty(item.available_qty), vendor_name: item.vendor.name)
   end
 
+  # `per_part`: a part's balance still to order (qty) from its Firm Qty less PO issued; otherwise one order (an upload
+  # before the per-part check, or a manual order).
   def moq_alert(alert)
-    alert.slice(:id, :po_number, :part_number, :order_type, :ship_date).merge(qty: qty(alert.qty), moq: qty(alert.moq))
+    alert.slice(:id, :po_number, :part_number, :order_type, :ship_date, :description, :sash_part)
+         .merge(qty: qty(alert.qty), moq: qty(alert.moq), firm_qty: qty(alert.firm_qty), po_issued_qty: qty(alert.po_issued_qty),
+                received_qty: qty(alert.received_qty), per_part: !alert.firm_qty.nil?, manual: !alert.manual_order_id.nil?)
   end
 
   def address_change(change)

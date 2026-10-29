@@ -1,10 +1,10 @@
 <%= "Below MOQ" %>
 <%= @batch.original_filename %> · uploaded by <%= @batch.uploaded_by.name %> on <%= @batch.completed_at.in_time_zone.strftime("%-d %b %Y, %H:%M IST") %>
 
-<%= @total %> order row(s) now have a Qty below the Part Number's MOQ.
+<%= @total %> part(s) still to order below the MOQ: Balance to ORDER = Firm Qty less the Qty already on vendor POs.
 
-PO Number | Part Number | Type | Ship Date | Qty | MOQ
-<% @alerts.each do |alert| %><%= alert.po_number %> | <%= alert.part_number %> | <%= alert.order_type %> | <%= alert.ship_date.strftime("%-d %b %Y") %> | <%= format_qty(alert.qty) %> | <%= format_qty(alert.moq) %>
+S No. | Part Number | Description | SASH Part | Firm | MOQ | John Deere Received Qty | PO issued Qty | Balance to ORDER | Remarks
+<% @alerts.each_with_index do |alert, i| %><%= i + 1 %> | <%= alert.part_number %> | <%= alert.description || alert.product&.description %> | <%= alert.sash_part || alert.product&.sash_part %> | <%= format_qty(alert.firm_qty || alert.qty) %> | <%= format_qty(alert.moq) %> | <%= alert.received_qty && format_qty(alert.received_qty) %> | <%= alert.po_issued_qty && format_qty(alert.po_issued_qty) %> | <%= format_qty(alert.qty) %> | Need MOQ
 <% end %><% if @total > @alerts.size %>Showing the first <%= @alerts.size %> of <%= @total %> MOQ alerts.
 <% end %>
 View MOQ alerts: <%= @url %>

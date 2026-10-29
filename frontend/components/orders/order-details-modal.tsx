@@ -105,7 +105,7 @@ export function OrderDetailsBody({ row, rows, description, combined = [], onChan
               <span className="rounded-full bg-white px-2.5 py-0.5 text-xs font-semibold text-tint-violet-ink ring-1 ring-tint-violet-ink/20">{row.order_type}</span>
               {row.below_moq && (
                 <span className="rounded-full bg-age-yellow px-2.5 py-0.5 text-xs font-semibold text-age-yellow-ink ring-1 ring-age-yellow-ink/25">
-                  Below MOQ{row.moq ? ` · MOQ ${formatQty(row.moq)}` : ""}
+                  Below MOQ{row.moq ? ` · ${row.moq_balance ? `to order ${formatQty(row.moq_balance)} of ` : ""}MOQ ${formatQty(row.moq)}` : ""}
                 </span>
               )}
             </div>

@@ -516,6 +516,11 @@ CREATE TABLE public.moq_alerts (
     new_alert boolean NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     manual_order_id bigint,
+    firm_qty numeric(15,3),
+    po_issued_qty numeric(15,3),
+    received_qty numeric(15,3),
+    description character varying,
+    sash_part character varying,
     CONSTRAINT moq_alerts_one_order CHECK (((order_row_id IS NULL) <> (manual_order_id IS NULL))),
     CONSTRAINT moq_alerts_source_present CHECK (((upload_batch_id IS NOT NULL) OR (manual_order_id IS NOT NULL)))
 );
@@ -3015,6 +3020,7 @@ ALTER TABLE ONLY public.address_changes
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261029000001'),
 ('20261027000001'),
 ('20261023000001'),
 ('20261022000002'),

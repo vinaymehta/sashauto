@@ -123,9 +123,10 @@ module Api
       render json: { data: changes.map { |c| Serializers.address_change(c) }, meta: meta }
     end
 
-    # MOQ alerts for this upload (current rows with Qty below the Part Number's MOQ), paged on the server.
+    # MOQ alerts for this upload (parts whose balance still to order is below their MOQ; manual orders below it),
+    # paged on the server.
     def moq_alerts
-      scope = detections(UploadBatch.find(params[:id]), MoqAlert).order(:po_number, :part_number, :order_type, :id)
+      scope = detections(UploadBatch.find(params[:id]), MoqAlert).order(:part_number, :po_number, :id)
       if params[:q].present?
         term = "%#{MoqAlert.sanitize_sql_like(params[:q].to_s.strip.first(100))}%"
         scope = scope.where("po_number ILIKE :t OR part_number ILIKE :t", t: term)
@@ -136,21 +137,22 @@ module Api
 
     # Row-level problems of a rejected upload, paged on the server. Optional `column` filter
     # ("_none" selects problems not tied to one column, such as duplicate rows).
-    # The MOQ alerts as an .xlsx file: for each alert its MOQ and Qty, then the full order row (every column of
-    # the order file, as shown on the Orders page).
+    # The MOQ alerts as an .xlsx file, as in the MOQ email: per part its Firm Qty, MOQ, Deere's received Qty, PO issued
+    # and the balance still to order (a manual order or an older per-order alert: its Qty as Firm and Balance).
     def moq_alerts_export
       batch = UploadBatch.find(params[:id])
-      alerts = detections(batch, MoqAlert).order(:po_number, :part_number, :order_type, :id).limit(20_000).to_a
-      imported = OrderRow.where(id: alerts.filter_map(&:order_row_id)).index_by(&:id)
-      manual = ManualOrder.where(id: alerts.filter_map(&:manual_order_id)).index_by(&:id)
-      columns = OrderRow.where(upload_batch_id: batch.id).where.not(source_columns: nil).pick(:source_columns) || ManualOrder::HEADERS
-      rows = alerts.map do |alert|
-        record = alert.order_row_id ? imported[alert.order_row_id] : manual[alert.manual_order_id]
-        data = record&.source_data || {}
-        [ alert.moq&.to_d, alert.qty&.to_d, alert.manual_order_id ? "Manual" : "Upload" ] + columns.map { |c| data[c] }
+      alerts = detections(batch, MoqAlert).order(:part_number, :po_number, :id).limit(20_000).to_a
+      products = Product.where(id: alerts.map(&:product_id)).index_by(&:id)
+      rows = alerts.each_with_index.map do |alert, i|
+        product = products[alert.product_id]
+        [ i + 1, alert.part_number, alert.description || product&.description, alert.sash_part || product&.sash_part,
+          (alert.firm_qty || alert.qty)&.to_d, alert.moq&.to_d, alert.received_qty&.to_d, alert.po_issued_qty&.to_d, alert.qty&.to_d,
+          "Need MOQ", alert.po_number, alert.manual_order_id ? "Manual order" : "Upload" ]
       end
       audit("moq_alerts.exported", subject: batch, rows: rows.size)
-      send_data ExcelExport::XlsxWriter.call([ "MOQ", "Qty", "Source" ] + columns, rows, sheet_name: "MOQ alerts"),
+      headers = [ "S No.", "Part Number", "Description", "SASH Part", "Firm", "MOQ", "John Deere Received Qty", "PO issued Qty against Firm Orders",
+                  "Balance to ORDER", "Remarks", "PO Numbers", "Source" ]
+      send_data ExcelExport::XlsxWriter.call(headers, rows, sheet_name: "MOQ alerts"),
                 filename: "moq-alerts-#{batch.version_label || batch.id}-#{Date.current.iso8601}.xlsx",
                 type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", disposition: "attachment"
     end

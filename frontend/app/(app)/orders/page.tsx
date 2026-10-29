@@ -110,7 +110,7 @@ const typedColumns = (uploadId?: number): Record<string, Omit<Column, "key" | "l
           </span>
         )}
         {r.below_moq && (
-          <span title={r.moq ? `Below the MOQ of ${r.moq}` : "Below the part's MOQ"}><Badge tone="warn">Low MOQ</Badge></span>
+          <span title={r.moq && r.moq_balance ? `Balance to order ${formatQty(r.moq_balance)} (Firm less PO issued) is below the MOQ of ${formatQty(r.moq)}` : "Below the part's MOQ"}><Badge tone="warn">Low MOQ</Badge></span>
         )}
       </span>
     ),
@@ -134,6 +134,13 @@ const typedColumns = (uploadId?: number): Record<string, Omit<Column, "key" | "l
 // All Excel columns of the upload, in file order (same as the history table).
 function buildColumns(columns: { key: string; label: string }[], uploadId?: number, numericKeys?: Set<string>): Column[] {
   const TYPED = typedColumns(uploadId);
+  // Deere's file can have its own "Description" column: not shown as a second column, only used in Part Description
+  // (below) for parts that are not in Products.
+  const fileDescription = columns.find((c) => c.label.trim().toLowerCase() === "description")?.label;
+  const description = (r: OrderRow) => {
+    const fromFile = fileDescription ? r.source_data?.[fileDescription] : null;
+    return r.part_description || (typeof fromFile === "string" && fromFile.trim()) || null;
+  };
   return columns.flatMap(({ key, label }): Column[] => {
     const typed = TYPED[key];
     const numeric = numericKeys?.has(key) ?? false;
@@ -146,11 +153,13 @@ function buildColumns(columns: { key: string; label: string }[], uploadId?: numb
       return [{ key: "price_per_piece", label: "Price per piece", header: "Price per piece", align: "right", sortable: false, render: pricePerPiece },
               { ...column, header: "Unit Price (price per 100 pieces)" }];
     }
-    // Commodity Type is not shown; Part Description (the product's Description) comes right after Part Number.
+    // Commodity Type is not shown; Part Description comes right after Part Number.
     if (key === "commodity_type") return [];
+    if (label === fileDescription) return [];
+    // Part Description: the product's Description (Products), else the file's for a part not in Products.
     if (key === "part_number") {
       return [column, { key: "part_description", label: "Part Description", sortable: false,
-                        render: (r) => <span className="block max-w-72 truncate" title={r.part_description ?? ""}>{r.part_description || "—"}</span> }];
+                        render: (r) => <span className="block max-w-72 truncate" title={description(r) ?? ""}>{description(r) || "—"}</span> }];
     }
     // The file's own "Firm Date" column is shown as the Firm Date column below (with the date of orders it has none for).
     if (label.trim().toLowerCase() === "firm date") return [];
@@ -410,7 +419,7 @@ function OrdersView() {
                hint={`Open orders with a Qty and no vendor PO yet · ${formatCount(summary.data.po_generated)} with a PO · ${formatCount(summary.data.no_qty)} without a Qty`}
                icon={<FileIcon size={16} />} tint="amber"
                onClick={() => { setTab("orders"); list.clearFilters(); list.setFilter("type", "Firm,Order"); list.setFilter("po", "none"); }} />
-          <Kpi label="Below MOQ" value={formatCount(summary.data.below_moq)} hint="Open orders still below the part's MOQ" icon={<AlertIcon size={16} />}
+          <Kpi label="Below MOQ" value={formatCount(summary.data.below_moq)} hint="Parts whose balance to order (Firm less PO issued) is below the MOQ" icon={<AlertIcon size={16} />}
                tint="dec" onClick={tabs.some((t) => t.key === "moq") ? () => setTab("moq") : undefined} />
           <Kpi label="90+ days since Firm Date" value={formatCount(summary.data.aged)} hint="Open orders in the red age group" icon={<HistoryIcon size={16} />}
                tint="dec" onClick={() => { setTab("orders"); list.clearFilters(); list.setFilter("age", "red"); }} />

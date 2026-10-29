@@ -50,6 +50,7 @@ module Api
       # its PO, status and Firm Date.
       combined = Orders::Combiner.for_batches(batches.map(&:id))
       load_combined_orders(combined)
+      @moq_parts = Orders::MoqBalance.needing(batches.map(&:id))
       scope = filter(search(dataset, (params[:search].presence || params[:q]).to_s.strip.first(100)), combined)
       scope, sort, direction = apply_sort(scope, sorts_for(columns).merge("firm_date" => firm_date_sql), default: DEFAULT_SORT)
       # Manual orders are always listed first; each part keeps the chosen sort.
@@ -98,9 +99,9 @@ module Api
 
     # Cards above the Orders table, for the current order data (latest upload + manual orders), counting rows of the
     # order file (a combined order counts each of its rows, which share its PO and status). open: Firm / Order rows not
-    # yet delivered to Deere (outbound); po_pending: open ones with a Qty and no PO generated yet; below_moq: open ones
-    # whose order (single or combined) is still below the MOQ; aged: open ones 90+ days since their order's Firm Date
-    # (age group red, on the browser's `today`).
+    # yet delivered to Deere (outbound); po_pending: open ones with a Qty and no PO generated yet; below_moq: parts that
+    # need MOQ (Orders::MoqBalance: Firm Qty less PO issued, still to order, below the MOQ); aged: open ones 90+ days
+    # since their order's Firm Date (age group red, on the browser's `today`).
     def summary
       batch_ids = UploadBatch.latest_for(current_business).map(&:id)
       combined = Orders::Combiner.for_batches(batch_ids)
@@ -127,7 +128,7 @@ module Api
         # The rest of the open orders: with a vendor PO, or without a Qty (nothing to order).
         po_generated: open.count { |_, key, *| placed.include?(key) },
         no_qty: open.count { |_, key, qty, _| !qty.to_d.positive? && !placed.include?(key) },
-        below_moq: open_orders.count { |id| combined.open.include?(id) },
+        below_moq: Orders::MoqBalance.needing(batch_ids).values.sum(&:size),
         aged: open_orders.count { |id| aged.include?(id) },
         in_transit: statuses["dispatched"].to_i,
         fulfilled: statuses["outbound"].to_i
@@ -205,15 +206,16 @@ module Api
       end
     end
 
-    # For an imported row: below_moq when its order (single or combined) is still below the part's MOQ; for a row of a
-    # combined order, member_of: the combined order's first row (what its PO and status are recorded on), its total Qty
-    # and how many rows it combines.
+    # For an imported row: below_moq when its part needs MOQ (Orders::MoqBalance; its MOQ and the balance still to order
+    # with it); for a row of a combined order, member_of: the combined order's first row (what its PO and status are
+    # recorded on), its total Qty and how many rows it combines.
     def combined_info(row, combined)
       return {} if row[:manual]
 
+      part = @moq_parts.dig(row[:upload_batch_id], row.part_number)
+      info = { below_moq: !part.nil?, moq: part && Serializers.qty(part.moq), moq_balance: part && Serializers.qty(part.balance) }
       anchor_id = @anchor_of.fetch(row.id, row.id)
       group = combined.groups[anchor_id]
-      info = { below_moq: combined.open.include?(anchor_id), moq: group && Serializers.qty(group.moq) }
       return info unless group&.combined?
 
       info.merge(member_of: { id: anchor_id, total: Serializers.qty(group.total), count: group.members.size })
@@ -457,7 +459,7 @@ module Api
       scope = filter_by_status(scope)
       scope = filter_by_po(scope)
       scope = filter_by_combined(scope)
-      scope = filter_by_moq(scope, combined)
+      scope = filter_by_moq(scope)
       scope = filter_by_timing(scope)
       scope = filter_by_source(scope)
       scope = filter_by_vendor(scope)
@@ -478,15 +480,16 @@ module Api
     # The part's MOQ in sets (what order Qty counts), in SQL.
     MOQ_SQL = "(SELECT COALESCE(p.moq_sets, p.moq) FROM products p WHERE p.part_number = order_rows.part_number)".freeze
 
-    # MOQ filter (moq=below,reached): orders (single or combined) still below the part's MOQ, or at / above it (with a
-    # Qty, for parts with an MOQ). A combined order counts by its total, as listed.
-    def filter_by_moq(scope, combined)
+    # MOQ filter (moq=below,reached): the rows of parts that need MOQ (Orders::MoqBalance; a manual order by its own Qty),
+    # or the others with a Qty, for parts with an MOQ.
+    def filter_by_moq(scope)
       values = multi_param(:moq, %w[below reached])
       return scope if values.empty? || values.size == 2
 
-      # Every row of an order still below the MOQ (a combined order's rows too).
-      open_ids = combined.open.flat_map { |id| combined.groups[id].members.map(&:id) }.map { |id| Integer(id) }
-      below = "((NOT order_rows.manual AND order_rows.id IN (#{open_ids.presence&.join(',') || 'NULL'})) OR " \
+      parts = @moq_parts.flat_map do |batch_id, list|
+        list.keys.map { |part| OrderRow.sanitize_sql_array([ "(order_rows.upload_batch_id = ? AND order_rows.part_number = ?)", batch_id, part ]) }
+      end
+      below = "((NOT order_rows.manual AND #{parts.any? ? "(#{parts.join(' OR ')})" : 'FALSE'}) OR " \
               "(order_rows.manual AND order_rows.qty > 0 AND order_rows.qty < #{MOQ_SQL}))"
       values == [ "below" ] ? scope.where(below) : scope.where("order_rows.qty > 0 AND #{MOQ_SQL} IS NOT NULL AND NOT #{below}")
     end

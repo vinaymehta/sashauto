@@ -71,7 +71,10 @@ module Uploads
         previous = UploadBatch.latest_completed(@batch.business)
         insert_snapshot_rows(result.rows)
         insert_order_rows(result.all_rows)
-        Orders::FirmDates.import(@batch.id) # before the MOQ check, which records Firm Dates for the rest
+        Orders::FirmDates.import(@batch.id)
+        # The orders (single or combined) that reached the MOQ get their Firm Date (Orders::Combiner records them); not
+        # cached, as this upload is not committed yet.
+        Orders::Combiner.call(@batch.id, cache: false)
         conflicts = Products::SyncFromUpload.call(@batch, result.rows)
         stats = previous && Comparison::QuantityComparator.call(current_batch_id: @batch.id, previous_batch_id: previous.id)
         address_changes = previous ? Comparison::AddressComparator.call(current_batch_id: @batch.id, previous_batch_id: previous.id) : nil

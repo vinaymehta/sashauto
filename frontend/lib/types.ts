@@ -355,8 +355,9 @@ export interface OrderRow {
   ordered_qty?: string | null; // sets ordered by its POs so far (Orders list only)
   kept?: boolean; // kept on Orders by a status mark, though no longer in the latest upload
   other_ship_to?: boolean; // Ship To is not the default address
-  below_moq?: boolean; // the order (single or combined) is still below the part's MOQ
+  below_moq?: boolean; // the part needs MOQ: its balance to order (Firm Qty less PO issued) is below its MOQ
   moq?: string | null; // the part's MOQ (sets), sent with below_moq
+  moq_balance?: string | null; // the part's balance still to order, sent with below_moq
   // First order of a combined order: the combined Qty and its orders (below-MOQ orders combined until the MOQ).
   combined?: { total: string; moq: string; members: { id: number; po_line_number: string; ship_date: string; qty: string; manual: boolean }[] };
   // Orders list: a row of a combined order (listed on its own, with its own values from the file): the combined order's
@@ -429,7 +430,7 @@ export interface OrdersSummary {
   po_pending: number;
   po_generated: number; // open orders with a vendor PO
   no_qty: number; // open orders without a Qty (nothing to order) and no PO
-  below_moq: number;
+  below_moq: number; // parts that need MOQ (balance to order below the MOQ)
   aged: number;
   in_transit: number; // dispatched, not yet delivered to SASH US
   fulfilled: number; // delivered to Deere
@@ -604,14 +605,23 @@ export interface VendorImportResult {
   skipped: { row: number; message: string }[];
 }
 
+// A part whose balance still to order (qty = Firm Qty less PO issued) is below its MOQ (per_part), or one order below
+// it (a manual order, or an upload before the per-part check).
 export interface MoqAlert {
   id: number;
-  po_number: string;
+  po_number: string; // per part: its PO Numbers
   part_number: string;
   order_type: OrderType;
   ship_date: string;
   qty: string;
   moq: string;
+  description: string | null;
+  sash_part: string | null;
+  firm_qty: string | null;
+  po_issued_qty: string | null;
+  received_qty: string | null;
+  per_part: boolean;
+  manual: boolean;
 }
 
 export interface AddressChange {

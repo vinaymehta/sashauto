@@ -1,9 +1,9 @@
 Order ageing, as of <%= @today.strftime("%-d %b %Y") %>
-<%= @digest.row_count %> order row(s) by days since their Firm Date.
+<%= @digest.row_count %> order row(s) by days since their Firm Date. Shipped quantities are deducted; fully shipped orders are left out.
 <% @bands.each do |band, rows| %><% next if rows.empty? %>
 
 <%= AgeingMailer::BAND_TITLES[band] %> (<%= @digest.counts[band] || rows.size %>)
-PO Number | PO Line | Part Number | Type | Firm Date | Days since firm | Ship Date | Qty
-<% rows.each do |row| %><% firm = @firm_dates[row.id] %><%= row.po_number %> | <%= row.po_line_number %> | <%= row.part_number %> | <%= row.order_type %> | <%= firm&.strftime("%-d %b %Y") %> | <%= firm && Ageing::Rules.days_since(firm, @today) %> | <%= row.ship_date.strftime("%-d %b %Y") %> | <%= format_qty(row.effective_qty) %>
+PO Number | PO Line | Part Number | Type | Firm Date | Days since firm | Ship Date | Qty | Shipped | Open Qty
+<% rows.each do |row| %><% firm = @firm_dates[row.id] %><%= row.po_number %> | <%= row.po_line_number %> | <%= row.part_number %> | <%= row.order_type %> | <%= firm&.strftime("%-d %b %Y") %> | <%= firm && Ageing::Rules.days_since(firm, @today) %> | <%= row.ship_date.strftime("%-d %b %Y") %> | <%= format_qty(row.effective_qty) %> | <%= @shipped[row.id].to_d.positive? ? format_qty(@shipped[row.id]) : "-" %> | <%= format_qty(@open[row.id]) %>
 <% end %><% end %>
 Open the Orders page: <%= @url %>

@@ -2,7 +2,7 @@
   <h1 style="font-size:20px;font-weight:700;margin:0 0 4px;color:#1d2636;">Order ageing</h1>
   <p style="margin:0 0 20px;color:#737373;">
     <%= @digest.row_count %> order row<%= "s" unless @digest.row_count == 1 %>
-    by days since their Firm Date, as of <%= @today.strftime("%-d %b %Y") %>.
+    by days since their Firm Date, as of <%= @today.strftime("%-d %b %Y") %>. Shipped quantities are deducted; fully shipped orders are left out.
   </p>
   <% @bands.each do |band, rows| %>
     <% next if rows.empty? %>
@@ -22,6 +22,8 @@
           <th style="padding:8px 10px;font-weight:600;text-align:right;">Days since firm</th>
           <th style="padding:8px 10px;font-weight:600;">Ship Date</th>
           <th style="padding:8px 10px;font-weight:600;text-align:right;">Qty</th>
+          <th style="padding:8px 10px;font-weight:600;text-align:right;">Shipped</th>
+          <th style="padding:8px 10px;font-weight:600;text-align:right;">Open Qty</th>
         </tr>
       </thead>
       <tbody>
@@ -36,6 +38,8 @@
             <td style="padding:8px 10px;text-align:right;font-weight:600;color:<%= ink %>;"><%= firm && Ageing::Rules.days_since(firm, @today) %></td>
             <td style="padding:8px 10px;color:#171717;white-space:nowrap;"><%= row.ship_date.strftime("%-d %b %Y") %></td>
             <td style="padding:8px 10px;text-align:right;color:#171717;"><%= format_qty(row.effective_qty) %></td>
+            <td style="padding:8px 10px;text-align:right;color:#737373;"><%= @shipped[row.id].to_d.positive? ? format_qty(@shipped[row.id]) : "–" %></td>
+            <td style="padding:8px 10px;text-align:right;font-weight:600;color:#171717;"><%= format_qty(@open[row.id]) %></td>
           </tr>
         <% end %>
       </tbody>

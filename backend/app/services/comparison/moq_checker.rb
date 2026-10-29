@@ -1,9 +1,9 @@
 module Comparison
-  # MOQ alerts of an upload. Order Qty counts sets/packs, so it is compared with the MOQ in sets (`moq_sets`; the
-  # same as the piece MOQ for parts sold singly). Imported orders: below-MOQ orders are combined with the next orders
-  # of the same PO + Part + Type until they reach the MOQ (Orders::Combiner); each order or combined order still below
-  # the MOQ is alerted (its first row, with the combined Qty). Manual orders (not deleted) are checked on their own.
-  # `new_alert` records whether it was not already alerted in the previous upload. Returns the number of alerts.
+  # MOQ alerts of an upload, per part as SASH checks them: the Firm Qty of all the part's Firm / Order rows in the
+  # upload, less the Qty already on vendor POs (Generate PO) = the balance still to order; a part whose balance is above
+  # zero but below its MOQ (in sets, as order Qty counts sets) is alerted ("Need MOQ"), with Deere's received Qty
+  # (Cumulative Receipt Qty of its PO lines). Manual orders (not deleted) are checked on their own. `new_alert` records
+  # whether it was not already alerted in the previous upload. Returns the number of alerts.
   class MoqChecker
     def self.call(current_batch_id:, previous_batch_id: nil)
       binds = { current: Integer(current_batch_id), previous: previous_batch_id && Integer(previous_batch_id) }
@@ -25,24 +25,33 @@ module Comparison
       imported.size + ActiveRecord::Base.connection.execute(manual_sql).cmd_tuples
     end
 
-    # One alert per order — or combined order (Orders::Combiner) — of the upload whose Qty is still below the MOQ,
-    # on its first (anchor) row with the combined Qty. new_alert: the previous upload had no alert for the same
-    # PO + Part + Type.
+    # One alert per part of the upload that needs MOQ (Orders::MoqBalance: Firm Qty - PO issued above zero and below
+    # its MOQ), on the part's first Firm / Order row. new_alert: the previous upload had no alert for the part.
     def self.imported_alerts(binds)
-      result = Orders::Combiner.call(binds[:current], cache: false) # the upload being processed (not committed yet)
-      return [] if result.open.empty?
+      parts = Orders::MoqBalance.parts(binds[:current]).values.select(&:need_moq?)
+      return [] if parts.empty?
 
-      groups = result.open.map { |id| result.groups.fetch(id) }
       previous = binds[:previous] ? MoqAlert.where(upload_batch_id: binds[:previous]).where.not(order_row_id: nil).distinct.pluck(:group_key).to_set : Set.new
-      products = Product.where(part_number: groups.map { |g| g.members.first.part_number }.uniq).pluck(:part_number, :id).to_h
       now = Time.current
-      groups.map do |g|
-        anchor = g.members.first
-        { upload_batch_id: binds[:current], order_row_id: anchor.id, product_id: products.fetch(anchor.part_number),
-          group_key: anchor.group_key, po_number: anchor.po_number, part_number: anchor.part_number,
-          order_type: anchor.order_type, ship_date: anchor.ship_date, qty: g.total, moq: g.moq,
-          new_alert: !previous.include?(anchor.group_key), created_at: now }
+      parts.map do |part|
+        first = part.rows.first
+        key = part_key(part.part_number)
+        { upload_batch_id: binds[:current], order_row_id: first.id, product_id: part.product.id, group_key: key,
+          po_number: part.rows.map(&:po_number).uniq.join(", ").first(255), part_number: part.part_number, order_type: first.order_type,
+          ship_date: first.ship_date, qty: part.balance, moq: part.moq, firm_qty: part.firm, po_issued_qty: part.issued,
+          received_qty: received(part.rows), description: part.product.description&.first(255), sash_part: part.product.sash_part,
+          new_alert: !previous.include?(key), created_at: now }
       end
     end
+
+    # Deere's received Qty of the part: the Cumulative Receipt Qty of each of its PO lines, added up (nil when none).
+    def self.received(list)
+      lines = list.uniq { |r| [ r.po_number, r.po_line_number ] }
+      values = lines.filter_map { |r| OrderRows::Normalizer.quantity(r.source_data&.dig("Cumulative Receipt Qty")) rescue nil }
+      values.any? ? values.sum : nil
+    end
+
+    # The alert's key for a part (alerts were per PO + Part + Type before; a part's key never matches one of those).
+    def self.part_key(part) = Digest::SHA256.hexdigest("moq-part#{OrderRows::Normalizer::KEY_SEPARATOR}#{part}")
   end
 end

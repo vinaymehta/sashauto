@@ -1,6 +1,7 @@
 module Ageing
   # Builds the ageing email of one upload from its order rows, grouped by age band (Ageing::Rules: days since the
   # Firm Date; green 30-59, yellow 60-89, red 90 or more; orders under 30 days or without a Firm Date are not listed).
+  # Shipped quantities are deducted (Ageing::OpenQty): a row fully shipped is not counted.
   #
   # Called inside the upload's commit transaction (outbox): the digest commits with the upload, and the
   # caller hands it to Sidekiq after commit. Returns nil when no row is in a band.
@@ -15,7 +16,8 @@ module Ageing
     end
 
     def call
-      counts = Rules::BANDS.to_h { |band| [ band, Rules.in_bands(@batch.order_rows, [ band ], @today).count ] }
+      open = OpenQty.new(@batch.id, cache: false) # the upload is not committed yet
+      counts = Rules::BANDS.to_h { |band| [ band, Rules.in_bands(@batch.order_rows, [ band ], @today).to_a.count { |row| open.open(row).positive? } ] }
       total = counts.values.sum
       return nil if total.zero?
 
