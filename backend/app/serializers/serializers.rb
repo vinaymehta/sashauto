@@ -160,8 +160,8 @@ module Serializers
   # `vendors` (the product's vendor parts, loaded): adds how many vendors supply it, the lowest vendor price per piece
   # (with its currency and vendor) and the pieces vendors have available, for the Products list.
   def product(product, open_conflicts: [], vendors: nil)
-    data = product.slice(:id, :part_number, :commodity_type, :source, :sash_part, :vendor_part, :description, :moq_text, :created_at,
-                         :updated_at)
+    data = product.slice(:id, :part_number, :commodity_type, :source, :sash_part, :vendor_part, :description, :moq_text, :discontinued,
+                         :created_at, :updated_at)
                   .merge(pack_size: product.pack_size, moq: qty(product.moq), moq_sets: qty(product.moq_sets), weight_kg: qty(product.weight_kg),
                          customer_price: qty(product.customer_price), customer_currency: AppConfig.business_currency("dtp"))
                   .merge(open_conflicts: open_conflicts.map { |c| product_conflict(c) }, images: product_images(product))

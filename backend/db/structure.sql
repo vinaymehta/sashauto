@@ -936,6 +936,7 @@ CREATE TABLE public.products (
     moq_sets numeric(15,3),
     moq_text character varying(200),
     customer_price numeric(15,4),
+    discontinued boolean DEFAULT false NOT NULL,
     CONSTRAINT products_customer_price_valid CHECK (((customer_price IS NULL) OR (customer_price >= (0)::numeric))),
     CONSTRAINT products_moq_positive CHECK (((moq IS NULL) OR (moq > (0)::numeric))),
     CONSTRAINT products_moq_sets_positive CHECK (((moq_sets IS NULL) OR (moq_sets > (0)::numeric))),
@@ -3020,6 +3021,7 @@ ALTER TABLE ONLY public.address_changes
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261030000001'),
 ('20261029000001'),
 ('20261027000001'),
 ('20261023000001'),

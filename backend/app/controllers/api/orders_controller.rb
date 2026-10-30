@@ -73,7 +73,9 @@ module Api
       # (By position: an imported row and a manual order can share an id.)
       firm_keys = rows.map { |row| firm_key(row) }
       firm_dates = Orders::FirmDates.for_keys(firm_keys)
-      descriptions = Product.where(part_number: rows.map(&:part_number).uniq).pluck(:part_number, :description).to_h
+      products = Product.where(part_number: rows.map(&:part_number).uniq).pluck(:part_number, :description, :discontinued)
+      descriptions = products.to_h { |part, description, _| [ part, description ] }
+      discontinued = products.filter_map { |part, _, off| part if off }.to_set
       render json: {
         data: rows.each_with_index.map do |row, i|
           # The order's PO and status (a combined order's on each of its rows).
@@ -84,6 +86,7 @@ module Api
                                                          **row_invoice(deliveries.dig(key, "dispatched"), row),
                                                          firm_date: firm_dates[firm_keys[i]], business: row[:business],
                                                          part_description: descriptions[row.part_number],
+                                                         discontinued: discontinued.include?(row.part_number),
                                                          **combined_info(row, combined))
         end,
         meta: meta.merge(sort: sort, direction: direction),

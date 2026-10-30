@@ -92,7 +92,7 @@ module Api
     def update
       product = Product.find(params[:id])
       before = { moq: product.moq&.to_s, moq_sets: product.moq_sets&.to_s, pack_size: product.pack_size,
-                 customer_price: product.customer_price&.to_s, **product.slice(*DETAILS).symbolize_keys }
+                 customer_price: product.customer_price&.to_s, discontinued: product.discontinued, **product.slice(*DETAILS).symbolize_keys }
       # MOQ in sets with the pack size (pieces derived), or — from older clients — MOQ in pieces.
       attrs = details
       attrs[:pack_size] = params[:pack_size] if params.key?(:pack_size)
@@ -103,11 +103,14 @@ module Api
       end
       # Customer price (Unit Price per 100 pcs), edited by hand; the change goes to the price history.
       attrs[:customer_price] = params[:customer_price].presence if params.key?(:customer_price)
+      # Discontinued: no more vendor POs for the part.
+      attrs[:discontinued] = ActiveModel::Type::Boolean.new.cast(params[:discontinued]) || false if params.key?(:discontinued)
       product.price_changed_by = current_user
       if product.update(attrs)
         audit("product.updated", subject: product, before: before,
                                  after: { moq: product.moq&.to_s, moq_sets: product.moq_sets&.to_s, pack_size: product.pack_size,
-                                          customer_price: product.customer_price&.to_s, **product.slice(*DETAILS).symbolize_keys })
+                                          customer_price: product.customer_price&.to_s, discontinued: product.discontinued,
+                                          **product.slice(*DETAILS).symbolize_keys })
         render json: { data: Serializers.product(product, open_conflicts: product.product_conflicts.open.includes(:upload_batch)) }
       else
         render_validation_errors(product)

@@ -41,6 +41,7 @@ export function ProductPanel({ productId, canEdit, edit = false, onClose, onSave
       ) : data && product ? (
         <div className="space-y-4">
           {product.open_conflicts.length > 0 && <ConflictsNotice product={product} onSaved={changed} />}
+          <DiscontinuedNotice product={product} canEdit={canEdit} onSaved={changed} />
           <PartDetails product={product} canEdit={canEdit} edit={edit} onSaved={changed} />
           <ProductImages product={product} canEdit={canEdit} onSaved={changed} />
           <CustomerPrice product={product} price={data.customer_price} canEdit={canEdit} onSaved={changed} />
@@ -145,6 +146,40 @@ function PartDetails({ product, canEdit, edit, onSaved }: { product: Product; ca
 }
 
 // Deere's price for the part: the order file's Unit Price, per 100 pcs (updated by each upload), and per piece.
+// A discontinued part (no more vendor POs: Generate PO is refused, it is left out of the MOQ check) shows a notice;
+// with edit rights the part can be marked discontinued, or ordered again.
+function DiscontinuedNotice({ product, canEdit, onSaved }: { product: Product; canEdit: boolean; onSaved: () => void }) {
+  const notify = useToast();
+  const [saving, setSaving] = useState(false);
+  async function set(discontinued: boolean) {
+    setSaving(true);
+    try {
+      await api.patch(`/api/products/${product.id}`, { discontinued });
+      notify(discontinued ? `${product.part_number} marked discontinued: no more vendor POs.` : `${product.part_number} can be ordered again.`);
+      onSaved();
+    } catch (err) {
+      notify(err instanceof ApiError ? err.message : "Could not save.", "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+  if (!product.discontinued) {
+    return canEdit ? (
+      <div className="flex justify-end">
+        <button type="button" onClick={() => set(true)} disabled={saving} className="text-xs text-ink-muted underline hover:text-ink disabled:opacity-50">
+          Mark part as discontinued
+        </button>
+      </div>
+    ) : null;
+  }
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-neutral-300 bg-neutral-100 px-4 py-3">
+      <p className="text-sm text-ink"><Badge tone="dark">Discontinued</Badge> <span className="ml-1">No more vendor POs are placed for this part, and it is left out of the MOQ check.</span></p>
+      {canEdit && <Button size="sm" onClick={() => set(false)} disabled={saving}>{saving ? "Saving…" : "Order it again"}</Button>}
+    </div>
+  );
+}
+
 function CustomerPrice({ product, price, canEdit, onSaved }: { product: Product; price: string | null; canEdit: boolean; onSaved: () => void }) {
   const notify = useToast();
   const [editing, setEditing] = useState(false);

@@ -155,6 +155,7 @@ export interface ProductImage {
 export interface Product {
   id: number;
   part_number: string;
+  discontinued: boolean; // no more vendor POs (Generate PO refused, left out of the MOQ check)
   commodity_type: string | null;
   sash_part: string | null;
   vendor_part: string | null;
@@ -322,6 +323,7 @@ export interface DateAmount { date: string; amount: string }
 export interface OrderRow {
   id: number;
   part_description?: string | null; // the product's Description (Products), Orders list only
+  discontinued?: boolean; // Orders list: the part is discontinued (no vendor PO can be placed)
   order_type: OrderType;
   due_date: string | null;
   ship_date: string;

@@ -182,6 +182,7 @@ function ProductRow({ product, active, canEdit, onOpen }: { product: Product; ac
           )}
           {product.part_number}
           {product.open_conflicts.length > 0 && <Badge tone="warn">Conflict</Badge>}
+          {product.discontinued && <span title="No more vendor POs for this part"><Badge tone="dark">Discontinued</Badge></span>}
         </span>
         {/* Shown here when their own columns are hidden. */}
         {product.description && <span className={`${sub} xl:hidden`} title={product.description}>{product.description}</span>}

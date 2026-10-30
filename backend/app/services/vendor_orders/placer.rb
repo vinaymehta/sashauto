@@ -37,6 +37,7 @@ module VendorOrders
 
     def call
       product = Product.find_by(part_number: @row.part_number)
+      raise Invalid, "#{@row.part_number} is discontinued, so no vendor PO can be placed for it." if product&.discontinued?
       order_qty = @order_qty || @row.qty
       raise Invalid, "This order has no Qty, so it cannot be placed." if order_qty.nil? || order_qty <= 0
 

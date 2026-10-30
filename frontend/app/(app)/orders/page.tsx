@@ -124,7 +124,14 @@ const typedColumns = (uploadId?: number): Record<string, Omit<Column, "key" | "l
       </span>
     ),
   },
-  part_number: { render: (r) => <RelatedLink kind="part" value={r.part_number} uploadId={uploadId} /> },
+  part_number: {
+    render: (r) => (
+      <span className="inline-flex items-center gap-1.5">
+        <RelatedLink kind="part" value={r.part_number} uploadId={uploadId} />
+        {r.discontinued && <span title="Discontinued part: no vendor PO can be placed"><Badge tone="dark">Discontinued</Badge></span>}
+      </span>
+    ),
+  },
   qty: { align: "right", render: (r) => <QtyCell row={r} /> },
   previous_qty: { align: "right", render: (r) => qty(r.previous_qty) },
   last_asn_qty: { align: "right", render: (r) => qty(r.last_asn_qty) },

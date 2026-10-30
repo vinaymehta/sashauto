@@ -18,6 +18,10 @@ module Vendors
       vendor_name: [ "vendor name" ], price: [ "vendor price" ]
     }.freeze
     REQUIRED = %i[part_number vendor_name].freeze
+    # A Vendor Name that only says there is no vendor.
+    NO_VENDOR = /\A(?:[-–—.]+|n\/?a|nil|none|na)\z/i
+    # A Vendor Name saying the part is discontinued (no more POs).
+    DISCONTINUED = /\Adiscontinu/i
     CURRENCY_SYMBOLS = { "$" => "USD", "USD" => "USD", "€" => "EUR", "EUR" => "EUR", "₹" => "INR", "RS" => "INR",
                          "RS." => "INR", "INR" => "INR", "¥" => "CNY", "CNY" => "CNY", "RMB" => "CNY",
                          "£" => "GBP", "GBP" => "GBP" }.freeze
@@ -74,11 +78,13 @@ module Vendors
           counts[:products_created] += 1 if result.product_created
           counts[:vendors_created] += 1 if result.vendor_created
           counts[result.added ? :added : :updated] += 1 unless result.skipped?
-          result.problems.each do |problem|
-            skipped << { row: number, message: problem[:message] } if problem[:kind] == "skipped"
-            ImportIssue.create!(filename: @filename, excel_row: number, kind: problem[:kind],
-                                field: problem[:field], message: problem[:message], row_data: row_data(row),
-                                product: result.product, vendor_product: result.vendor_product, imported_by: @user)
+          result.problems.each { |problem| skipped << { row: number, message: problem[:message] } if problem[:kind] == "skipped" }
+          # One issue per row, with all its problems (a skipped row is a skipped issue; the vendor first, as it matters most).
+          if result.problems.any?
+            problems = result.problems.sort_by { |problem| problem[:field] == "vendor_name" ? 0 : 1 }
+            ImportIssue.create!(filename: @filename, excel_row: number, kind: result.skipped? ? "skipped" : problems.first[:kind],
+                                field: problems.first[:field], message: problems.map { |problem| problem[:message] }.join(" "),
+                                row_data: row_data(row), product: result.product, vendor_product: result.vendor_product, imported_by: @user)
             issues += 1
           end
         end
@@ -95,30 +101,55 @@ module Vendors
       part = OrderRows::Normalizer.part_number(row[:part_number].to_s)
       return skip(:part_number, "Part Number is blank.") if part.blank?
       return skip(:vendor_name, "Vendor Name is blank.") if name.empty?
+      # No vendor (a dash, a discontinued part, …): the part is added without one, with a warning. Otherwise one vendor,
+      # or several (the part is then made by each of them, at its own price): VendorCell.
+      no_vendor = not_a_vendor(name)
+      entries = no_vendor ? [] : VendorCell.new(vendors.values).parse(name)
+      return skip(:vendor_name, "Vendor Name \"#{name.first(60)}\" could not be read as vendors, so the row was not imported.") if !no_vendor && entries.empty?
 
       problems = unreadable_values(row)
+      # The price is each vendor's in the cell, or there is no vendor to price.
+      problems.reject! { |p| p[:field] == "price" } if no_vendor || entries.all?(&:price)
+      # "Discontinue Part": no more vendor POs for the part; it is marked Discontinued.
+      discontinued = name.match?(DISCONTINUED)
+      if discontinued
+        problems << { kind: "unreadable", field: "vendor_name", message: "Discontinued part (\"#{name}\"): marked Discontinued, no vendor POs will be placed for it." }
+      elsif no_vendor
+        problems << { kind: "unreadable", field: "vendor_name", message: "#{no_vendor} The part was added without a vendor." }
+      end
       pack = PackParser.pack_size(description: row[:description], moq: row[:moq], price: row[:price])
       moq = PackParser.moq(row[:moq], pack)
-      # An amount without a currency is in the vendor's own currency (e.g. a Chinese vendor's "271.09" is USD).
-      price = PackParser.price(row[:price], pack, currencies: CURRENCY_SYMBOLS, default: vendors[name.downcase]&.currency.presence || "INR")
       product = Product.find_by(part_number: part)
       product_created = product.nil?
       product ||= Product.create!(part_number: part, source: "manual", created_by: @user)
       product.update!({ sash_part: row[:sash_part].to_s.strip.presence, vendor_part: row[:vendor_part].to_s.strip.presence,
                         description: row[:description].to_s.strip.presence, pack_size: pack,
                         moq: moq&.pcs, moq_sets: moq&.sets, moq_text: moq && file_text(row[:moq]),
-                        weight_kg: number_or_nil(row[:weight_kg]) }.compact)
-      vendor_created = !vendors.key?(name.downcase)
-      vendor = vendors[name.downcase] ||= Vendor.create!(name: name)
-      item = VendorProduct.find_or_initialize_by(vendor: vendor, product: product)
-      item.price_source = "import"
-      item.price_changed_by = @user
-      added = item.new_record?
-      item.update!(sash_part: row[:sash_part], vendor_part: row[:vendor_part], description: row[:description], pack_size: pack,
-                   moq: moq&.pcs, moq_sets: moq&.sets, moq_text: moq && file_text(row[:moq]), weight_kg: number_or_nil(row[:weight_kg]),
-                   price_amount: price.pc, set_price_amount: price.set, price_currency: price.currency, price_note: price.note,
-                   price_text: price.set && file_text(row[:price]))
-      RowResult.new(product: product, vendor_product: item, product_created: product_created,
+                        weight_kg: number_or_nil(row[:weight_kg]), discontinued: (true if discontinued) }.compact)
+      vendor_created = false
+      added = false
+      items = entries.map do |entry|
+        vendor = entry.vendor || vendors[entry.name.downcase]
+        unless vendor
+          vendor = vendors[entry.name.downcase] = Vendor.create!(name: entry.name)
+          vendor_created = true
+        end
+        # An amount without a currency is in the vendor's own currency (e.g. a Chinese vendor's "271.09" is USD).
+        text = entry.price || row[:price]
+        price = PackParser.price(text, pack, currencies: CURRENCY_SYMBOLS, default: vendor.currency.presence || "INR")
+        item = VendorProduct.find_or_initialize_by(vendor: vendor, product: product)
+        item.price_source = "import"
+        item.price_changed_by = @user
+        added ||= item.new_record?
+        # A part made by several vendors keeps the cell as its note (who does what).
+        note = entries.size > 1 ? [ price.note, "One of #{entries.size} vendors: #{name}" ].compact.join(" · ").first(500) : price.note
+        item.update!(sash_part: row[:sash_part], vendor_part: row[:vendor_part], description: row[:description], pack_size: pack,
+                     moq: moq&.pcs, moq_sets: moq&.sets, moq_text: moq && file_text(row[:moq]), weight_kg: number_or_nil(row[:weight_kg]),
+                     price_amount: price.pc, set_price_amount: price.set, price_currency: price.currency, price_note: note,
+                     price_text: price.set && file_text(text))
+        item
+      end
+      RowResult.new(product: product, vendor_product: items.first, product_created: product_created,
                     vendor_created: vendor_created, added: added, problems: problems)
     rescue ActiveRecord::RecordInvalid => e
       field = e.record.is_a?(Product) && e.record.errors.include?(:part_number) ? :part_number : nil
@@ -129,10 +160,39 @@ module Vendors
 
     def header_index(headers)
       normalized = headers.map { |h| h.to_s.squish.downcase }
+      # A column named twice would be read from the wrong one (e.g. "Vendor Name" over the Vendor Part column).
+      COLUMNS.each_value do |names|
+        at = normalized.each_index.select { |i| names.include?(normalized[i]) }
+        next if at.size < 2
+
+        letters = at.map { |i| column_letter(i) }.join(" and ")
+        raise InvalidFile, "Column \"#{headers[at.first].to_s.squish}\" appears twice (columns #{letters}). Rename the wrong one " \
+                           "(e.g. to \"Vendor Part\" if it holds the vendor's part numbers) and import again."
+      end
       index = COLUMNS.transform_values { |names| names.filter_map { |name| normalized.index(name) }.first }
       missing = REQUIRED.reject { |key| index[key] }
       raise InvalidFile, "Missing column(s): #{missing.map { |k| COLUMNS[k].first.titleize }.join(', ')}." if missing.any?
       index
+    end
+
+    # 0 => "A", 25 => "Z", 26 => "AA".
+    def column_letter(index)
+      letters = +""
+      index += 1
+      while index.positive?
+        index, rest = (index - 1).divmod(26)
+        letters.prepend((65 + rest).chr)
+      end
+      letters
+    end
+
+    # Why a Vendor Name is not a vendor (the part is added without one, with a warning on the Import issues tab), or
+    # nil: a dash or "N/A" (no vendor), a discontinued or cancelled part, no quote yet, or a charge (e.g. air freight).
+    # Several vendors in one cell are read by VendorCell.
+    def not_a_vendor(name)
+      return "Vendor Name is \"#{name}\" (no vendor)." if NO_VENDOR.match?(name)
+      return "Vendor Name says \"#{name.first(60)}\", which is not a vendor." if name.match?(/\Adiscontinu|\bno quote\b|\bcancel|\bfreight\b|\bcharges?\z/i)
+      nil
     end
 
     def skip(field, message)

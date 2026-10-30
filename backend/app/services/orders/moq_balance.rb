@@ -8,7 +8,8 @@ module Orders
   class MoqBalance
     Part = Data.define(:part_number, :product, :rows, :firm, :issued, :moq) do
       def balance = firm - issued
-      def need_moq? = !moq.nil? && balance.positive? && balance < moq
+      # A discontinued part is not ordered any more, so it never needs MOQ.
+      def need_moq? = !moq.nil? && !product&.discontinued? && balance.positive? && balance < moq
     end
 
     # { part_number => Part } of one upload (rows in Ship Date order).
