@@ -141,12 +141,12 @@ const typedColumns = (uploadId?: number): Record<string, Omit<Column, "key" | "l
 // All Excel columns of the upload, in file order (same as the history table).
 function buildColumns(columns: { key: string; label: string }[], uploadId?: number, numericKeys?: Set<string>): Column[] {
   const TYPED = typedColumns(uploadId);
-  // Deere's file can have its own "Description" column: not shown as a second column, only used in Part Description
-  // (below) for parts that are not in Products.
+  // Deere's file can have its own "Description" column: not shown as a second column, it is the Part Description
+  // (below); the product's Description (Products) only when the file has none.
   const fileDescription = columns.find((c) => c.label.trim().toLowerCase() === "description")?.label;
   const description = (r: OrderRow) => {
     const fromFile = fileDescription ? r.source_data?.[fileDescription] : null;
-    return r.part_description || (typeof fromFile === "string" && fromFile.trim()) || null;
+    return (typeof fromFile === "string" && fromFile.trim()) || r.part_description || null;
   };
   return columns.flatMap(({ key, label }): Column[] => {
     const typed = TYPED[key];
@@ -163,10 +163,10 @@ function buildColumns(columns: { key: string; label: string }[], uploadId?: numb
     // Commodity Type is not shown; Part Description comes right after Part Number.
     if (key === "commodity_type") return [];
     if (label === fileDescription) return [];
-    // Part Description: the product's Description (Products), else the file's for a part not in Products.
+    // Part Description: the file's Description, else the product's (Products).
     if (key === "part_number") {
       return [column, { key: "part_description", label: "Part Description", sortable: false,
-                        render: (r) => <span className="block max-w-72 truncate" title={description(r) ?? ""}>{description(r) || "—"}</span> }];
+                        render: (r) => <span className="block w-72 whitespace-normal break-words py-1 leading-snug">{description(r) || "—"}</span> }];
     }
     // The file's own "Firm Date" column is shown as the Firm Date column below (with the date of orders it has none for).
     if (label.trim().toLowerCase() === "firm date") return [];

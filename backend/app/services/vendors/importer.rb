@@ -143,9 +143,12 @@ module Vendors
         added ||= item.new_record?
         # A part made by several vendors keeps the cell as its note (who does what).
         note = entries.size > 1 ? [ price.note, "One of #{entries.size} vendors: #{name}" ].compact.join(" · ").first(500) : price.note
+        # The set price wins, as when it is edited (PackQuantities): the piece price is derived from it, so importing the
+        # same file again leaves the price as it is ("₹30.37 per Pcs(₹303.66 per Set)": 303.66 / 10 = 30.366).
         item.update!(sash_part: row[:sash_part], vendor_part: row[:vendor_part], description: row[:description], pack_size: pack,
                      moq: moq&.pcs, moq_sets: moq&.sets, moq_text: moq && file_text(row[:moq]), weight_kg: number_or_nil(row[:weight_kg]),
-                     price_amount: price.pc, set_price_amount: price.set, price_currency: price.currency, price_note: note,
+                     price_amount: price.set ? (price.set / pack).round(4) : price.pc, set_price_amount: price.set,
+                     price_currency: price.currency, price_note: note,
                      price_text: price.set && file_text(text))
         item
       end

@@ -224,11 +224,12 @@ module Api
       info.merge(member_of: { id: anchor_id, total: Serializers.qty(group.total), count: group.members.size })
     end
 
-    # Order details header of a row's PO Number + Part Number + Type: the part's Description and MOQ (sets, and pieces
-    # for pack parts).
+    # Order details header of a row's PO Number + Part Number + Type: the part's Description (the file's, as on the
+    # Orders page, else the product's) and MOQ (sets, and pieces for pack parts).
     def group_info(row)
       product = Product.find_by(part_number: row.part_number)
-      { po_number: row.po_number, part_number: row.part_number, order_type: row.order_type, description: product&.description,
+      from_file = row.source_data.find { |label, value| label.strip.casecmp?("description") && value.to_s.strip.present? }&.last.to_s.squish
+      { po_number: row.po_number, part_number: row.part_number, order_type: row.order_type, description: from_file.presence || product&.description,
         moq: Serializers.qty(product && (product.moq_sets || product.moq)), moq_pcs: Serializers.qty(product&.moq),
         pack_size: product&.pack_size || 1 }
     end
