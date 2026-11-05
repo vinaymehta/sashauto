@@ -10,6 +10,7 @@ export interface User {
   last_login_at: string | null;
   created_at: string;
   permissions: Record<"dashboard" | "orders" | "products" | "vendors" | "settings", "none" | "view" | "edit">; // in effect (admin: edit)
+  orders_columns: string[] | null; // keys of the Orders table columns this user shows (null: not chosen, the default ones)
 }
 
 // Response of creating a user or resetting a password. When the email could not be sent, the password is

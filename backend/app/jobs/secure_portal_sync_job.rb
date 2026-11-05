@@ -3,7 +3,7 @@ require "digest"
 # Signs in to the Deere supplier portal (SecurePortal), downloads the requirement report of each business (DTP: Wood
 # Dale, GMBH: Faridabad; see AppConfig.portal_supplier) and uploads each to its business like a manual upload (Uploads::Intake,
 # as the first active admin), so the usual checks and emails run. A file the same as the business's last upload is
-# skipped. Started by sidekiq-cron at 08:00 and 20:00 IST (config/schedule.yml), or right away from Admin Settings →
+# skipped. Started by sidekiq-cron at 08:00 IST (config/schedule.yml), or right away from Admin Settings →
 # Deere portal ("Run sync now"). One run at a time (PortalSync lock); its status and results are kept for that page.
 class SecurePortalSyncJob < ApplicationJob
   # A failed run is not retried: each retry would sign in to Deere again (and could lock the account or send another

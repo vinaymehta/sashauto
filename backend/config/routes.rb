@@ -10,6 +10,7 @@ Rails.application.routes.draw do
   scope :api, module: :api, as: :api, defaults: { format: :json } do
     resource :session, only: %i[show create destroy] do
       patch :password
+      patch :orders_columns
     end
     resources :users, only: %i[index create update destroy] do
       post :reset_password, on: :member

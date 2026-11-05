@@ -14,6 +14,7 @@ import { cell, OrderDetailPanel, PlaceOrderPanel } from "@/components/orders/his
 import { CreateOrderPanel, UploadOrdersPanel } from "@/components/orders/create-order-panel";
 import { DispatchImportPanel } from "@/components/orders/dispatch-import-panel";
 import { OrderActions, UploadPicker } from "@/components/orders/orders-menu";
+import { ColumnsMenu } from "@/components/orders/columns-menu";
 import { DeliveryCell } from "@/components/orders/delivery-cell";
 import { OpenOrderContext, OrderDetailsLink } from "@/components/orders/order-details-modal";
 import { RelatedLink } from "@/components/orders/related-popover";
@@ -178,6 +179,10 @@ function buildColumns(columns: { key: string; label: string }[], uploadId?: numb
   });
 }
 
+// The Orders table columns a user sees until they choose their own (Columns).
+const DEFAULT_COLUMNS = ["status", "sash_india_invoice", "type", "firm_date", "ship_date", "po_number", "part_number", "part_description", "qty",
+                         "ship_to_location"];
+
 // Delivery tabs: the order rows with a fixed Status. In transit = dispatched from SASH Faridabad (with the SASH India
 // Invoice No.) but not yet at SASH US, Orders fulfilled = delivered to Deere.
 const STATUS_TABS: Record<string, string> = { transit: "dispatched", fulfilled: "outbound" };
@@ -193,21 +198,23 @@ const combinedOrder = (row: OrderRow): OrderRow => (row.member_of ? { ...row, id
 // re-rendering every cell of 50 rows × all Excel columns each time blocked the browser for over a second.
 // One order row (not clickable itself): the PO Number opens its details and the Unit opens Place order. The first
 // column is the order Status: admin sets received / dispatched, the Warehouse Manager inbound / outbound.
-const OrderTr = memo(function OrderTr({ row, columns, open, today, role, onChanged }: {
-  row: OrderRow; columns: Column[]; open: boolean; today: Date; role: Role | undefined; onChanged: () => void;
+const OrderTr = memo(function OrderTr({ row, columns, showStatus, showInvoice, open, today, role, onChanged }: {
+  row: OrderRow; columns: Column[]; showStatus: boolean; showInvoice: boolean; open: boolean; today: Date; role: Role | undefined; onChanged: () => void;
 }) {
   const tint = ageRowProps(row.qty === null ? null : row.firm_date, today); // as the Firm Date column
   return (
     <tr className={`${tint.className} ${open ? "shadow-[inset_3px_0_0_var(--color-accent)]" : ""}`} title={tint.title}>
       {/* A row of a combined order sets the combined order's Status. */}
-      <Td><DeliveryCell row={combinedOrder(row)} role={role} onChanged={onChanged} /></Td>
+      {showStatus && <Td><DeliveryCell row={combinedOrder(row)} role={role} onChanged={onChanged} /></Td>}
       {/* The invoice sent for this row (a combined order's rows each show their own); all of them on hover when it was
           sent in parts. */}
-      <Td className="tabular">
-        {row.dispatch_invoice
-          ? <span className="block max-w-40 truncate whitespace-nowrap" title={(row.dispatch_invoices ?? []).length > 1 ? `Sent in parts:\n${row.dispatch_invoices!.join("\n")}` : row.dispatch_invoice}>{row.dispatch_invoice}</span>
-          : <span className="text-neutral-300">—</span>}
-      </Td>
+      {showInvoice && (
+        <Td className="tabular">
+          {row.dispatch_invoice
+            ? <span className="block max-w-40 truncate whitespace-nowrap" title={(row.dispatch_invoices ?? []).length > 1 ? `Sent in parts:\n${row.dispatch_invoices!.join("\n")}` : row.dispatch_invoice}>{row.dispatch_invoice}</span>
+            : <span className="text-neutral-300">—</span>}
+        </Td>
+      )}
       {columns.map((c) => (
         <Td key={c.key} align={c.align === "right" ? "right" : "left"}>{c.render(row)}</Td>
       ))}
@@ -308,6 +315,22 @@ function OrdersView() {
     () => buildColumns(sourceColumns, uploadId ?? undefined, new Set(numericSignature.split(",").filter(Boolean))),
     [sourceColumns, uploadId, numericSignature],
   );
+
+  // Columns each user chooses to see (Columns, saved for the user; DEFAULT_COLUMNS until they choose): Status and SASH
+  // India Invoice, then the file's. When none of the chosen ones is in this file, the default ones.
+  const chooserColumns = useMemo(
+    () => [{ key: "status", label: "Status" }, { key: "sash_india_invoice", label: "SASH India Invoice" },
+           ...COLUMNS.map((c) => ({ key: c.key, label: c.header ?? c.label }))],
+    [COLUMNS],
+  );
+  const chosenKey = (me?.orders_columns ?? DEFAULT_COLUMNS).join("\u0000");
+  const visibleKeys = useMemo(() => {
+    const chosen = new Set(chosenKey.split("\u0000"));
+    return chooserColumns.some((c) => chosen.has(c.key)) ? chosen : new Set(DEFAULT_COLUMNS);
+  }, [chosenKey, chooserColumns]);
+  const shownColumns = useMemo(() => COLUMNS.filter((c) => visibleKeys.has(c.key)), [COLUMNS, visibleKeys]);
+  const showStatus = visibleKeys.has("status");
+  const showInvoice = visibleKeys.has("sash_india_invoice");
 
   const source = data?.source;
   // Row whose order details are open in the side panel; manual order being edited.
@@ -452,6 +475,7 @@ function OrdersView() {
           <SearchInput label="Search orders" placeholder="Search PO, part, type, location…" value={search}
                        onSearch={(v) => { setSearch(v); list.resetPage(); }} className="w-full sm:w-80" />
           <FilterMenu groups={listFilters} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
+          {chooserColumns.length > 2 && <ColumnsMenu columns={chooserColumns} shown={visibleKeys} />}
         </ListToolbar>
         <FilterChips groups={listFilters} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
         <AgeLegend value={list.filters.age} onChange={(v) => list.setFilter("age", v)} />
@@ -473,9 +497,9 @@ function OrdersView() {
             <Table dense>
               <thead>
                 <tr>
-                  <Th>Status</Th>
-                  <Th>SASH India Invoice</Th>
-                  {COLUMNS.map((c) => (c.sortable === false
+                  {showStatus && <Th>Status</Th>}
+                  {showInvoice && <Th>SASH India Invoice</Th>}
+                  {shownColumns.map((c) => (c.sortable === false
                     ? <Th key={c.key} align={c.align ?? "left"}>{c.header ?? c.label}</Th>
                     : <SortTh key={c.key} label={c.header ?? c.label} sortKey={c.key} align={c.align ?? "left"}
                               sort={list.sort} direction={list.direction} onSort={list.toggleSort} />
@@ -484,8 +508,8 @@ function OrdersView() {
               </thead>
               <tbody>
                 {data.data.map((row) => (
-                  <OrderTr key={rowKey(row)} row={row} columns={COLUMNS} open={selectedKey === rowKey(combinedOrder(row))} today={today}
-                           role={role} onChanged={refresh} />
+                  <OrderTr key={rowKey(row)} row={row} columns={shownColumns} showStatus={showStatus} showInvoice={showInvoice}
+                           open={selectedKey === rowKey(combinedOrder(row))} today={today} role={role} onChanged={refresh} />
                 ))}
               </tbody>
             </Table>

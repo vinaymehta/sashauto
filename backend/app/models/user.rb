@@ -23,6 +23,7 @@ class User < ApplicationRecord
   validates :email, uniqueness: { case_sensitive: false }
   validates :role, inclusion: { in: ROLES }
   validate :permissions_valid
+  validate :configurable_valid
   validates :password, length: { minimum: MINIMUM_PASSWORD_LENGTH }, allow_nil: true
   validate :password_strength, if: -> { password.present? }
 
@@ -46,6 +47,11 @@ class User < ApplicationRecord
   # True when the user's level for the section is at least `level` ("view" or "edit").
   def can?(section, level = "view")
     LEVELS.index(permission(section)) >= LEVELS.index(level.to_s)
+  end
+
+  # The Orders table columns this user shows (column keys), nil until they choose (then the default columns).
+  def orders_columns
+    configurable["orders_columns"]
   end
 
   # Every section with the level in effect.
@@ -83,6 +89,15 @@ class User < ApplicationRecord
   def permissions_valid
     unless permissions.is_a?(Hash) && permissions.all? { |section, level| SECTIONS.include?(section) && LEVELS.include?(level) }
       errors.add(:permissions, "must give each section (#{SECTIONS.join(', ')}) one of #{LEVELS.join(', ')}")
+    end
+  end
+
+  # The user's own settings: orders_columns, a list of 1 to 300 column keys (each a short text), or not set.
+  def configurable_valid
+    shown = configurable.is_a?(Hash) ? configurable.fetch("orders_columns", [ "default" ]) : nil
+    unless configurable.is_a?(Hash) && (configurable.keys - %w[orders_columns]).empty? && shown.is_a?(Array) && shown.size.between?(1, 300) &&
+           shown.all? { |key| key.is_a?(String) && key.present? && key.size <= 200 }
+      errors.add(:configurable, "must hold orders_columns, a list of 1 to 300 column keys")
     end
   end
 end
