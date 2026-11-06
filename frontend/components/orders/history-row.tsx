@@ -14,7 +14,7 @@ import { ConfirmDialog } from "../ui/confirm-dialog";
 import { Alert } from "../ui/feedback";
 import { Skeleton } from "../ui/skeleton";
 import { Sheet } from "../ui/sheet";
-import { OrderDetailsBody } from "./order-details-modal";
+import { InvoiceMoves, OrderDetailsBody } from "./order-details-modal";
 import { VendorOrderSection } from "./vendor-order-section";
 import { FileIcon, PencilIcon, TrashIcon, TruckIcon } from "../icons";
 
@@ -32,8 +32,8 @@ export function cell(value: string | number | null | undefined) {
 }
 
 // Order details panel (75% of the screen), opened by clicking a PO Number in the Orders table: the ORDER DETAILS
-// view (header fields + every row of the same PO Number + Part Number + Type) and the delivery marks. An Admin can
-// edit (`onEdit`) or delete a manual order here. Vendor orders are placed from the row (see PlaceOrderPanel).
+// view (header fields + every row of the same PO Number + Part Number + Type), its dispatches and deliveries on uploaded
+// invoices and the delivery marks. An Admin can edit (`onEdit`) or delete a manual order here. Vendor orders are placed from the row (see PlaceOrderPanel).
 export function OrderDetailPanel({ row, onClose, onEdit, onDeleted, onPlaced }: {
   row: OrderRow; onClose: () => void; onEdit?: () => void; onDeleted?: () => void; onPlaced?: () => void;
 }) {
@@ -83,6 +83,8 @@ export function OrderDetailPanel({ row, onClose, onEdit, onDeleted, onPlaced }: 
                           onChanged={() => { reload(); onPlaced?.(); }} />
       )}
       <DeliveryMarks row={row} admin={admin} onChanged={onPlaced} />
+      {/* Last: every dispatch and delivery of the order on uploaded invoices. */}
+      {data && <InvoiceMoves row={row} moves={data.invoices ?? []} onChanged={() => { reload(); onPlaced?.(); }} />}
       {deleting && (
         <ConfirmDialog title={`Delete order PO ${row.po_number}?`} busy={busy} error={deleteError}
                        onConfirm={remove} onCancel={() => setDeleting(false)}>

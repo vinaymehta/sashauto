@@ -3,13 +3,15 @@
 import { can } from "@/lib/permissions";
 import { createContext, Fragment, useContext, useState, type ReactNode } from "react";
 import { api, ApiError } from "@/lib/api";
-import type { OrderHistory, OrderRow, ScheduleGroup } from "@/lib/types";
-import { formatDate, formatQty } from "@/lib/format";
+import type { InvoiceAllocationInfo, OrderHistory, OrderRow, ScheduleGroup } from "@/lib/types";
+import { formatDate, formatDateTime, formatQty } from "@/lib/format";
 import { AGE_TITLE, ageGroup } from "../age";
-import { BoxIcon, ChevronDownIcon, ChevronRightIcon, CloseIcon, MapPinIcon, PlusIcon } from "../icons";
+import { BoxIcon, CheckIcon, ChevronDownIcon, ChevronRightIcon, CloseIcon, DownloadIcon, EyeIcon, MapPinIcon, PlusIcon, TrashIcon, TruckIcon } from "../icons";
 import { useSession } from "../session";
 import { useToast } from "../toast";
 import { Button } from "../ui/button";
+import { ConfirmDialog } from "../ui/confirm-dialog";
+import { Sheet } from "../ui/sheet";
 
 type Source = OrderRow["source_data"];
 
@@ -51,6 +53,11 @@ const COLUMNS: { label: string; value: (r: OrderRow, description: string | null)
   { label: "Effective Firm Date", value: (r) => (r.firm_date ? formatDate(r.firm_date) : null) },
   { label: "Ship Date", value: (r) => formatDate(r.ship_date) },
   { label: "Quantity", value: (r) => (r.qty === null ? null : formatQty(r.qty)), align: "right" },
+  // Dispatch on uploaded SASH India invoices: their numbers, the Order Qty, Qty shipped and Balance (Order less Shipped).
+  { label: "Invoice No.", value: (r) => [...new Set((r.invoice_moves ?? []).filter((m) => m.kind === "india").map((m) => m.invoice_number))].join(", ") || r.dispatch_invoice || null },
+  { label: "Order Qty", value: (r) => (r.shipped_qty && r.order_qty ? formatQty(r.order_qty) : null), align: "right" },
+  { label: "Shipped Qty", value: (r) => (r.shipped_qty ? formatQty(r.shipped_qty) : null), align: "right" },
+  { label: "Balance Qty", value: (r) => (r.shipped_qty && r.balance_qty ? formatQty(r.balance_qty) : null), align: "right" },
   // ✓ / ✗: the row's Qty (a combined row's total) reaches the part's MOQ or not (MoqMark).
   { label: "MOQ", value: () => null, align: "center" },
   { label: "UOM", value: () => null },
@@ -376,3 +383,210 @@ function MoqMark({ qty }: { qty: string | null }) {
     </span>
   );
 }
+
+// Every dispatch (SASH India invoice) and outbound (SASH Inc invoice) of the order's rows, oldest first: "13 dispatched
+// on EX/26-27/235 (29 Oct 2026)", the row it went to, its Order Qty, the file and who uploaded it when. The opened row's
+// own moves are marked, with its Order / Shipped / Balance / Outbound Qty on top (from the Orders list). An admin can
+// remove an invoice (from every order it went to; a SASH India invoice after the SASH Inc invoices that delivered it).
+export function InvoiceMoves({ row, moves, onChanged }: { row: OrderRow; moves: InvoiceAllocationInfo[]; onChanged?: () => void }) {
+  const notify = useToast();
+  const admin = useSession().user?.role === "admin";
+  const [removing, setRemoving] = useState<InvoiceAllocationInfo | null>(null);
+  // Invoice shown in the Preview window (the file as uploaded).
+  const [previewing, setPreviewing] = useState<InvoiceAllocationInfo | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (moves.length === 0 && !row.shipped_qty) return null;
+
+  const own = (m: InvoiceAllocationInfo) => (row.manual ? m.manual_order_id === row.id
+    : m.manual_order_id === null && m.po_line_number === row.po_line_number && m.ship_date === row.ship_date && m.order_type === row.order_type);
+
+  async function remove() {
+    if (!removing) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.delete(`/api/invoices/${removing.invoice_id}`);
+      notify(`${removing.label} ${removing.invoice_number} removed.`);
+      setRemoving(null);
+      onChanged?.();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not remove the invoice.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // This row's journey: Order Qty → dispatched from India → delivered to Deere; in transit = dispatched less delivered.
+  const order = Number(row.order_qty ?? row.qty ?? 0);
+  const shipped = Number(row.shipped_qty ?? 0);
+  const delivered = Number(row.outbound_qty ?? 0);
+  const inTransit = Math.max(shipped - delivered, 0);
+  const balance = Math.max(order - shipped, 0);
+  const pct = (n: number) => (order > 0 ? Math.min((n / order) * 100, 100) : 0);
+  const tiles: { label: string; value: number; tone: string; dot: string }[] = [
+    { label: "Order Qty", value: order, tone: "text-ink", dot: "bg-neutral-400" },
+    { label: "Dispatched", value: shipped, tone: "text-violet-700", dot: "bg-violet-500" },
+    { label: "In transit", value: inTransit, tone: "text-blue-700", dot: "bg-blue-500" },
+    { label: "Delivered to Deere", value: delivered, tone: "text-green-700", dot: "bg-green-600" },
+    { label: "Balance to dispatch", value: balance, tone: balance > 0 ? "text-amber-700" : "text-ink-faint", dot: "bg-neutral-300" },
+  ];
+  const groups: { kind: "india" | "inc"; title: string; hint: string; Icon: typeof TruckIcon; tint: string }[] = [
+    { kind: "india", title: "Dispatched from India", hint: "SASH India invoices", Icon: TruckIcon, tint: "bg-violet-50 text-violet-700 ring-violet-200" },
+    { kind: "inc", title: "Delivered to Deere", hint: "SASH Inc invoices (outbound)", Icon: CheckIcon, tint: "bg-green-50 text-green-700 ring-green-200" },
+  ];
+
+  return (
+    <section className="mt-4 overflow-hidden rounded-lg border border-line bg-white shadow-card">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-100 px-5 py-3">
+        <div>
+          <h3 className="text-sm font-semibold text-ink">Dispatches and deliveries</h3>
+          <p className="text-xs text-ink-muted">PO Line {row.po_line_number} · Ship {formatDate(row.ship_date)}</p>
+        </div>
+        {order > 0 && shipped > 0 && (
+          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${delivered >= order ? "bg-green-50 text-green-700 ring-green-200"
+            : shipped >= order ? "bg-violet-50 text-violet-700 ring-violet-200" : "bg-amber-50 text-amber-800 ring-amber-200"}`}>
+            {delivered >= order ? "Delivered in full" : shipped >= order ? "Dispatched in full" : `${Math.round(pct(shipped))}% dispatched`}
+          </span>
+        )}
+      </div>
+
+      {/* This row at a glance: the five figures and one bar (delivered | in transit | still to dispatch). */}
+      {(shipped > 0 || delivered > 0) && (
+        <div className="space-y-3 border-b border-neutral-100 bg-neutral-50/60 px-5 py-4">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+            {tiles.map((t) => (
+              <div key={t.label} className="rounded-md bg-white px-3 py-2 ring-1 ring-line">
+                <span className="flex items-center gap-1.5 text-xs text-ink-muted"><span className={`h-2 w-2 rounded-full ${t.dot}`} />{t.label}</span>
+                <span className={`block text-lg font-semibold tabular ${t.tone}`}>{formatQty(String(t.value))}</span>
+              </div>
+            ))}
+          </div>
+          <div className="flex h-2.5 overflow-hidden rounded-full bg-neutral-200" role="img"
+               aria-label={`${delivered} delivered, ${inTransit} in transit, ${balance} still to dispatch of ${order}`}>
+            <span className="bg-green-600" style={{ width: `${pct(delivered)}%` }} />
+            <span className="bg-blue-500" style={{ width: `${pct(inTransit)}%` }} />
+          </div>
+        </div>
+      )}
+
+      {moves.length === 0 ? (
+        <p className="px-5 py-4 text-sm text-ink-muted">No invoice of these orders is uploaded yet.</p>
+      ) : groups.map((g) => {
+        const list = moves.filter((m) => m.kind === g.kind);
+        if (list.length === 0) return null;
+        const total = list.filter(own).reduce((sum, m) => sum + Number(m.qty), 0);
+        // Balance after each invoice line: the order row's Order Qty less all its Qty on this kind of invoice so far
+        // (oldest first), so it counts down invoice by invoice.
+        const sent = new Map<string, number>();
+        const balanceAfter = new Map(list.map((m) => {
+          const rowKey = `${m.manual_order_id ?? ""}|${m.po_line_number}|${m.ship_date}|${m.order_type}`;
+          const upTo = (sent.get(rowKey) ?? 0) + Number(m.qty);
+          sent.set(rowKey, upTo);
+          return [m.id, m.order_qty ? Math.max(Number(m.order_qty) - upTo, 0) : null];
+        }));
+        return (
+          <div key={g.kind} className="border-b border-neutral-100 last:border-b-0">
+            <div className="flex items-center gap-2 px-5 pb-1.5 pt-3">
+              <span className={`flex h-6 w-6 items-center justify-center rounded-full ring-1 ${g.tint}`}><g.Icon size={13} /></span>
+              <span className="text-sm font-semibold text-ink">{g.title}</span>
+              <span className="text-xs text-ink-muted">· {g.hint}</span>
+              {total > 0 && <span className="ml-auto text-xs text-ink-muted">Current <span className="tabular font-semibold text-ink">{formatQty(String(total))}</span></span>}
+            </div>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-2xs font-semibold uppercase tracking-wider text-ink-faint">
+                  <th className="px-5 py-1.5 font-semibold">Invoice No.</th>
+                  <th className="px-3 py-1.5 font-semibold">Order row</th>
+                  <th className="px-3 py-1.5 text-right font-semibold">Order Qty</th>
+                  <th className="px-3 py-1.5 text-right font-semibold">{g.kind === "india" ? "Shipped Qty" : "Delivered Qty"}</th>
+                  <th className="px-3 py-1.5 text-right font-semibold">Balance Qty</th>
+                  <th className="px-3 py-1.5 font-semibold">Uploaded</th>
+                  <th className="w-40 px-5 py-1.5" aria-label="Actions" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100">
+                {list.map((m) => {
+                  const mine = own(m);
+                  return (
+                    <tr key={m.id} className={mine ? "bg-accent/5" : ""}>
+                      <td className="px-5 py-2 align-top">
+                        <span className="block font-semibold text-ink">{m.invoice_number}</span>
+                        <span className="block text-xs text-ink-muted">{formatDate(m.invoice_date)}</span>
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        <span className="flex flex-wrap items-center gap-1.5 text-ink">
+                          Line {m.po_line_number} · Ship {formatDate(m.ship_date)}
+                          {mine && <span className="rounded border border-accent/30 bg-white px-1.5 py-px text-2xs font-semibold text-accent" title="The order you opened">Current</span>}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-right align-top tabular text-ink">{m.order_qty ? formatQty(m.order_qty) : "—"}</td>
+                      <td className="px-3 py-2 text-right align-top tabular font-semibold text-ink">{formatQty(m.qty)}</td>
+                      <td className={`px-3 py-2 text-right align-top tabular font-semibold ${(balanceAfter.get(m.id) ?? 0) > 0 ? "text-amber-700" : "text-ink-faint"}`}>
+                        {balanceAfter.get(m.id) === null || balanceAfter.get(m.id) === undefined ? "—" : formatQty(String(balanceAfter.get(m.id)))}
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        <span className="block text-ink">{m.uploaded_by ?? "—"}</span>
+                        <span className="block text-xs text-ink-muted">{formatDateTime(m.uploaded_at)}</span>
+                      </td>
+                      <td className="px-5 py-2 text-right align-top">
+                        <span className="inline-flex items-center gap-1">
+                          {/* Preview: the original invoice as uploaded, in a window here. */}
+                          {m.has_file && (
+                            <button type="button" onClick={() => setPreviewing(m)} title={`Preview ${m.filename}`}
+                                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-ink-muted ring-1 ring-line hover:bg-subtle hover:text-ink">
+                              <EyeIcon size={13} />Preview
+                            </button>
+                          )}
+                          {m.has_file && (
+                            <a href={`/api/invoices/${m.invoice_id}/download`} download title={`Download ${m.filename}`}
+                               className="inline-flex items-center rounded-md p-1.5 text-ink-muted hover:bg-subtle hover:text-ink">
+                              <DownloadIcon size={14} />
+                            </a>
+                          )}
+                          {admin && (
+                            <button type="button" onClick={() => { setError(null); setRemoving(m); }} title="Remove this invoice"
+                                    className="inline-flex items-center rounded-md p-1.5 text-ink-muted hover:bg-subtle hover:text-dec">
+                              <TrashIcon size={14} />
+                            </button>
+                          )}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
+      {previewing && (
+        <Sheet open wide onClose={() => setPreviewing(null)} title={`${previewing.label} ${previewing.invoice_number}`}
+               description={`${formatDate(previewing.invoice_date)} · ${previewing.filename} · uploaded by ${previewing.uploaded_by ?? "—"}`}
+               footer={<>
+                 <a href={`/api/invoices/${previewing.invoice_id}/download`} download
+                    className="inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-sm font-medium text-ink-muted ring-1 ring-line hover:bg-subtle hover:text-ink">
+                   <DownloadIcon size={14} />Download
+                 </a>
+                 <Button variant="primary" onClick={() => setPreviewing(null)}>Close</Button>
+               </>}>
+          {/\.pdf$/i.test(previewing.filename) ? (
+            // The browser's PDF toolbar and side panel are hidden: only the invoice, fitted to the width.
+            <iframe src={`/api/invoices/${previewing.invoice_id}/download?inline=1#toolbar=0&navpanes=0&view=FitH`}
+                    title={`${previewing.invoice_number} (${previewing.filename})`} className="h-[calc(100vh-13rem)] w-full bg-white" />
+          ) : (
+            <p className="text-sm text-ink-muted">This invoice was uploaded as an Excel file, which the browser cannot show here. Download it to open it.</p>
+          )}
+        </Sheet>
+      )}
+      {removing && (
+        <ConfirmDialog title={`Remove ${removing.label} ${removing.invoice_number}?`} confirmLabel="Remove" busyLabel="Removing…" busy={busy} error={error}
+                       onConfirm={remove} onCancel={() => setRemoving(null)}>
+          Its Qty is taken back from every order it went to ({removing.kind === "india" ? "no longer dispatched" : "no longer outbound"}). The invoice
+          stays in the records as removed; upload it again if needed.
+        </ConfirmDialog>
+      )}
+    </section>
+  );
+}
+

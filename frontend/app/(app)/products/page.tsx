@@ -1,7 +1,7 @@
 "use client";
 
 import { can } from "@/lib/permissions";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import type { Paginated, Product, VendorImportResult } from "@/lib/types";
 import { formatCount } from "@/lib/format";
@@ -12,6 +12,7 @@ import { ImageOffIcon, PencilIcon, PlusIcon } from "@/components/icons";
 import { DtpImportButton } from "@/components/vendors/dtp-import";
 import { ImportIssuesPanel, useOpenImportIssues } from "@/components/vendors/import-issues";
 import { AvailablePartsPanel } from "@/components/products/available-parts";
+import { OrderSummaryPanel } from "@/components/products/order-summary";
 import { Tabs } from "@/components/ui/tabs";
 import { useSession } from "@/components/session";
 import { useApi, useDebounced } from "@/components/use-api";
@@ -73,10 +74,18 @@ function ProductsView() {
   const sortProps = { sort: list.sort, direction: list.direction, onSort: list.toggleSort };
   const [viewing, setViewing] = useState<{ product: Product; edit: boolean } | null>(null);
   const [adding, setAdding] = useState(false);
-  // The list, the Current inventory tab (vendor-wise check list) or the Import issues tab (problems from vendor file imports).
-  const [view, setView] = useState<"list" | "available" | "issues">("list");
+  // The list, the Current inventory tab (vendor-wise check list), the Order summary tab (Firm / Addition / Forecast per
+  // part and day) or the Import issues tab (problems from vendor file imports).
+  const [view, setView] = useState<"list" | "available" | "summary" | "issues">(params.get("tab") === "summary" ? "summary" : "list");
+  // The Order summary is kept in the address (?tab=summary), so it stays open when DTP / GMBH is switched (the page is
+  // shown anew).
+  const router = useRouter();
+  const openView = (next: typeof view) => {
+    setView(next);
+    if ((next === "summary") !== (params.get("tab") === "summary")) router.replace(next === "summary" ? "/products?tab=summary" : "/products", { scroll: false });
+  };
   const issues = useOpenImportIssues();
-  const onImported = (r: VendorImportResult) => { reload(); issues.reload(); if (r.issues) setView("issues"); };
+  const onImported = (r: VendorImportResult) => { reload(); issues.reload(); if (r.issues) openView("issues"); };
 
   return (
     <>
@@ -84,15 +93,16 @@ function ProductsView() {
         title="Products"
         actions={isAdmin && (
           <div className="flex flex-wrap items-center gap-2">
-            <DtpImportButton onImported={onImported} onDetailsImported={(n) => { issues.reload(); if (n) setView("issues"); }} />
+            <DtpImportButton onImported={onImported} onDetailsImported={(n) => { issues.reload(); if (n) openView("issues"); }} />
             <Button variant="primary" onClick={() => setAdding(true)}><PlusIcon size={15} />Add part</Button>
           </div>
         )}
       />
       <div className="flex items-center border-b border-line">
-        <Tabs active={view} onChange={setView} tabs={[
+        <Tabs active={view} onChange={openView} tabs={[
           { key: "list" as const, label: "Products", count: data?.meta.total ?? null },
           { key: "available" as const, label: "Current inventory" },
+          { key: "summary" as const, label: "Order summary" },
           { key: "issues" as const, label: "Import issues", count: issues.count },
         ]} />
       </div>
@@ -101,6 +111,8 @@ function ProductsView() {
         <div className="mt-4"><ImportIssuesPanel canEdit={isAdmin} onChanged={() => { reload(); issues.reload(); }} /></div>
       ) : view === "available" ? (
         <div className="mt-4"><AvailablePartsPanel /></div>
+      ) : view === "summary" ? (
+        <div className="mt-4"><OrderSummaryPanel /></div>
       ) : (
       <div className="mt-4"><Panel flush>
         <ListToolbar summary={data ? `${formatCount(data.meta.total)} product${data.meta.total === 1 ? "" : "s"}` : ""}>

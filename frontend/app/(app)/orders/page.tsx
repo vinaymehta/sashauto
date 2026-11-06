@@ -4,7 +4,7 @@ import { can } from "@/lib/permissions";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createContext, memo, Suspense, useCallback, useContext, useEffect, useMemo, useState, type DragEvent, type ReactNode } from "react";
-import type { Dashboard, OrderRow, OrdersPage, OrdersSummary, Role, UploadChoice, UploadDetail } from "@/lib/types";
+import type { Dashboard, InvoiceKind, OrderRow, OrdersPage, OrdersSummary, Role, UploadChoice, UploadDetail } from "@/lib/types";
 import { formatCount, formatDate, formatQty } from "@/lib/format";
 import { AlertIcon, ArrowUpDownIcon, CheckIcon, FileIcon, HistoryIcon, MapPinIcon, TableIcon, TruckIcon } from "@/components/icons";
 import { AddressChangesTable } from "@/components/address-changes-table";
@@ -12,6 +12,7 @@ import { ChangesTable } from "@/components/changes-table";
 import { MoqAlertsTable } from "@/components/moq-alerts-table";
 import { cell, OrderDetailPanel, PlaceOrderPanel } from "@/components/orders/history-row";
 import { CreateOrderPanel, UploadOrdersPanel } from "@/components/orders/create-order-panel";
+import { InvoiceUploadPanel } from "@/components/orders/invoice-upload-panel";
 import { DispatchImportPanel } from "@/components/orders/dispatch-import-panel";
 import { OrderActions, UploadPicker } from "@/components/orders/orders-menu";
 import { ColumnsMenu } from "@/components/orders/columns-menu";
@@ -143,6 +144,24 @@ const typedColumns = (uploadId?: number): Record<string, Omit<Column, "key" | "l
   last_receipt_qty: { align: "right", render: (r) => qty(r.last_receipt_qty) },
 });
 
+// The invoices' Qty columns (Columns; not shown until chosen), from the uploaded SASH India / SASH Inc invoices. Order
+// Qty is the Qty when dispatched (Deere's later Qty is only what is still open); a row without invoices shows its Qty.
+const invoiceTitle = (r: OrderRow, kind: InvoiceKind) => (r.invoice_moves ?? []).filter((m) => m.kind === kind)
+  .map((m) => `${m.invoice_number} (${formatDate(m.invoice_date)}): Qty ${formatQty(m.qty)}`).join("\n") || undefined;
+const INVOICE_COLUMNS: Column[] = [
+  { key: "order_qty", label: "Order Qty", align: "right", sortable: false, render: (r) => qty(r.order_qty ?? r.qty) },
+  { key: "shipped_qty", label: "Shipped Qty", align: "right", sortable: false,
+    render: (r) => <span title={invoiceTitle(r, "india")}>{qty(r.shipped_qty ?? null)}</span> },
+  { key: "balance_qty", label: "Balance Qty", align: "right", sortable: false, render: (r) => qty(r.balance_qty ?? r.qty) },
+  { key: "outbound_qty", label: "Outbound Qty", align: "right", sortable: false,
+    render: (r) => <span title={invoiceTitle(r, "inc")}>{qty(r.outbound_qty ?? null)}</span> },
+  { key: "sash_inc_invoice", label: "SASH Inc Invoice", sortable: false,
+    render: (r) => {
+      const inc = (r.invoice_moves ?? []).filter((m) => m.kind === "inc");
+      return inc.length ? <span className="block max-w-40 truncate whitespace-nowrap tabular" title={invoiceTitle(r, "inc")}>{inc[inc.length - 1]!.invoice_number}</span> : dash;
+    } },
+];
+
 // All Excel columns of the upload, in file order (same as the history table).
 function buildColumns(columns: { key: string; label: string }[], uploadId?: number, numericKeys?: Set<string>): Column[] {
   const TYPED = typedColumns(uploadId);
@@ -187,11 +206,11 @@ function buildColumns(columns: { key: string; label: string }[], uploadId?: numb
 
 // The Orders table columns a user sees until they choose their own (Columns).
 const DEFAULT_COLUMNS = ["status", "sash_india_invoice", "type", "firm_date", "ship_date", "po_number", "part_number", "part_description", "qty",
-                         "ship_to_location"];
+                         "order_qty", "shipped_qty", "balance_qty", "ship_to_location"];
 
-// Delivery tabs: the order rows with a fixed Status. In transit = dispatched from SASH Faridabad (with the SASH India
-// Invoice No.) but not yet at SASH US, Orders fulfilled = delivered to Deere.
-const STATUS_TABS: Record<string, string> = { transit: "dispatched", fulfilled: "outbound" };
+// Delivery tabs: the order rows with a fixed Status. In transit = part (Dispatch) or all (Dispatched) dispatched from
+// SASH Faridabad (SASH India invoices) but not yet at SASH US, Orders fulfilled = delivered to Deere.
+const STATUS_TABS: Record<string, string> = { transit: "dispatch,dispatched", fulfilled: "outbound" };
 
 // Imported and manual orders have separate ids.
 const rowKey = (row: OrderRow) => `${row.manual ? "m" : "r"}${row.id}`;
@@ -287,7 +306,8 @@ function OrdersView() {
     { section: "Order", key: "type", label: "Type", options: [{ value: "Order", label: "Order" }, { value: "Firm", label: "Firm" }, { value: "Forecast", label: "Forecast" }] },
     // Fulfilled orders (delivered to Deere) are hidden unless chosen here.
     { section: "Order", key: "status", label: "Status", options: [
-      { value: "none", label: "No status" }, { value: "received", label: "Received" }, { value: "dispatched", label: "Dispatched" },
+      { value: "none", label: "No status" }, { value: "received", label: "Received" }, { value: "dispatch", label: "Dispatch (part dispatched)" },
+      { value: "dispatched", label: "Dispatched" },
       { value: "inbound", label: "Inbound" }, { value: "outbound", label: "Outbound (fulfilled)" },
     ] },
     { section: "Order", key: "source", label: "Source", options: [{ value: "upload", label: "Uploaded file" }, { value: "manual", label: "Manual orders" }] },
@@ -325,10 +345,11 @@ function OrdersView() {
   );
 
   // Columns each user chooses to see, in their order (Columns, saved for the user; DEFAULT_COLUMNS until they choose):
-  // Status and SASH India Invoice, then the file's. When none of the chosen ones is in this file, the default ones.
+  // Status, SASH India Invoice and the invoices' Qty columns, then the file's. When none of the chosen ones is in this
+  // file, the default ones.
   const chooserColumns = useMemo(
     () => [{ key: "status", label: "Status" }, { key: "sash_india_invoice", label: "SASH India Invoice" },
-           ...COLUMNS.map((c) => ({ key: c.key, label: c.header ?? c.label }))],
+           ...[...INVOICE_COLUMNS, ...COLUMNS].map((c) => ({ key: c.key, label: c.header ?? c.label }))],
     [COLUMNS],
   );
   const chosenKey = (me?.orders_columns ?? DEFAULT_COLUMNS).join("\u0000");
@@ -339,7 +360,7 @@ function OrdersView() {
   // The shown columns in the saved order (keys of columns this file does not have are left out): the header and every
   // row render from this one list.
   const shownColumns = useMemo(() => {
-    const byKey = new Map(COLUMNS.map((c) => [c.key, c]));
+    const byKey = new Map([...INVOICE_COLUMNS, ...COLUMNS].map((c) => [c.key, c]));
     return savedColumns.flatMap((key): TableColumn[] => (
       key === "status" || key === "sash_india_invoice" ? [key] : byKey.has(key) ? [byKey.get(key)!] : []
     ));
@@ -434,7 +455,8 @@ function OrdersView() {
   const activeTab: TabKey = tabs.some((t) => t.key === tab) ? tab : "orders";
 
   // ?upload=1 (the dashboard's "Upload new file") opens the upload panel.
-  const [panel, setPanel] = useState<"upload" | "create" | "dispatched" | null>(() => (params.get("upload") === "1" && !manager ? "upload" : null));
+  // "india" / "inc": the invoice upload of that kind.
+  const [panel, setPanel] = useState<"upload" | "create" | "invoice" | "dispatched" | null>(() => (params.get("upload") === "1" && !manager ? "upload" : null));
   // …once: ?upload=1 is then dropped from the address, so the panel does not open again when the page is shown anew
   // (switching DTP / GMBH re-mounts it).
   const router = useRouter();
@@ -475,6 +497,7 @@ function OrdersView() {
             {!manager && <>
             <UploadPicker uploads={uploads.data?.data ?? []} latestId={latest?.id} selectedId={uploadId} onSelect={chooseUpload} />
             <OrderActions downloadId={source?.upload_id} onUpload={() => setPanel("upload")} onCreate={admin ? () => setPanel("create") : undefined}
+                          onUploadInvoice={role === "admin" ? () => setPanel("invoice") : undefined}
                           onImportDispatched={role === "admin" ? () => setPanel("dispatched") : undefined} />
             </>}
           </div>
@@ -482,6 +505,7 @@ function OrdersView() {
       />
 
       {panel === "upload" && <UploadOrdersPanel onClose={() => setPanel(null)} onUploaded={onFinished} />}
+      {panel === "invoice" && <InvoiceUploadPanel onClose={() => setPanel(null)} onSaved={onManualSaved} />}
       {panel === "dispatched" && <DispatchImportPanel onClose={() => setPanel(null)} onImported={refresh} />}
       {(panel === "create" || editing) && (
         <CreateOrderPanel key={editing ? `edit-${editing.id}` : "create"} order={editing ?? undefined}

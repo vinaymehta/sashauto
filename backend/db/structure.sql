@@ -434,6 +434,93 @@ ALTER SEQUENCE public.import_issues_id_seq OWNED BY public.import_issues.id;
 
 
 --
+-- Name: invoice_allocations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.invoice_allocations (
+    id bigint NOT NULL,
+    invoice_id bigint NOT NULL,
+    line_index integer NOT NULL,
+    order_key character varying(64) NOT NULL,
+    order_row_id bigint,
+    manual_order_id bigint,
+    po_number character varying NOT NULL,
+    po_line_number character varying NOT NULL,
+    part_number character varying NOT NULL,
+    order_type character varying NOT NULL,
+    ship_date date NOT NULL,
+    order_qty numeric(15,3),
+    qty numeric(15,3) NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT invoice_allocations_one_order CHECK (((order_row_id IS NULL) <> (manual_order_id IS NULL))),
+    CONSTRAINT invoice_allocations_qty_positive CHECK ((qty > (0)::numeric))
+);
+
+
+--
+-- Name: invoice_allocations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.invoice_allocations_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: invoice_allocations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.invoice_allocations_id_seq OWNED BY public.invoice_allocations.id;
+
+
+--
+-- Name: invoices; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.invoices (
+    id bigint NOT NULL,
+    kind character varying NOT NULL,
+    business character varying,
+    invoice_number character varying(64) NOT NULL,
+    invoice_date date NOT NULL,
+    exporter character varying,
+    original_filename character varying NOT NULL,
+    lines jsonb DEFAULT '[]'::jsonb NOT NULL,
+    unmatched_lines jsonb DEFAULT '[]'::jsonb NOT NULL,
+    total_qty numeric(15,3) DEFAULT 0.0 NOT NULL,
+    matched_qty numeric(15,3) DEFAULT 0.0 NOT NULL,
+    uploaded_by_id bigint NOT NULL,
+    removed_at timestamp(6) without time zone,
+    removed_by_id bigint,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT invoices_kind_valid CHECK (((kind)::text = ANY ((ARRAY['india'::character varying, 'inc'::character varying])::text[])))
+);
+
+
+--
+-- Name: invoices_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.invoices_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: invoices_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.invoices_id_seq OWNED BY public.invoices.id;
+
+
+--
 -- Name: manual_orders; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1421,6 +1508,20 @@ ALTER TABLE ONLY public.import_issues ALTER COLUMN id SET DEFAULT nextval('publi
 
 
 --
+-- Name: invoice_allocations id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.invoice_allocations ALTER COLUMN id SET DEFAULT nextval('public.invoice_allocations_id_seq'::regclass);
+
+
+--
+-- Name: invoices id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.invoices ALTER COLUMN id SET DEFAULT nextval('public.invoices_id_seq'::regclass);
+
+
+--
 -- Name: manual_orders id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -1624,6 +1725,22 @@ ALTER TABLE ONLY public.audit_logs
 
 ALTER TABLE ONLY public.import_issues
     ADD CONSTRAINT import_issues_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: invoice_allocations invoice_allocations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.invoice_allocations
+    ADD CONSTRAINT invoice_allocations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: invoices invoices_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.invoices
+    ADD CONSTRAINT invoices_pkey PRIMARY KEY (id);
 
 
 --
@@ -1958,6 +2075,62 @@ CREATE INDEX index_import_issues_on_status_and_created_at ON public.import_issue
 --
 
 CREATE INDEX index_import_issues_on_vendor_product_id ON public.import_issues USING btree (vendor_product_id);
+
+
+--
+-- Name: index_invoice_allocations_on_invoice_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_invoice_allocations_on_invoice_id ON public.invoice_allocations USING btree (invoice_id);
+
+
+--
+-- Name: index_invoice_allocations_on_manual_order_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_invoice_allocations_on_manual_order_id ON public.invoice_allocations USING btree (manual_order_id);
+
+
+--
+-- Name: index_invoice_allocations_on_order; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_invoice_allocations_on_order ON public.invoice_allocations USING btree (po_number, part_number, order_type, po_line_number, ship_date);
+
+
+--
+-- Name: index_invoice_allocations_on_order_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_invoice_allocations_on_order_key ON public.invoice_allocations USING btree (order_key);
+
+
+--
+-- Name: index_invoice_allocations_on_order_row_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_invoice_allocations_on_order_row_id ON public.invoice_allocations USING btree (order_row_id);
+
+
+--
+-- Name: index_invoices_on_removed_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_invoices_on_removed_by_id ON public.invoices USING btree (removed_by_id);
+
+
+--
+-- Name: index_invoices_on_uploaded_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_invoices_on_uploaded_by_id ON public.invoices USING btree (uploaded_by_id);
+
+
+--
+-- Name: index_invoices_one_active_number; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_invoices_one_active_number ON public.invoices USING btree (kind, invoice_number) WHERE (removed_at IS NULL);
 
 
 --
@@ -2559,6 +2732,14 @@ ALTER TABLE ONLY public.vendor_orders
 
 
 --
+-- Name: invoices fk_rails_0d69083a54; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.invoices
+    ADD CONSTRAINT fk_rails_0d69083a54 FOREIGN KEY (removed_by_id) REFERENCES public.users(id);
+
+
+--
 -- Name: ageing_notifications fk_rails_0e43f85aef; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2660,6 +2841,14 @@ ALTER TABLE ONLY public.vendor_orders
 
 ALTER TABLE ONLY public.order_deliveries
     ADD CONSTRAINT fk_rails_3af6b051b4 FOREIGN KEY (removed_by_id) REFERENCES public.users(id);
+
+
+--
+-- Name: invoices fk_rails_414dbd7f0b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.invoices
+    ADD CONSTRAINT fk_rails_414dbd7f0b FOREIGN KEY (uploaded_by_id) REFERENCES public.users(id);
 
 
 --
@@ -2799,6 +2988,14 @@ ALTER TABLE ONLY public.import_issues
 
 
 --
+-- Name: invoice_allocations fk_rails_a7336e4783; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.invoice_allocations
+    ADD CONSTRAINT fk_rails_a7336e4783 FOREIGN KEY (manual_order_id) REFERENCES public.manual_orders(id);
+
+
+--
 -- Name: ageing_digests fk_rails_a8bc51aaf0; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2863,6 +3060,14 @@ ALTER TABLE ONLY public.quantity_changes
 
 
 --
+-- Name: invoice_allocations fk_rails_be787a4a29; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.invoice_allocations
+    ADD CONSTRAINT fk_rails_be787a4a29 FOREIGN KEY (invoice_id) REFERENCES public.invoices(id);
+
+
+--
 -- Name: upload_batches fk_rails_c39769a808; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2892,6 +3097,14 @@ ALTER TABLE ONLY public.vendor_order_placements
 
 ALTER TABLE ONLY public.quantity_changes
     ADD CONSTRAINT fk_rails_cccd32cc67 FOREIGN KEY (manual_order_id) REFERENCES public.manual_orders(id);
+
+
+--
+-- Name: invoice_allocations fk_rails_ccf5baac61; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.invoice_allocations
+    ADD CONSTRAINT fk_rails_ccf5baac61 FOREIGN KEY (order_row_id) REFERENCES public.order_rows(id);
 
 
 --
@@ -3029,6 +3242,7 @@ ALTER TABLE ONLY public.address_changes
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261106100001'),
 ('20261106000001'),
 ('20261105000002'),
 ('20261030000001'),

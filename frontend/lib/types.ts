@@ -242,6 +242,67 @@ export interface OrderDeliveryInfo {
   created_at: string;
 }
 
+// Status of an order row: its furthest mark, or further its uploaded invoices' (dispatch: part of the Qty dispatched on
+// SASH India invoices, dispatched: all of it; outbound: all delivered on SASH Inc invoices).
+export type OrderStatus = "none" | "received" | "dispatch" | "dispatched" | "inbound" | "outbound";
+
+// An uploaded SASH invoice: "india" (SASH Autotech Pvt. Ltd. → Lotus Automotive: dispatched) or "inc" (SASH Autotech,
+// Inc. → John Deere: outbound).
+export type InvoiceKind = "india" | "inc";
+
+// Qty of an order row on one uploaded invoice (Orders list).
+export interface InvoiceMove {
+  kind: InvoiceKind;
+  invoice_id: number;
+  invoice_number: string;
+  invoice_date: string;
+  qty: string;
+}
+
+// One dispatch or outbound in Order details: the invoice, the order row (PO Line, Ship Date) and who uploaded it.
+export interface InvoiceAllocationInfo {
+  id: number;
+  invoice_id: number;
+  kind: InvoiceKind;
+  label: string;
+  invoice_number: string;
+  invoice_date: string;
+  po_line_number: string;
+  ship_date: string;
+  order_type: OrderType;
+  manual_order_id: number | null;
+  qty: string;
+  order_qty: string | null;
+  uploaded_by: string | null;
+  uploaded_at: string;
+  filename: string;
+  has_file: boolean;
+}
+
+// Orders → Actions → Upload SASH India / SASH Inc invoice: the invoice read from the file and the order rows each line
+// goes to (before / after: dispatched or outbound Qty of the row), with the Qty no order takes (unmatched).
+export interface InvoicePreview {
+  id?: number; // once saved
+  kind: InvoiceKind;
+  label: string;
+  exporter: string | null;
+  invoice_number: string;
+  invoice_date: string;
+  filename: string;
+  warnings: string[];
+  total_qty: string;
+  matched_qty: string;
+  unmatched_qty: string;
+  lines: {
+    index: number; po_number: string | null; po_date: string | null; part_number: string; description: string | null; qty: string;
+    allocations: { order_id: number; manual: boolean; business: "dtp" | "gmbh" | null; order_type: OrderType; po_line_number: string;
+                   ship_date: string; qty_now: string | null; order_qty: string; before: string; qty: string; after: string;
+                   left: string }[]; // left: after this invoice, the Balance (India) or Qty still in transit (Inc)
+    unmatched_qty: string | null;
+    reason: string | null;
+  }[];
+}
+
 export interface ActivityItem {
   id: string;
   kind: ActivityKind;
@@ -395,6 +456,15 @@ export interface OrderRow {
   // Orders list: the SASH India invoice shown for this row, and all its invoices (with date and Qty) when it was sent in parts.
   dispatch_invoice?: string | null;
   dispatch_invoices?: string[];
+  // Orders list: the row's status (marks and uploaded invoices) and its Qty on the invoices. order_qty: the Qty when
+  // dispatched (Deere's later Qty is only what is still open), shipped_qty: dispatched on SASH India invoices (null:
+  // none), balance_qty: Order Qty − shipped, outbound_qty: delivered on SASH Inc invoices (null: none).
+  status?: OrderStatus;
+  order_qty?: string | null;
+  shipped_qty?: string | null;
+  balance_qty?: string | null;
+  outbound_qty?: string | null;
+  invoice_moves?: InvoiceMove[];
 }
 
 // One field of the manual order form: an Excel column of the Supplier Requirements export.
@@ -426,6 +496,7 @@ export interface OrderHistory {
   // moq: the part's MOQ in sets (order Qty counts sets); moq_pcs: in pieces; pack_size: pieces per set.
   group: { po_number: string; part_number: string; order_type: OrderType; description: string | null; moq: string | null; moq_pcs: string | null; pack_size: number };
   combined?: ScheduleGroup[]; // combined orders among the rows (imported orders only)
+  invoices?: InvoiceAllocationInfo[]; // every dispatch and outbound of the rows on uploaded invoices, oldest first
 }
 
 // A combined order in the Order details Schedule. manual_ids: orders an admin added by hand; removed_ids: orders
@@ -459,17 +530,8 @@ export interface OrdersSummary {
   no_qty: number; // open orders without a Qty (nothing to order) and no PO
   below_moq: number; // parts that need MOQ (balance to order below the MOQ)
   aged: number;
-  in_transit: number; // dispatched, not yet delivered to SASH US
+  in_transit: number; // Dispatch or Dispatched (part or all sent from India), not yet delivered to SASH US
   fulfilled: number; // delivered to Deere
-}
-
-// Orders → Import dispatched list: rows of the file, orders marked Dispatched (and from how many rows), and the rows
-// skipped with the reason.
-export interface DispatchImportResult {
-  rows: number;
-  orders_marked: number;
-  rows_marked: number;
-  skipped: { row: number; po_number: string | null; part_number: string | null; invoice_number: string | null; date: string | null; reason: string }[];
 }
 
 export interface OrdersPage {
@@ -541,6 +603,32 @@ export interface VendorProduct {
   updated_at: string;
   available_qty: string | null; // "Current Inventory": pieces the vendor has available now
   vendor_name: string;
+}
+
+// Products → Order summary of one business (DTP or GMBH): the days with an upload, newest first (each day's last upload),
+// and per part [Firm, Addition, Forecast] of each day in the same order, as decimal strings. Firm counts Firm and Order
+// rows; Addition is Firm less the previous day's Firm. first_date / last_date: the oldest and newest day of all.
+export interface OrderSummaryDay {
+  date: string; // YYYY-MM-DD (IST)
+  upload_id: number;
+  filename: string;
+  version: string | null;
+}
+
+export interface OrderSummaryRow {
+  serial: number; // S No: place among all the parts, by Part Number
+  part_number: string;
+  description: string | null;
+  moq: string | null; // sets when the part has sets, otherwise pieces
+  values: [string, string, string][];
+}
+
+export interface OrderSummaryPage extends Paginated<OrderSummaryRow> {
+  days: OrderSummaryDay[];
+  // The newest shown day over every matching part: Firm, Qty added / taken off, parts whose Firm changed, Forecast.
+  latest: { date: string; firm: string; added: string; reduced: string; changed: number; forecast: string } | null;
+  first_date: string | null;
+  last_date: string | null;
 }
 
 export interface ProductVendor {
@@ -717,4 +805,13 @@ export interface AppSettingItem {
   value: string | null;
   env_value: string | null;
   set: boolean;
+}
+
+// Orders → Import dispatched list: rows of the file, orders marked Dispatched (and from how many rows), and the rows
+// skipped with the reason.
+export interface DispatchImportResult {
+  rows: number;
+  orders_marked: number;
+  rows_marked: number;
+  skipped: { row: number; po_number: string | null; part_number: string | null; invoice_number: string | null; date: string | null; reason: string }[];
 }

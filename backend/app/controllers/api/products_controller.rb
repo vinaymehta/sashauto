@@ -117,7 +117,66 @@ module Api
       end
     end
 
+    # Products → Order summary of the business shown (Products::OrderSummary): each part's Firm, Addition and Forecast
+    # in the file of each day with an upload, newest day first. Optional `from` / `to` (YYYY-MM-DD) limit the days; `q`
+    # searches Part Number and Description. Paged by part. One business only: "All" is refused.
+    def order_summary
+      summary = order_summary_for_request or return
+      all_entries = summary.entries(params[:q])
+      entries, meta = paginate_array(all_entries)
+      # The newest shown day over every matching part (not just this page): Firm, Qty added and taken off, parts changed.
+      latest = summary.days.any? ? summary.rows(all_entries).map { |row| row.values.first } : []
+      added = latest.sum { |(_, addition, _)| [ addition, 0 ].max }
+      reduced = latest.sum { |(_, addition, _)| [ addition, 0 ].min }
+      render json: {
+        latest: summary.days.any? ? { date: summary.days.first.date.iso8601, firm: Serializers.qty(latest.sum(&:first)), added: Serializers.qty(added),
+                                      reduced: Serializers.qty(reduced), changed: latest.count { |(_, addition, _)| !addition.zero? },
+                                      forecast: Serializers.qty(latest.sum(&:last)) } : nil,
+        business: current_business,
+        days: summary.days.map { |day| { date: day.date.iso8601, upload_id: day.upload.id, filename: day.upload.original_filename, version: day.upload.version_label } },
+        first_date: summary.all_days.last&.date&.iso8601, last_date: summary.all_days.first&.date&.iso8601,
+        data: summary.rows(entries).map do |row|
+          { serial: row.serial, part_number: row.part_number, description: row.description, moq: Serializers.qty(row.moq),
+            values: row.values.map { |values| values.map { |qty| Serializers.qty(qty) } } }
+        end,
+        meta: meta
+      }
+    end
+
+    # The Order summary as an .xlsx file, laid out like SASH's: the date over each day's three columns, then S No, Part
+    # Number, Description, MOQ and Firm / Addition / Forecast per day. Same days and search as the page, every part.
+    def order_summary_export
+      summary = order_summary_for_request or return
+      days = summary.days
+      headers = [ [ nil, nil, nil, nil ] + days.flat_map { |day| [ day.date.strftime("%d.%m.%Y"), nil, nil ] },
+                  [ "S No", "Part Number", "Description", "MOQ" ] + days.flat_map { [ "Firm", "Addition", "Forecast" ] } ]
+      rows = summary.rows(summary.entries(params[:q])).map do |row|
+        [ row.serial, row.part_number, row.description, row.moq&.to_d ] + row.values.flatten
+      end
+      audit("order_summary.exported", business: current_business, parts: rows.size, days: days.size)
+      # As in SASH's file: Addition green above 0 and red below 0.
+      colors = { signed: days.each_index.map { |i| 4 + (i * 3) + 1 } }
+      send_data ExcelExport::XlsxWriter.call(headers, rows, sheet_name: "Order Summary", freeze_columns: 4, colors: colors),
+                filename: "#{Business.label(current_business)} - Order Summary #{Date.current.iso8601}.xlsx",
+                type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", disposition: "attachment"
+    end
+
     private
+
+    # The Order summary of the business shown, with the `from` / `to` days (an unreadable date is ignored); renders an
+    # error and returns nil for "All".
+    def order_summary_for_request
+      if current_business == "all"
+        render_error("Choose DTP or GMBH: the order summary is for one business.", :unprocessable_content, code: "business_required")
+        return nil
+      end
+      dates = %i[from to].to_h do |key|
+        [ key, (Date.iso8601(params[key].to_s) if params[key].present?) ]
+      rescue Date::Error
+        [ key, nil ]
+      end
+      Products::OrderSummary.new(current_business, **dates)
+    end
 
     # Commodity Type filter: the chosen types, "_none" for parts without one.
     def filter_by_commodity(scope)

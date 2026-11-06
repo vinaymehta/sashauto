@@ -68,17 +68,19 @@ export function UploadPicker({ uploads, latestId, selectedId, onSelect }: {
 }
 
 // Orders page actions: upload a file, create an order (admin; `onCreate`), download the shown upload.
-// `onImportDispatched`: Import dispatched list (admins, who set Dispatched).
-export function OrderActions({ downloadId, onUpload, onCreate, onImportDispatched }: {
-  downloadId?: number; onUpload: () => void; onCreate?: () => void; onImportDispatched?: () => void;
+// `onUploadInvoice`: Upload invoice (a SASH India invoice → dispatched, a SASH Inc invoice → outbound; the file says
+// which), and `onImportDispatched`: Import dispatched list; for admins (who set Dispatched).
+export function OrderActions({ downloadId, onUpload, onCreate, onUploadInvoice, onImportDispatched }: {
+  downloadId?: number; onUpload: () => void; onCreate?: () => void; onUploadInvoice?: () => void; onImportDispatched?: () => void;
 }) {
   return (
-    <Dropdown label="Actions" width="w-56">
+    <Dropdown label="Actions" width="w-64">
       {(close) => (
         <div className="py-1">
           <Item icon={<UploadIcon size={16} />} onClick={() => { close(); onUpload(); }}>Upload file</Item>
           {onCreate && <Item icon={<PlusIcon size={16} />} onClick={() => { close(); onCreate(); }}>Create order</Item>}
-          {onImportDispatched && <Item icon={<TruckIcon size={16} />} onClick={() => { close(); onImportDispatched(); }}>Import dispatched list</Item>}
+          {onUploadInvoice && <Item icon={<TruckIcon size={16} />} onClick={() => { close(); onUploadInvoice(); }}>Upload invoice</Item>}
+          {onImportDispatched && <Item icon={<CheckIcon size={16} />} onClick={() => { close(); onImportDispatched(); }}>Import dispatched list</Item>}
           {downloadId !== undefined && (
             <a role="menuitem" href={`/api/uploads/${downloadId}/download`} download onClick={close}
                className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-base text-ink transition-colors hover:bg-canvas">

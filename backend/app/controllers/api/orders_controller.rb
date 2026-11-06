@@ -69,6 +69,9 @@ module Api
       ordered = ordered_by_key(rows)
       order_placed = VendorOrderPlacement.order_placed_keys(ordered.keys)
       deliveries = deliveries_by_key(rows)
+      # Dispatched / outbound Qty of each row from the uploaded invoices (by the row's own key).
+      own_keys = rows.map { |row| own_key(row) }
+      progress = Invoices::Progress.for_keys(own_keys)
       # A combined order's rows show the combined order's Firm Date (the day it reached the MOQ).
       # (By position: an imported row and a manual order can share an id.)
       firm_keys = rows.map { |row| firm_key(row) }
@@ -84,7 +87,8 @@ module Api
           Serializers.order_row(row, source: true).merge(placed: ordered.key?(key), order_placed: order_placed.include?(key),
                                                          ordered_qty: Serializers.qty(ordered[key]),
                                                          deliveries: deliveries.fetch(key, {}),
-                                                         **row_invoice(deliveries.dig(key, "dispatched"), row),
+                                                         **row_invoice(deliveries.dig(key, "dispatched"), row, progress[own_keys[i]]),
+                                                         **invoice_info(row, progress[own_keys[i]], deliveries.fetch(key, {})),
                                                          firm_date: firm_dates[firm_keys[i]], came_firm_date: came[i], business: row[:business],
                                                          part_description: descriptions[row.part_number],
                                                          discontinued: discontinued.include?(row.part_number),
@@ -103,9 +107,10 @@ module Api
 
     # Cards above the Orders table, for the current order data (latest upload + manual orders), counting rows of the
     # order file (a combined order counts each of its rows, which share its PO and status). open: Firm / Order rows not
-    # yet delivered to Deere (outbound); po_pending: open ones with a Qty and no PO generated yet; below_moq: parts that
-    # need MOQ (Orders::MoqBalance: Firm Qty less PO issued, still to order, below the MOQ); aged: open ones 90+ days
-    # since their order's Firm Date (age group red, on the browser's `today`).
+    # yet delivered to Deere (an Outbound mark, or all of the row on SASH Inc invoices); po_pending: open ones with a Qty
+    # and no PO generated yet; below_moq: parts that need MOQ (Orders::MoqBalance: Firm Qty less PO issued, still to
+    # order, below the MOQ); aged: open ones 90+ days since their order's Firm Date (age group red, on the browser's
+    # `today`).
     def summary
       batch_ids = UploadBatch.latest_for(current_business).map(&:id)
       combined = Orders::Combiner.for_batches(batch_ids)
@@ -117,14 +122,17 @@ module Api
       rows += manual_orders.where(order_type: %w[Firm Order]).pluck(:id, :qty)
                          .map { |id, qty| [ id, VendorOrderPlacement.order_key(ManualOrder.new(id: id)), qty, true ] }
       delivered = OrderDelivery.active.where(kind: "outbound", order_key: rows.map { |r| r[1] }).distinct.pluck(:order_key).to_set
-      open = rows.reject { |_, key, *| delivered.include?(key) }
+      # Each row's own key (the invoices are recorded per row, a combined order's rows too).
+      own = rows.map { |id, key, _, manual| manual ? key : keys[id] }
+      fulfilled = Invoices::Progress.fulfilled_keys(own.zip(rows.map { |r| r[2] }))
+      open = rows.each_with_index.reject { |(_, key, *), i| delivered.include?(key) || fulfilled.include?(own[i]) }.map(&:first)
       placed = VendorOrderPlacement.where(order_key: open.map { |r| r[1] }).distinct.pluck(:order_key).to_set
       # The orders of the open rows (a combined order's first row for each of its rows).
       open_orders = open.reject(&:last).map { |id, *| anchor_of.fetch(id, id) }
       aged = Ageing::Rules.in_bands(OrderRow.where(id: open_orders.uniq), [ "red" ], request_today,
                                     combined_ids: combined.groups.values.select(&:combined?).map(&:anchor_id)).pluck(:id).to_set
-      # Delivery tabs, counted on the same rows (a combined order's status for each of its rows): in transit (dispatched
-      # from Faridabad, not yet at the US warehouse) and fulfilled (delivered to Deere).
+      # Delivery tabs, counted on the same rows (as the Status column): in transit (Dispatch or Dispatched from
+      # Faridabad, not yet at the US warehouse) and fulfilled (delivered to Deere).
       statuses = dataset(UploadBatch.latest_for(current_business)).group(Arel.sql(status_sql)).count
       render json: {
         open: open.size,
@@ -134,7 +142,7 @@ module Api
         no_qty: open.count { |_, key, qty, _| !qty.to_d.positive? && !placed.include?(key) },
         below_moq: Orders::MoqBalance.needs(batch_ids).values.sum(&:size),
         aged: open_orders.count { |id| aged.include?(id) },
-        in_transit: statuses["dispatched"].to_i,
+        in_transit: statuses["dispatch"].to_i + statuses["dispatched"].to_i,
         fulfilled: statuses["outbound"].to_i
       }
     end
@@ -152,13 +160,22 @@ module Api
       combined = Orders::Combiner.call(row.upload_batch_id)
       groups = combined.groups.values.select { |g| Orders::Merges.shown?(g) && g.members.first.group_key == row.group_key }
       came = came_firm_dates(rows.to_a)
+      # Each row's dispatch figures from the uploaded invoices (Invoice No., Order / Shipped / Balance Qty), as on the list.
+      keys = rows.map { |r| VendorOrderPlacement.order_key(r) }
+      progress = Invoices::Progress.for_keys(keys)
+      listed = listed_marks(keys)
       render json: {
         data: rows.each_with_index.map do |r, i|
-          Serializers.order_row(r, source: true).merge(firm_date: firm_dates[VendorOrderPlacement.order_key(r)], came_firm_date: came[i])
+          key = keys[i]
+          # The dispatched orders list's invoice numbers of this row (an uploaded SASH India invoice shows instead).
+          list_invoices = Array(listed.dig(key, "dispatched", :invoice_lines)).select { |l| l["order_key"] == key }.filter_map { |l| l["invoice"] }.uniq
+          Serializers.order_row(r, source: true).merge(firm_date: firm_dates[key], came_firm_date: came[i], dispatch_invoice: list_invoices.join(", ").presence,
+                                                       **invoice_info(r, progress[key], listed[key] || {}).except(:status))
         end,
         headers: row.source_columns.presence || row.source_data.keys,
         group: group_info(row),
-        combined: groups.map { |g| schedule_group(g, combined) }
+        combined: groups.map { |g| schedule_group(g, combined) },
+        invoices: invoice_moves(rows.map { |r| VendorOrderPlacement.order_key(r) })
       }
     end
 
@@ -174,9 +191,32 @@ module Api
 
     private
 
-    STATUSES = %w[none received dispatched inbound outbound].freeze
+    # Statuses in route order: dispatch (part of the Qty dispatched on SASH India invoices) and dispatched (all of it, or a
+    # Dispatched mark) come from Faridabad.
+    STATUSES = %w[none received dispatch dispatched inbound outbound].freeze
+    STATUS_ARRAY_SQL = "(ARRAY[#{STATUSES.map { |s| "'#{s}'" }.join(', ')}]::text[])".freeze
 
-    # Current status of a listed row (its furthest status mark), or 'none'. One uncorrelated IN per kind, furthest
+    # Allocations of the active uploaded invoices (Invoices::Progress).
+    ALLOCATIONS_SQL = "invoice_allocations a JOIN invoices i ON i.id = a.invoice_id AND i.removed_at IS NULL".freeze
+
+    # Position in STATUSES (1 = none) of a listed row's status from the uploaded invoices (Invoices::Progress, by the row's
+    # own Qty: dispatch, dispatched or outbound). As in CURRENT_STATUS_SQL an uncorrelated IN finds the rows with
+    # allocations; only those sum their own.
+    INVOICE_STATUS_SQL = begin
+      order = "(order_rows.po_number, order_rows.part_number, order_rows.order_type, order_rows.po_line_number, order_rows.ship_date)"
+      shipped = "COALESCE(SUM(a.qty) FILTER (WHERE i.kind = 'india'), 0)"
+      outbound = "COALESCE(SUM(a.qty) FILTER (WHERE i.kind = 'inc'), 0)"
+      total = "GREATEST(COALESCE(MAX(a.order_qty), 0), COALESCE(order_rows.qty, 0))"
+      position = "CASE WHEN #{outbound} > 0 AND #{outbound} >= #{total} THEN 6 WHEN #{shipped} <= 0 THEN 1 WHEN #{shipped} >= #{total} THEN 4 ELSE 3 END"
+      imported = "a.manual_order_id IS NULL AND a.po_number = order_rows.po_number AND a.part_number = order_rows.part_number " \
+                 "AND a.order_type = order_rows.order_type AND a.po_line_number = order_rows.po_line_number AND a.ship_date = order_rows.ship_date"
+      "(CASE WHEN order_rows.manual AND order_rows.id IN (SELECT a.manual_order_id FROM #{ALLOCATIONS_SQL} WHERE a.manual_order_id IS NOT NULL) " \
+        "THEN (SELECT #{position} FROM #{ALLOCATIONS_SQL} WHERE a.manual_order_id = order_rows.id) " \
+        "WHEN NOT order_rows.manual AND #{order} IN (SELECT a.po_number, a.part_number, a.order_type, a.po_line_number, a.ship_date " \
+        "FROM #{ALLOCATIONS_SQL} WHERE a.manual_order_id IS NULL) THEN (SELECT #{position} FROM #{ALLOCATIONS_SQL} WHERE #{imported}) ELSE 1 END)".freeze
+    end
+
+    # Furthest status mark of a listed row, or 'none'. One uncorrelated IN per kind, furthest
     # first: PostgreSQL hashes each once per query instead of scanning order_deliveries for every row.
     CURRENT_STATUS_SQL = begin
       order = "(order_rows.po_number, order_rows.part_number, order_rows.order_type, order_rows.po_line_number, order_rows.ship_date)"
@@ -189,7 +229,7 @@ module Api
       "(CASE #{whens.join(' ')} ELSE 'none' END)".freeze
     end
 
-    # Status filter (status=none,received,…); without it, fulfilled orders (outbound) are left out.
+    # Status filter (status=none,received,dispatch,…); without it, fulfilled orders (outbound) are left out.
     def filter_by_status(scope)
       statuses = multi_param(:status, STATUSES)
       return scope.where("#{status_sql} <> 'outbound'") if statuses.empty?
@@ -273,8 +313,14 @@ module Api
       "(CASE WHEN order_rows.manual THEN encode(sha256(convert_to('manual' || chr(31) || order_rows.id::text, 'UTF8')), 'hex') ELSE #{imported} END)"
     end
 
-    # The current status of a listed row in SQL (CURRENT_STATUS_SQL): the combined order's for its rows.
+    # The current status of a listed row in SQL: the further of its status marks' (the combined order's for its rows) and
+    # its uploaded invoices' (its own, INVOICE_STATUS_SQL).
     def status_sql
+      "#{STATUS_ARRAY_SQL}[GREATEST(array_position(#{STATUS_ARRAY_SQL}, #{mark_status_sql}::text), #{INVOICE_STATUS_SQL})]"
+    end
+
+    # The furthest status mark of a listed row in SQL (CURRENT_STATUS_SQL): the combined order's for its rows.
+    def mark_status_sql
       return CURRENT_STATUS_SQL if @combined_keys.empty?
 
       ids = @combined_keys.keys.map { |id| Integer(id) }.join(",")
@@ -303,20 +349,91 @@ module Api
     end
 
     # The SASH India invoice shown on a listed row (dispatch_invoice) and all of the row's invoices (dispatch_invoices).
-    # A Dispatched mark with its invoices one by one (invoice_lines, from the dispatched orders list): those sent for
-    # this row (a combined order's rows each show their own), the one with the row's Qty shown (Deere's Qty is what is
-    # still open, so an earlier part shipment has another Qty), else the latest. Otherwise the mark's invoice number.
-    def row_invoice(dispatched, row)
+    # Uploaded SASH India invoices that dispatched Qty of this row (`progress`, Invoices::Progress): the latest, all with
+    # date and Qty. Otherwise a Dispatched mark (set before invoice uploads) with its invoices one by one (invoice_lines,
+    # from the former dispatched orders list): those sent for this row (a combined order's rows each show their own), the
+    # one with the row's Qty shown (Deere's Qty is what is still open, so an earlier part shipment has another Qty), else
+    # the latest. Otherwise the mark's invoice number.
+    def row_invoice(dispatched, row, progress)
+      india = progress&.moves.to_a.select { |move| move.kind == "india" }
+      if india.any?
+        return { dispatch_invoice: india.last.invoice_number,
+                 dispatch_invoices: india.map { |m| "#{m.invoice_number} (#{m.invoice_date.iso8601}, Qty #{Serializers.qty(m.qty)})" } }
+      end
       return { dispatch_invoice: nil, dispatch_invoices: [] } unless dispatched
       if dispatched[:invoice_lines].blank?
         return { dispatch_invoice: dispatched[:invoice_number], dispatch_invoices: [ dispatched[:invoice_number] ].compact }
       end
 
-      own = row[:manual] ? placement_key(row) : VendorOrderPlacement.order_key(row)
+      own = own_key(row)
       lines = dispatched[:invoice_lines].select { |line| line["order_key"] == own }.sort_by { |line| line["date"].to_s }
       shown = lines.find { |line| row.qty && line["qty"].present? && BigDecimal(line["qty"]) == row.qty } || lines.last
       { dispatch_invoice: shown&.dig("invoice"),
         dispatch_invoices: lines.map { |line| "#{line['invoice']} (#{line['date']}#{", Qty #{line['qty']}" if line['qty']})" }.uniq }
+    end
+
+    # A listed row's own order key (not its combined order's): the key its invoices are recorded on.
+    def own_key(row)
+      row[:manual] ? placement_key(row) : VendorOrderPlacement.order_key(row)
+    end
+
+    # A listed row's Qty columns from the uploaded invoices (Invoices::Progress `progress`, nil without any): Order Qty
+    # (the Qty when dispatched, when higher than Deere's open Qty now), Shipped Qty (dispatched on SASH India invoices),
+    # Balance Qty (still to send), Outbound Qty (delivered on SASH Inc invoices), each invoice move, and the status: the
+    # further of its marks' (`marks`, kind => mark) and its invoices'.
+    def invoice_info(row, progress, marks)
+      mark = OrderDelivery::KINDS.reverse.find { |kind| marks.key?(kind) } || "none"
+      from_invoices = progress&.status(row.qty)
+      status = [ mark, from_invoices ].compact.max_by { |kind| STATUSES.index(kind) }
+      # Sent by the dispatched orders list (no SASH India invoice Qty): its Qty on the list counts as shipped.
+      listed = progress&.shipped&.positive? ? 0.to_d : listed_qty(row, marks["dispatched"])
+      if progress.nil? && listed.zero?
+        return { status: status, order_qty: Serializers.qty(row.qty), shipped_qty: nil, balance_qty: Serializers.qty(row.qty), outbound_qty: nil, invoice_moves: [] }
+      end
+
+      shipped = (progress&.shipped || 0.to_d) + listed
+      # At least what was sent: Deere's Qty drops as it receives (e.g. 4 open of 150 sent on the dispatched list).
+      order_qty = [ progress ? progress.order_qty(row.qty) : row.qty.to_d, shipped ].max
+      { status: status, order_qty: Serializers.qty(order_qty), shipped_qty: Serializers.qty(shipped),
+        balance_qty: Serializers.qty([ order_qty - shipped, 0.to_d ].max), outbound_qty: progress&.outbound&.positive? ? Serializers.qty(progress.outbound) : nil,
+        invoice_moves: (progress&.moves || []).map { |m| { kind: m.kind, invoice_id: m.invoice_id, invoice_number: m.invoice_number, invoice_date: m.invoice_date, qty: Serializers.qty(m.qty) } } }
+    end
+
+    # Order key => { "dispatched" => mark } of the Dispatched marks on these keys or naming them on their list lines.
+    def listed_marks(keys)
+      marks = OrderDelivery.active.where(kind: "dispatched")
+                           .where("order_key IN (:keys) OR EXISTS (SELECT 1 FROM jsonb_array_elements(invoice_lines) l WHERE l->>'order_key' IN (:keys))", keys: keys)
+      marks.each_with_object({}) do |d, by_key|
+        mark = { "dispatched" => { invoice_lines: d.invoice_lines } }
+        by_key[d.order_key] ||= mark if keys.include?(d.order_key)
+        d.invoice_lines.each { |line| by_key[line["order_key"]] ||= mark if keys.include?(line["order_key"]) }
+      end
+    end
+
+    # Qty of a row sent on a Dispatched mark (`mark`, serialized): its lines on the dispatched orders list (their Qty, the
+    # row's Qty when a line has none), or all of it when the mark names no lines (marked by hand).
+    def listed_qty(row, mark)
+      return 0.to_d unless mark
+
+      lines = Array(mark[:invoice_lines])
+      return row.qty.to_d if lines.empty?
+
+      own = row[:manual] ? VendorOrderPlacement.order_key(ManualOrder.new(id: row.id)) : VendorOrderPlacement.order_key(row)
+      lines.select { |line| line["order_key"] == own }.sum(0.to_d) { |line| line["qty"].present? ? BigDecimal(line["qty"].to_s) : row.qty.to_d }
+    end
+
+    # Every dispatch and outbound of the orders with these keys, oldest first: the invoice (kind, number, date, file),
+    # the order row (PO Line, Ship Date), the Qty and Order Qty, who uploaded it and when.
+    def invoice_moves(keys)
+      InvoiceAllocation.active.includes(invoice: [ :uploaded_by, { file_attachment: :blob } ]).where(order_key: keys.uniq)
+                       .order("invoices.invoice_date", "invoices.id", :id).map do |a|
+        invoice = a.invoice
+        { id: a.id, invoice_id: invoice.id, kind: invoice.kind, label: invoice.label, invoice_number: invoice.invoice_number,
+          invoice_date: invoice.invoice_date, po_line_number: a.po_line_number, ship_date: a.ship_date, order_type: a.order_type,
+          manual_order_id: a.manual_order_id, qty: Serializers.qty(a.qty), order_qty: Serializers.qty(a.order_qty),
+          uploaded_by: invoice.uploaded_by&.name, uploaded_at: invoice.created_at, filename: invoice.original_filename,
+          has_file: invoice.file.attached? }
+      end
     end
 
     # Sets ordered so far (Generate PO) per placement key of the listed rows (in one query).
@@ -358,7 +475,8 @@ module Api
       render json: {
         data: [ Serializers.order_row(order, source: true) ],
         headers: order.source_columns,
-        group: group_info(order)
+        group: group_info(order),
+        invoices: invoice_moves([ VendorOrderPlacement.order_key(order) ])
       }
     end
 
@@ -397,8 +515,8 @@ module Api
       OrderRow.from("(#{imported.to_sql} UNION ALL #{manual.to_sql} UNION ALL #{kept.to_sql}) AS order_rows")
     end
 
-    # Orders of the view's businesses placed with vendors or with an active status mark that are no longer in their
-    # business's latest upload: like manual orders they stay on the Orders page. One row per order (PO + Part + Type +
+    # Orders of the view's businesses placed with vendors, with an active status mark or on an uploaded invoice that are
+    # no longer in their business's latest upload: like manual orders they stay on the Orders page. One row per order (PO + Part + Type +
     # PO Line + Ship Date), its last version.
     def kept_rows(batches)
       ids = batches.map { |b| Integer(b.id) }.presence || [ 0 ]
@@ -408,7 +526,8 @@ module Api
          FROM order_rows r JOIN upload_batches b ON b.id = r.upload_batch_id AND b.business IN (#{names})
          WHERE r.upload_batch_id NOT IN (#{ids.join(',')})
            AND r.id IN (SELECT d.order_row_id FROM order_deliveries d WHERE d.removed_at IS NULL
-                        UNION SELECT p.order_row_id FROM vendor_order_placements p)
+                        UNION SELECT p.order_row_id FROM vendor_order_placements p
+                        UNION SELECT a.order_row_id FROM #{ALLOCATIONS_SQL} WHERE a.order_row_id IS NOT NULL)
            AND NOT EXISTS (SELECT 1 FROM order_rows n WHERE n.upload_batch_id IN (#{ids.join(',')})
                            AND n.group_key = r.group_key AND n.po_line_number = r.po_line_number AND n.ship_date = r.ship_date)
          ORDER BY r.group_key, r.po_line_number, r.ship_date, r.upload_batch_id DESC) AS order_rows
@@ -435,7 +554,8 @@ module Api
     # Whether the request has any search or filter active.
     def filtered?
       # Fulfilled (delivered to Deere) orders are hidden by default, so the stored row count no longer applies.
-      OrderDelivery.active.where(kind: "outbound").exists? || params[:status].present? ||
+      OrderDelivery.active.where(kind: "outbound").exists? || InvoiceAllocation.active.where(invoices: { kind: "inc" }).exists? ||
+        params[:status].present? ||
         (params[:search].presence || params[:q].presence).present? ||
         params[:type].present? || params[:ship_to].present? || params[:commodity_type].present? ||
         params[:ship_date_from].present? || params[:ship_date_to].present? || params[:age].present? || params[:po].present? || params[:combined].present? ||
@@ -587,8 +707,9 @@ module Api
       nil
     end
 
-    # Also by Part Description (the file's Description column, else the product's) and SASH India invoice number (of a
-    # Dispatched mark: its invoice, or one of its invoices sent for the row, as the SASH India Invoice column shows).
+    # Also by Part Description (the file's Description column, else the product's) and invoice number (an uploaded SASH
+    # India or SASH Inc invoice of the row, or of a Dispatched mark: its invoice, or one of its invoices sent for the row,
+    # as the SASH India Invoice column shows).
     def search(scope, term)
       return scope if term.empty?
       pattern = "%#{OrderSnapshotRow.sanitize_sql_like(term)}%"
@@ -617,7 +738,8 @@ module Api
     end
 
     # Order keys of the active Dispatched marks whose SASH India invoice contains `term`: [keys of marks with one
-    # invoice for all their rows (placement keys), keys of the rows an invoice was sent for (their own keys)].
+    # invoice for all their rows (placement keys), keys of the rows an invoice was sent for (their own keys: also the rows
+    # of uploaded invoices whose number contains `term`)].
     def invoice_keys(term)
       needle = term.downcase
       marks = OrderDelivery.active.where(kind: "dispatched")
@@ -625,6 +747,7 @@ module Api
                            .pluck(:order_key, :invoice_number, :invoice_lines)
       mark_keys = marks.filter_map { |key, number, lines| key if lines.blank? && number.to_s.downcase.include?(needle) }
       line_keys = marks.flat_map { |_, _, lines| lines.select { |line| line["invoice"].to_s.downcase.include?(needle) }.map { |line| line["order_key"] } }
+      line_keys += InvoiceAllocation.active.where("invoices.invoice_number ILIKE ?", "%#{Invoice.sanitize_sql_like(term)}%").distinct.pluck(:order_key)
       [ mark_keys.uniq, line_keys.compact.uniq ]
     end
 

@@ -4,12 +4,12 @@ module Dashboard
   # Operations figures of the dashboard, from the current order data (the latest upload and active manual orders),
   # a combined order (Orders::Combiner) as one order valued at all of its rows. Counts are rows of the order file (as in
   # the file): a combined order of 3 rows counts 3.
-  # Open = a Firm or Order order not yet delivered to Deere (no active outbound mark). Values are Qty × Unit Price ÷ 100
-  # (in the business's currency, Settings), as in Dashboard::Money.
+  # Open = a Firm or Order order not yet delivered to Deere (no active outbound mark, nor delivered in full on SASH Inc
+  # invoices). Values are Qty × Unit Price ÷ 100 (in the business's currency, Settings), as in Dashboard::Money.
   #
   #   kpis       open orders, due in the next 30 days, overdue (ship date passed), PO coverage (share of the open value
   #              with a vendor PO generated)
-  #   pipeline   open orders by their furthest status mark: none, received, dispatched, inbound
+  #   pipeline   open orders by their furthest status: none, received, dispatched (a mark, or on SASH India invoices), inbound
   #   ageing     open orders by age group (days since the Firm Date, Ageing::Rules)
   #   outlook    by ship date from the start of this month: Firm + Order value and Forecast value (the graph groups it)
   #   top_parts  the eight parts with the most open value, each with its product (id, MOQ, customer price) and its open
@@ -115,14 +115,31 @@ module Dashboard
       end
     end
 
-    # order key => furthest active status mark, for the Firm / Order orders listed.
+    # order key => furthest status, for the Firm / Order orders listed: its furthest active status mark, or further its
+    # uploaded invoices' (see #invoice_statuses).
     def statuses
       @statuses ||= begin
         kinds = OrderDelivery::KINDS
         keys = listed_orders.select { |o| TYPES.include?(o.order_type) }.map(&:key)
-        OrderDelivery.active.where(order_key: keys).pluck(:order_key, :kind).group_by(&:first)
-                     .transform_values { |marks| marks.map(&:last).max_by { |k| kinds.index(k) } }
+        marks = OrderDelivery.active.where(order_key: keys).pluck(:order_key, :kind).group_by(&:first)
+                             .transform_values { |list| list.map(&:last).max_by { |k| kinds.index(k) } }
+        marks.merge(invoice_statuses(keys)) { |_, mark, invoice| [ mark, invoice ].max_by { |k| kinds.index(k) } }
       end
+    end
+
+    # order key => status from the uploaded invoices (Invoices::Progress, recorded on each row of a combined order):
+    # outbound when every row of the order is delivered in full (by the Qty it was dispatched for), else dispatched when
+    # any row was dispatched (part or all: in transit).
+    def invoice_statuses(keys)
+      members = keys.to_h { |key| [ key, [ key ] ] }
+      anchor_keys.each { |member, anchor| members[anchor] << member if members.key?(anchor) && member != anchor }
+      progress = Invoices::Progress.for_keys(members.values.flatten)
+      members.filter_map do |key, list|
+        entries = list.map { |k| progress[k] }
+        next unless entries.compact.any? { |entry| entry.shipped.positive? }
+
+        [ key, entries.all? { |entry| entry&.status(nil) == "outbound" } ? "outbound" : "dispatched" ]
+      end.to_h
     end
 
     def kpis(open, placed)

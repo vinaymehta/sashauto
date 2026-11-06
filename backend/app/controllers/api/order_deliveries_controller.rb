@@ -1,7 +1,8 @@
 module Api
   # Status marks on an order row (OrderDelivery): an admin marks received / dispatched (with the SASH India invoice
   # number), the Warehouse Manager inbound / outbound. Only an admin removes a wrong mark. The Warehouse Manager's
-  # marks email the admins (the India team); every mark shows in the admins' notification bell.
+  # marks email the admins (the India team); every mark shows in the admins' notification bell. An order dispatched on
+  # an uploaded SASH India invoice (InvoicesController) gets no Dispatched mark: its invoices stand for it.
   class OrderDeliveriesController < ApplicationController
     def create
       row = params[:manual] == "1" ? ManualOrder.active.find(params[:order_id]) : OrderRow.find(params[:order_id])
@@ -19,9 +20,13 @@ module Api
       return render_error("Enter a valid delivery date.", :unprocessable_content, details: { delivered_on: [ "is invalid" ] }) unless delivered_on
       key = VendorOrderPlacement.order_key(row)
       return already_marked(kind) if OrderDelivery.active.exists?(order_key: key, kind: kind)
-      # Statuses go in route order: received → dispatched → inbound → outbound.
+      invoiced = InvoiceAllocation.active.where(order_key: key, invoices: { kind: "india" }).exists?
+      if kind == "dispatched" && invoiced
+        return render_error("This order is dispatched on SASH India invoices: its status follows them.", :unprocessable_content)
+      end
+      # Statuses go in route order: received → dispatched (or a SASH India invoice) → inbound → outbound.
       previous = OrderDelivery.previous_kind(kind)
-      if previous && !OrderDelivery.active.exists?(order_key: key, kind: previous)
+      if previous && !(previous == "dispatched" && invoiced) && !OrderDelivery.active.exists?(order_key: key, kind: previous)
         return render_error("Set \"#{OrderDelivery::LABELS.fetch(previous)}\" first.", :unprocessable_content)
       end
 

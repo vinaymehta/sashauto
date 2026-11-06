@@ -53,6 +53,11 @@ Rails.application.routes.draw do
     resources :order_deliveries, only: :destroy do
       post :import, on: :collection
     end
+    # SASH India / SASH Inc invoices (Orders → Actions): preview, save, remove, download the file.
+    resources :invoices, only: %i[create destroy] do
+      post :preview, on: :collection
+      get :download, on: :member
+    end
     resources :manual_orders, only: %i[show create update destroy] do
       get :fields, on: :collection
     end
@@ -78,6 +83,11 @@ Rails.application.routes.draw do
     resource :portal_sync, only: %i[show create], controller: :portal_sync
     resources :products, only: %i[index create update] do
       get :vendors, on: :member
+      # Order summary (Products page): Firm / Addition / Forecast per part and day, and the same as .xlsx.
+      collection do
+        get :order_summary
+        get "order_summary/export", action: :order_summary_export
+      end
       # Photos of the part: upload (several files), view one, remove one.
       resources :images, only: %i[create show destroy], controller: :product_images
     end

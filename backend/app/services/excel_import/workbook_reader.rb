@@ -50,8 +50,9 @@ module ExcelImport
         raw = cells.map { |cell| cell&.value }
 
         if column_index.nil?
-          column_index = header_index(raw)
-          @headers = raw.map { |value| OrderRows::Normalizer.text(value) } if column_index
+          headers = unique_headers(raw)
+          column_index = header_index(headers)
+          @headers = headers if column_index
           if column_index.nil? && row_number >= HEADER_SEARCH_ROWS
             raise_missing_header!
           end
@@ -104,12 +105,27 @@ module ExcelImport
         raise InvalidWorkbook.new("missing_columns", "Required column(s) missing: #{missing.join(', ')}.")
       end
 
-      duplicated = COLUMNS.values.select { |header| labels.count(canonical(header)) > 1 }
-      if duplicated.any?
-        raise InvalidWorkbook.new("duplicate_columns", "Column(s) appear more than once: #{duplicated.join(', ')}.")
-      end
-
       found.merge(DETAIL_COLUMNS.transform_values { |header| labels.index(canonical(header)) }.compact)
+    end
+
+    # Header texts of the row, a repeated header renamed so no column is lost: SASH's working copies of the export
+    # insert their own columns, e.g. a second "PO Number" (SASH's vendor PO, renamed "Vendor PO Number") or a second
+    # "Last Updated Date" (renamed "Last Updated Date (2)"). The first occurrence keeps its name and is the one read.
+    # Blank headers stay nil (not stored).
+    def unique_headers(raw)
+      seen = Set.new
+      raw.map do |value|
+        header = OrderRows::Normalizer.text(value)
+        next if header.nil?
+        if seen.include?(header.downcase)
+          renamed = header.casecmp?("PO Number") ? "Vendor PO Number" : nil
+          copy = 1
+          renamed = "#{header} (#{copy += 1})" while renamed.nil? || seen.include?(renamed.downcase)
+          header = renamed
+        end
+        seen << header.downcase
+        header
+      end
     end
 
     # Every source column of the row, keyed by its Excel header, with the original cell value
