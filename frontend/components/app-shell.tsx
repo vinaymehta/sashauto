@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { BoxIcon, CloseIcon, DashboardIcon, MenuIcon, TableIcon, TruckIcon, UsersIcon, SettingsIcon } from "./icons";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { BoxIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, DashboardIcon, MenuIcon, TableIcon, TruckIcon, UsersIcon, SettingsIcon } from "./icons";
 import { BrandLogo } from "./brand-logo";
 import { BusinessProvider, useBusiness } from "./business-switch";
 import { ChangePasswordForm } from "./users/change-password-form";
@@ -28,6 +28,38 @@ const NAV: { href: string; label: string; icon: typeof DashboardIcon; match: (p:
 ];
 const allowed = (user: User, item: (typeof NAV)[number]) => (item.section ? can(user, item.section) : user.role === "admin");
 
+// The desktop sidebar folds to an icon rail; the choice is remembered in this browser, expanded until folded.
+// Read after hydration (the server renders it expanded), so the first paint always matches.
+const SIDEBAR_KEY = "sash.sidebar";
+let railed: boolean | null = null;
+const railListeners = new Set<() => void>();
+
+function getRailed() {
+  if (railed === null) {
+    try {
+      railed = window.localStorage.getItem(SIDEBAR_KEY) === "collapsed";
+    } catch {
+      railed = false; // storage blocked: expanded
+    }
+  }
+  return railed;
+}
+
+function setRailed(next: boolean) {
+  railed = next;
+  try {
+    window.localStorage.setItem(SIDEBAR_KEY, next ? "collapsed" : "expanded");
+  } catch {
+    // storage blocked: the choice lasts for this page only
+  }
+  railListeners.forEach((listener) => listener());
+}
+
+function subscribeRailed(listener: () => void) {
+  railListeners.add(listener);
+  return () => { railListeners.delete(listener); };
+}
+
 // The business view (All / DTP / GMBH, top bar) wraps the whole app.
 export function AppShell({ children }: { children: ReactNode }) {
   return <BusinessProvider><Shell>{children}</Shell></BusinessProvider>;
@@ -44,6 +76,7 @@ function Shell({ children }: { children: ReactNode }) {
   const drawer = useRef<HTMLDivElement>(null);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
   useDismiss(drawer, drawerOpen, closeDrawer);
+  const collapsed = useSyncExternalStore(subscribeRailed, getRailed, () => false);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
@@ -67,13 +100,14 @@ function Shell({ children }: { children: ReactNode }) {
     return <RequiredPasswordChange name={user.name} onSignOut={() => { void signOut().then(() => router.replace("/login")); }} />;
   }
 
-  const nav = (
+  // `rail`: the folded desktop sidebar, icons only (the label stays for screen readers and shows on hover).
+  const nav = (rail = false) => (
     <nav className="space-y-1">
       {items.map(({ href, label, icon: Icon, match }) => {
         const active = match(pathname);
         return (
-          <Link key={href} href={href} onClick={closeDrawer} aria-current={active ? "page" : undefined}
-                className={`relative flex items-center gap-2.5 rounded-md px-3 py-2 text-base transition-all duration-150 ${
+          <Link key={href} href={href} onClick={closeDrawer} aria-current={active ? "page" : undefined} title={rail ? label : undefined}
+                className={`relative flex items-center gap-2.5 rounded-md py-2 text-base transition-all duration-150 ${rail ? "justify-center px-2" : "px-3"} ${
                   active
                     ? "bg-nav-raised font-semibold text-white"
                     : "font-normal text-nav-text hover:bg-white/5 hover:text-white"
@@ -83,7 +117,7 @@ function Shell({ children }: { children: ReactNode }) {
             }`}>
               <Icon size={15} />
             </span>
-            {label}
+            <span className={rail ? "sr-only" : undefined}>{label}</span>
           </Link>
         );
       })}
@@ -97,9 +131,19 @@ function Shell({ children }: { children: ReactNode }) {
   return (
     <ToastProvider>
       <div className="min-h-screen lg:flex">
-        <aside className="hidden w-60 shrink-0 border-r border-nav-line bg-nav lg:sticky lg:top-0 lg:block lg:h-screen">
-          <div className="flex h-14 items-center border-b border-nav-line bg-nav px-4"><Brand /></div>
-          <div className="px-3 py-4">{nav}</div>
+        <aside className={`hidden shrink-0 overflow-hidden whitespace-nowrap border-r border-nav-line bg-nav transition-[width] duration-200 lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col ${
+          collapsed ? "w-16" : "w-60"
+        }`}>
+          {/* The fold button sits in the logo bar, where it is seen at once; folded, it takes the logo's place. */}
+          <div className={`flex h-14 items-center gap-2 border-b border-nav-line bg-nav ${collapsed ? "justify-center px-2" : "justify-between pl-4 pr-3"}`}>
+            {!collapsed && <Brand />}
+            <button type="button" onClick={() => setRailed(!collapsed)} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+                    title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-neutral-200 ring-1 ring-white/20 transition-colors hover:bg-white/10 hover:text-white">
+              {collapsed ? <ChevronRightIcon size={18} /> : <ChevronLeftIcon size={18} />}
+            </button>
+          </div>
+          <div className="flex-1 px-3 py-4">{nav(collapsed)}</div>
         </aside>
 
         {drawerOpen && (
@@ -109,7 +153,7 @@ function Shell({ children }: { children: ReactNode }) {
                 <Brand />
                 <button onClick={closeDrawer} aria-label="Close menu" className="rounded p-1 text-neutral-400 hover:bg-white/10 hover:text-white"><CloseIcon size={18} /></button>
               </div>
-              <div className="px-3 py-4">{nav}</div>
+              <div className="px-3 py-4">{nav()}</div>
             </div>
           </div>
         )}

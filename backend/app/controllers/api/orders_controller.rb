@@ -50,7 +50,7 @@ module Api
       # its PO, status and Firm Date.
       combined = Orders::Combiner.for_batches(batches.map(&:id))
       load_combined_orders(combined)
-      @moq_parts = Orders::MoqBalance.needing(batches.map(&:id))
+      @moq_parts = Orders::MoqBalance.needs(batches.map(&:id))
       scope = filter(search(dataset, (params[:search].presence || params[:q]).to_s.strip.first(100)), combined)
       scope, sort, direction = apply_sort(scope, sorts_for(columns).merge("firm_date" => firm_date_sql), default: DEFAULT_SORT)
       # Manual orders are always listed first; each part keeps the chosen sort.
@@ -61,7 +61,7 @@ module Api
       else
         # Stored rows of the upload (row_count is the number after merging identical rows, not what is listed).
         total = OrderRow.where(upload_batch_id: batches.map(&:id)).count +
-                (current_view? ? manual_orders.count + kept_rows(batches).count : 0)
+                (current_view? ? manual_orders.count + kept_ids(batches).size : 0)
         paginate_with_known_total(scope, total)
       end
 
@@ -132,7 +132,7 @@ module Api
         # The rest of the open orders: with a vendor PO, or without a Qty (nothing to order).
         po_generated: open.count { |_, key, *| placed.include?(key) },
         no_qty: open.count { |_, key, qty, _| !qty.to_d.positive? && !placed.include?(key) },
-        below_moq: Orders::MoqBalance.needing(batch_ids).values.sum(&:size),
+        below_moq: Orders::MoqBalance.needs(batch_ids).values.sum(&:size),
         aged: open_orders.count { |id| aged.include?(id) },
         in_transit: statuses["dispatched"].to_i,
         fulfilled: statuses["outbound"].to_i
@@ -176,17 +176,18 @@ module Api
 
     STATUSES = %w[none received dispatched inbound outbound].freeze
 
-    # Current status of a listed row (its furthest status mark), or 'none'.
-    CURRENT_STATUS_SQL = <<~SQL.squish.freeze
-      COALESCE((SELECT d.kind FROM order_deliveries d
-                WHERE d.removed_at IS NULL
-                  AND ((order_rows.manual AND d.manual_order_id = order_rows.id)
-                       OR (NOT order_rows.manual AND d.manual_order_id IS NULL AND d.po_number = order_rows.po_number
-                           AND d.part_number = order_rows.part_number AND d.order_type = order_rows.order_type
-                           AND d.po_line_number = order_rows.po_line_number AND d.ship_date = order_rows.ship_date))
-                ORDER BY array_position(ARRAY['received', 'dispatched', 'inbound', 'outbound']::varchar[], d.kind) DESC
-                LIMIT 1), 'none')
-    SQL
+    # Current status of a listed row (its furthest status mark), or 'none'. One uncorrelated IN per kind, furthest
+    # first: PostgreSQL hashes each once per query instead of scanning order_deliveries for every row.
+    CURRENT_STATUS_SQL = begin
+      order = "(order_rows.po_number, order_rows.part_number, order_rows.order_type, order_rows.po_line_number, order_rows.ship_date)"
+      whens = %w[outbound inbound dispatched received].map do |kind|
+        marks = "FROM order_deliveries d WHERE d.removed_at IS NULL AND d.kind = '#{kind}'"
+        "WHEN order_rows.manual AND order_rows.id IN (SELECT d.manual_order_id #{marks}) THEN '#{kind}' " \
+          "WHEN NOT order_rows.manual AND #{order} IN (SELECT d.po_number, d.part_number, d.order_type, d.po_line_number, d.ship_date " \
+          "#{marks} AND d.manual_order_id IS NULL) THEN '#{kind}'"
+      end
+      "(CASE #{whens.join(' ')} ELSE 'none' END)".freeze
+    end
 
     # Status filter (status=none,received,…); without it, fulfilled orders (outbound) are left out.
     def filter_by_status(scope)
@@ -381,14 +382,16 @@ module Api
     # `order_rows` relation so the search, filters, sorting and pagination below apply to all. Each row has
     # `manual` and `kept` (true/false).
     def dataset(batches)
+      # The business of each upload is known here (BUSINESS_SQL would look it up for every row).
+      business = batches.map { |b| "WHEN #{Integer(b.id)} THEN #{OrderRow.connection.quote(b.business)}" }.join(" ")
       imported = OrderRow.where(upload_batch_id: batches.map(&:id))
                          .select(*SHARED_COLUMNS, :upload_batch_id, :source_row_number, :current, :group_row_count,
-                                 "false AS manual", "false AS kept", BUSINESS_SQL)
+                                 "false AS manual", "false AS kept", batches.empty? ? BUSINESS_SQL : "(CASE order_rows.upload_batch_id #{business} END) AS business")
       return OrderRow.from("(#{imported.to_sql}) AS order_rows") unless current_view?
 
       manual = manual_orders.select(*SHARED_COLUMNS, "NULL::bigint AS upload_batch_id", "NULL::integer AS source_row_number",
                                     "true AS current", "1 AS group_row_count", "true AS manual", "false AS kept", "business")
-      kept = OrderRow.where(id: kept_rows(batches).select(:id))
+      kept = OrderRow.where(id: kept_ids(batches))
                      .select(*SHARED_COLUMNS, :upload_batch_id, :source_row_number, :current, :group_row_count,
                              "false AS manual", "true AS kept", BUSINESS_SQL)
       OrderRow.from("(#{imported.to_sql} UNION ALL #{manual.to_sql} UNION ALL #{kept.to_sql}) AS order_rows")
@@ -404,12 +407,19 @@ module Api
         (SELECT DISTINCT ON (r.group_key, r.po_line_number, r.ship_date) r.id
          FROM order_rows r JOIN upload_batches b ON b.id = r.upload_batch_id AND b.business IN (#{names})
          WHERE r.upload_batch_id NOT IN (#{ids.join(',')})
-           AND (EXISTS (SELECT 1 FROM order_deliveries d WHERE d.order_row_id = r.id AND d.removed_at IS NULL)
-                OR EXISTS (SELECT 1 FROM vendor_order_placements p WHERE p.order_row_id = r.id))
+           AND r.id IN (SELECT d.order_row_id FROM order_deliveries d WHERE d.removed_at IS NULL
+                        UNION SELECT p.order_row_id FROM vendor_order_placements p)
            AND NOT EXISTS (SELECT 1 FROM order_rows n WHERE n.upload_batch_id IN (#{ids.join(',')})
                            AND n.group_key = r.group_key AND n.po_line_number = r.po_line_number AND n.ship_date = r.ship_date)
          ORDER BY r.group_key, r.po_line_number, r.ship_date, r.upload_batch_id DESC) AS order_rows
       SQL
+    end
+
+    # Ids of the kept rows (see #kept_rows), looked up once per request: the dataset is queried several times (page,
+    # count, vendor facet).
+    def kept_ids(batches)
+      @kept_ids ||= {}
+      @kept_ids[batches.map(&:id)] ||= kept_rows(batches).pluck(:id)
     end
 
     # Headers of the upload in file order; the 47 manual order columns when there is no upload yet.
@@ -585,10 +595,25 @@ module Api
       conditions = SEARCH_COLUMNS.map { |c| "#{c} ILIKE :t" }
       conditions << "order_rows.source_data ->> 'Description' ILIKE :t"
       conditions << "EXISTS (SELECT 1 FROM products p WHERE p.part_number = order_rows.part_number AND p.description ILIKE :t)"
+      manual_ids, row_ids = invoice_rows(scope, term)
+      conditions << "(order_rows.manual AND order_rows.id IN (:manual_ids))" if manual_ids.any?
+      conditions << "(NOT order_rows.manual AND order_rows.id IN (:row_ids))" if row_ids.any?
+      scope.where(conditions.join(" OR "), t: pattern, manual_ids: manual_ids, row_ids: row_ids)
+    end
+
+    # The rows of `scope` (the dataset) with a SASH India invoice containing `term` (see #invoice_keys), as [manual
+    # order ids, imported row ids]. Looked up once: the key SQL hashes every row, and the search runs twice (count, page).
+    def invoice_rows(scope, term)
       mark_keys, line_keys = invoice_keys(term)
+      conditions = []
       conditions << "#{order_key_sql} IN (:mark_keys)" if mark_keys.any?
       conditions << "#{own_key_sql} IN (:line_keys)" if line_keys.any?
-      scope.where(conditions.join(" OR "), t: pattern, mark_keys: mark_keys, line_keys: line_keys)
+      return [ [], [] ] if conditions.empty?
+
+      rows = scope.unscope(:order).where(conditions.join(" OR "), mark_keys: mark_keys, line_keys: line_keys)
+                  .pluck(Arel.sql("order_rows.manual"), Arel.sql("order_rows.id"))
+      manual, imported = rows.partition(&:first)
+      [ manual.map(&:last).uniq, imported.map(&:last).uniq ]
     end
 
     # Order keys of the active Dispatched marks whose SASH India invoice contains `term`: [keys of marks with one
@@ -617,12 +642,18 @@ module Api
       imported = rows.reject { |row| row[:manual] || !%w[Firm Order].include?(row.order_type) }
       first = {}
       if imported.any?
-        batch_ids = UploadBatch.completed.where(business: businesses).pluck(:id)
+        completed = UploadBatch.completed.where(business: businesses).pluck(:id, :completed_at).to_h
         tuples = imported.map { |row| [ row.group_key, row.po_line_number, row.ship_date ] }.uniq
-        values = tuples.map { |g, l, d| OrderRow.sanitize_sql_array([ "(?, ?, ?::date)", g, l, d ]) }.join(", ")
-        first = OrderRow.joins(:upload_batch).where(upload_batch_id: batch_ids)
-                        .where("(order_rows.group_key, order_rows.po_line_number, order_rows.ship_date) IN (#{values})")
-                        .group(:group_key, :po_line_number, :ship_date).minimum("upload_batches.completed_at")
+        values = tuples.each_with_index.map { |(g, l, d), i| OrderRow.sanitize_sql_array([ "(?, ?, ?, ?::date)", i, g, l, d ]) }.join(", ")
+        # The uploads of each order, looked up order by order from the (group_key, po_line_number, ship_date,
+        # upload_batch_id) index, so each reads only its own rows however many uploads there are (uploads of other
+        # businesses, or not completed, are left out below).
+        uploads = OrderRow.where("order_rows.group_key = orders.group_key AND order_rows.po_line_number = orders.po_line_number " \
+                                 "AND order_rows.ship_date = orders.ship_date")
+                          .select("array_agg(DISTINCT order_rows.upload_batch_id)")
+        first = OrderRow.from("(VALUES #{values}) AS orders (i, group_key, po_line_number, ship_date)")
+                        .pluck(Arel.sql("orders.i"), Arel.sql("(#{uploads.to_sql})"))
+                        .to_h { |i, ids| [ tuples[i], ids.to_a.filter_map { |id| completed[id] }.min ] }
       end
       rows.map do |row|
         next row.created_at.in_time_zone(zone).to_date.iso8601 if row[:manual]

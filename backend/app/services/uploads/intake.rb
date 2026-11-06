@@ -9,15 +9,17 @@ module Uploads
 
     class Rejected < StandardError; end
 
-    # `business`: the business the file is for (Business::KEYS).
-    def self.call(file:, user:, business:)
-      new(file, user, business).call
+    # `business`: the business the file is for (Business::KEYS). `enqueue: false`: the caller processes it itself
+    # (Uploads::Processor), e.g. uploads:backfill.
+    def self.call(file:, user:, business:, enqueue: true)
+      new(file, user, business, enqueue).call
     end
 
-    def initialize(file, user, business)
+    def initialize(file, user, business, enqueue = true)
       @file = file
       @user = user
       @business = business.to_s
+      @enqueue = enqueue
     end
 
     def call
@@ -34,7 +36,7 @@ module Uploads
         uploaded_by: @user, status: "pending", original_filename: filename, file_sha256: sha256,
         byte_size: blob.byte_size, content_type: XLSX_CONTENT_TYPE, file: blob, business: @business
       )
-      Uploads::ProcessJob.perform_later(batch.id)
+      Uploads::ProcessJob.perform_later(batch.id) if @enqueue
       batch
     end
 

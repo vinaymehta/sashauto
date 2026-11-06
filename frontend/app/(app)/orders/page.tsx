@@ -3,7 +3,7 @@
 import { can } from "@/lib/permissions";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { createContext, memo, Suspense, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, memo, Suspense, useCallback, useContext, useEffect, useMemo, useState, type DragEvent, type ReactNode } from "react";
 import type { Dashboard, OrderRow, OrdersPage, OrdersSummary, Role, UploadChoice, UploadDetail } from "@/lib/types";
 import { formatCount, formatDate, formatQty } from "@/lib/format";
 import { AlertIcon, ArrowUpDownIcon, CheckIcon, FileIcon, HistoryIcon, MapPinIcon, TableIcon, TruckIcon } from "@/components/icons";
@@ -47,6 +47,9 @@ interface Column {
   header?: string; // shown in the table header instead of `label` (which also names the file column to read)
   render: (row: OrderRow) => ReactNode;
 }
+// A column of the table as shown: Status or SASH India Invoice (the app's own, rendered by OrderTr and the header
+// themselves) or a column of the file.
+type TableColumn = "status" | "sash_india_invoice" | Column;
 
 // The file's Unit Price is per 100 pcs; the price of one piece is shown next to it.
 const pricePerPiece = (r: OrderRow) => {
@@ -199,28 +202,29 @@ const combinedOrder = (row: OrderRow): OrderRow => (row.member_of ? { ...row, id
 
 // One table row. Memoized: the page re-renders when the dashboard, upload list or tabs load or change, and
 // re-rendering every cell of 50 rows × all Excel columns each time blocked the browser for over a second.
-// One order row (not clickable itself): the PO Number opens its details and the Unit opens Place order. The first
-// column is the order Status: admin sets received / dispatched, the Warehouse Manager inbound / outbound.
-const OrderTr = memo(function OrderTr({ row, columns, showStatus, showInvoice, open, today, role, onChanged }: {
-  row: OrderRow; columns: Column[]; showStatus: boolean; showInvoice: boolean; open: boolean; today: Date; role: Role | undefined; onChanged: () => void;
+// One order row (not clickable itself): the PO Number opens its details and the Unit opens Place order. The columns
+// come in the user's order (`columns`, as the header); the Status column: admin sets received / dispatched, the
+// Warehouse Manager inbound / outbound.
+const OrderTr = memo(function OrderTr({ row, columns, open, today, role, onChanged }: {
+  row: OrderRow; columns: TableColumn[]; open: boolean; today: Date; role: Role | undefined; onChanged: () => void;
 }) {
   const tint = ageRowProps(row.qty === null ? null : row.firm_date, today); // as the Firm Date column
   return (
     <tr className={`${tint.className} ${open ? "shadow-[inset_3px_0_0_var(--color-accent)]" : ""}`} title={tint.title}>
-      {/* A row of a combined order sets the combined order's Status. */}
-      {showStatus && <Td><DeliveryCell row={combinedOrder(row)} role={role} onChanged={onChanged} /></Td>}
-      {/* The invoice sent for this row (a combined order's rows each show their own); all of them on hover when it was
-          sent in parts. */}
-      {showInvoice && (
-        <Td className="tabular">
+      {columns.map((c) => (c === "status" ? (
+        // A row of a combined order sets the combined order's Status.
+        <Td key={c}><DeliveryCell row={combinedOrder(row)} role={role} onChanged={onChanged} /></Td>
+      ) : c === "sash_india_invoice" ? (
+        // The invoice sent for this row (a combined order's rows each show their own); all of them on hover when it was
+        // sent in parts.
+        <Td key={c} className="tabular">
           {row.dispatch_invoice
             ? <span className="block max-w-40 truncate whitespace-nowrap" title={(row.dispatch_invoices ?? []).length > 1 ? `Sent in parts:\n${row.dispatch_invoices!.join("\n")}` : row.dispatch_invoice}>{row.dispatch_invoice}</span>
             : <span className="text-neutral-300">—</span>}
         </Td>
-      )}
-      {columns.map((c) => (
+      ) : (
         <Td key={c.key} align={c.align === "right" ? "right" : "left"}>{c.render(row)}</Td>
-      ))}
+      )))}
     </tr>
   );
 });
@@ -320,21 +324,65 @@ function OrdersView() {
     [sourceColumns, uploadId, numericSignature],
   );
 
-  // Columns each user chooses to see (Columns, saved for the user; DEFAULT_COLUMNS until they choose): Status and SASH
-  // India Invoice, then the file's. When none of the chosen ones is in this file, the default ones.
+  // Columns each user chooses to see, in their order (Columns, saved for the user; DEFAULT_COLUMNS until they choose):
+  // Status and SASH India Invoice, then the file's. When none of the chosen ones is in this file, the default ones.
   const chooserColumns = useMemo(
     () => [{ key: "status", label: "Status" }, { key: "sash_india_invoice", label: "SASH India Invoice" },
            ...COLUMNS.map((c) => ({ key: c.key, label: c.header ?? c.label }))],
     [COLUMNS],
   );
   const chosenKey = (me?.orders_columns ?? DEFAULT_COLUMNS).join("\u0000");
-  const visibleKeys = useMemo(() => {
-    const chosen = new Set(chosenKey.split("\u0000"));
-    return chooserColumns.some((c) => chosen.has(c.key)) ? chosen : new Set(DEFAULT_COLUMNS);
+  const savedColumns = useMemo(() => {
+    const chosen = [...new Set(chosenKey.split("\u0000"))];
+    return chooserColumns.some((c) => chosen.includes(c.key)) ? chosen : DEFAULT_COLUMNS;
   }, [chosenKey, chooserColumns]);
-  const shownColumns = useMemo(() => COLUMNS.filter((c) => visibleKeys.has(c.key)), [COLUMNS, visibleKeys]);
-  const showStatus = visibleKeys.has("status");
-  const showInvoice = visibleKeys.has("sash_india_invoice");
+  // The shown columns in the saved order (keys of columns this file does not have are left out): the header and every
+  // row render from this one list.
+  const shownColumns = useMemo(() => {
+    const byKey = new Map(COLUMNS.map((c) => [c.key, c]));
+    return savedColumns.flatMap((key): TableColumn[] => (
+      key === "status" || key === "sash_india_invoice" ? [key] : byKey.has(key) ? [byKey.get(key)!] : []
+    ));
+  }, [COLUMNS, savedColumns]);
+  const shownKeys = useMemo(() => shownColumns.map((c) => (typeof c === "string" ? c : c.key)), [shownColumns]);
+
+  // Columns can also be moved by dragging their header in the table (saved for the user like the Columns panel), while
+  // Arrange is on: then the headers do not sort, so a drag never sorts by mistake; off, they sort as usual.
+  // Column being dragged, and the header it would land beside (`after`: on its right half).
+  const { saveOrdersColumns } = useSession();
+  const [arranging, setArranging] = useState(false);
+  const [dragColumn, setDragColumn] = useState<string | null>(null);
+  const [dropColumn, setDropColumn] = useState<{ key: string; after: boolean } | null>(null);
+  const endColumnDrag = () => { setDragColumn(null); setDropColumn(null); };
+  const headerDrag = (key: string) => ({
+    draggable: true,
+    title: "Drag to move this column",
+    onDragStart: (e: DragEvent<HTMLTableCellElement>) => { setDragColumn(key); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", key); },
+    onDragOver: (e: DragEvent<HTMLTableCellElement>) => {
+      if (!dragColumn || dragColumn === key) return;
+      e.preventDefault();
+      const rect = e.currentTarget.getBoundingClientRect();
+      const after = e.clientX > rect.left + rect.width / 2;
+      if (dropColumn?.key !== key || dropColumn.after !== after) setDropColumn({ key, after });
+    },
+    onDrop: (e: DragEvent<HTMLTableCellElement>) => {
+      e.preventDefault();
+      if (dragColumn && dropColumn) {
+        const order = shownKeys.filter((k) => k !== dragColumn);
+        order.splice(order.indexOf(dropColumn.key) + (dropColumn.after ? 1 : 0), 0, dragColumn);
+        if (order.join("\u0000") !== shownKeys.join("\u0000")) {
+          // Only this file's shown columns change place in the saved list (it also keeps other files' columns).
+          const shownSet = new Set(shownKeys);
+          const rest = [...order];
+          saveOrdersColumns(savedColumns.map((k) => (shownSet.has(k) ? rest.shift()! : k))).catch(() => undefined);
+        }
+      }
+      endColumnDrag();
+    },
+    onDragEnd: endColumnDrag,
+    className: `cursor-grab ${dragColumn === key ? "opacity-40" : ""} ${dropColumn?.key === key
+      ? `after:absolute after:inset-y-1 after:w-0.5 after:bg-accent ${dropColumn.after ? "after:right-0" : "after:left-0"}` : ""}`,
+  });
 
   const source = data?.source;
   // Row whose order details are open in the side panel; manual order being edited.
@@ -486,7 +534,17 @@ function OrdersView() {
           <SearchInput label="Search orders" placeholder="Search PO, part, type, location…" value={search}
                        onSearch={(v) => { setSearch(v); list.resetPage(); }} className="w-full sm:w-80" />
           <FilterMenu groups={listFilters} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
-          {chooserColumns.length > 2 && <ColumnsMenu columns={chooserColumns} shown={visibleKeys} />}
+          {chooserColumns.length > 2 && (
+            <button type="button" onClick={() => { setArranging((on) => !on); endColumnDrag(); }} aria-pressed={arranging}
+                    title={arranging ? "Save the column order: headers sort again" : "Drag the column headers to change their order"}
+                    className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-md px-3 text-base font-medium transition-colors duration-150 ${
+                      arranging ? "bg-accent text-white hover:bg-accent/90" : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900"
+                    }`}>
+              <ArrowUpDownIcon size={15} className={`rotate-90 ${arranging ? "text-white" : "text-ink-muted"}`} />
+              {arranging ? "Save" : "Arrange"}
+            </button>
+          )}
+          {chooserColumns.length > 2 && <ColumnsMenu columns={chooserColumns} shown={shownKeys} saved={savedColumns} />}
         </ListToolbar>
         <FilterChips groups={listFilters} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
         <AgeLegend value={list.filters.age} onChange={(v) => list.setFilter("age", v)} />
@@ -508,18 +566,27 @@ function OrdersView() {
             <Table dense stickyHeader>
               <thead>
                 <tr>
-                  {showStatus && <Th>Status</Th>}
-                  {showInvoice && <Th>SASH India Invoice</Th>}
-                  {shownColumns.map((c) => (c.sortable === false
-                    ? <Th key={c.key} align={c.align ?? "left"}>{c.header ?? c.label}</Th>
-                    : <SortTh key={c.key} label={c.header ?? c.label} sortKey={c.key} align={c.align ?? "left"}
-                              sort={list.sort} direction={list.direction} onSort={list.toggleSort} />
-                  ))}
+                  {shownColumns.map((c) => {
+                    const key = typeof c === "string" ? c : c.key;
+                    const label = c === "status" ? "Status" : c === "sash_india_invoice" ? "SASH India Invoice" : c.header ?? c.label;
+                    const align = typeof c === "string" ? "left" : c.align ?? "left";
+                    // Arranging: every header is a drag handle (with a grip), none sorts.
+                    if (arranging) {
+                      return (
+                        <Th key={key} align={align} {...headerDrag(key)}>
+                          <span className="inline-flex items-center gap-1.5"><span aria-hidden className="text-neutral-400">⋮⋮</span>{label}</span>
+                        </Th>
+                      );
+                    }
+                    return typeof c === "string" || c.sortable === false
+                      ? <Th key={key} align={align}>{label}</Th>
+                      : <SortTh key={key} label={label} sortKey={key} align={align} sort={list.sort} direction={list.direction} onSort={list.toggleSort} />;
+                  })}
                 </tr>
               </thead>
               <tbody>
                 {data.data.map((row) => (
-                  <OrderTr key={rowKey(row)} row={row} columns={shownColumns} showStatus={showStatus} showInvoice={showInvoice}
+                  <OrderTr key={rowKey(row)} row={row} columns={shownColumns}
                            open={selectedKey === rowKey(combinedOrder(row))} today={today} role={role} onChanged={refresh} />
                 ))}
               </tbody>

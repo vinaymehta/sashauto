@@ -1,16 +1,18 @@
+import type { ThHTMLAttributes } from "react";
 import { ArrowDownIcon, ArrowUpIcon, SortIcon } from "../icons";
 import { Th } from "./table";
 
 export type SortDirection = "asc" | "desc";
 
 // Clickable column header. Sorting happens on the server over the whole dataset, then it paginates.
-export function SortTh({ label, sortKey, sort, direction, onSort, align = "left", className = "" }: {
+// Other header cell attributes (e.g. drag handlers) are passed to the cell.
+export function SortTh({ label, sortKey, sort, direction, onSort, align = "left", className = "", ...cell }: {
   label: string; sortKey: string; sort: string; direction: SortDirection; onSort: (key: string) => void;
   align?: "left" | "center" | "right"; className?: string;
-}) {
+} & Omit<ThHTMLAttributes<HTMLTableCellElement>, "align">) {
   const active = sort === sortKey;
   return (
-    <Th align={align} className={className} aria-sort={active ? (direction === "asc" ? "ascending" : "descending") : "none"}>
+    <Th align={align} className={className} aria-sort={active ? (direction === "asc" ? "ascending" : "descending") : "none"} {...cell}>
       <button type="button" onClick={() => onSort(sortKey)} title={`Sort by ${label}`}
               className={`inline-flex max-w-full items-center gap-1 font-bold uppercase tracking-wider transition-colors ${
                 align === "right" ? "flex-row-reverse" : ""

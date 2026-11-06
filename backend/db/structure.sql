@@ -2150,6 +2150,13 @@ CREATE INDEX index_order_rows_on_batch_po_part ON public.order_rows USING btree 
 
 
 --
+-- Name: index_order_rows_on_order_and_batch; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_order_rows_on_order_and_batch ON public.order_rows USING btree (group_key, po_line_number, ship_date, upload_batch_id);
+
+
+--
 -- Name: index_price_changes_on_changed_by_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3022,6 +3029,7 @@ ALTER TABLE ONLY public.address_changes
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261106000001'),
 ('20261105000002'),
 ('20261030000001'),
 ('20261029000001'),

@@ -27,9 +27,30 @@ module Orders
       end
     end
 
+    # The MOQ and balance of a part that needs MOQ (what the Orders page shows of a Part).
+    Need = Data.define(:moq, :balance)
+    # Part of the cache key: raise it when Need changes, so results cached in the old shape are not read.
+    CACHE_VERSION = 1
+
     # { batch_id => { part_number => Part } }: the parts that need MOQ in each of these uploads.
     def self.needing(batch_ids)
       batch_ids.compact.to_h { |id| [ id, parts(id).select { |_, part| part.need_moq? } ] }
+    end
+
+    # { batch_id => { part_number => Need } }: #needing for the Orders page, cached per upload (its rows never change),
+    # the products' MOQ data and the Qty on vendor POs (the key holds a digest of each, so any change gives a new key).
+    def self.needs(batch_ids)
+      ids = batch_ids.compact
+      return {} if ids.empty?
+
+      products = Product.pick(Arel.sql("md5(COALESCE(string_agg(ROW(part_number, moq, moq_sets, discontinued)::text, ',' ORDER BY id), ''))"))
+      placed = VendorOrderPlacement.pick(Arel.sql("md5(COALESCE(string_agg(ROW(order_key, order_qty, allocated_qty)::text, ',' ORDER BY id), ''))"))
+      ids.to_h do |id|
+        needs = Rails.cache.fetch([ "orders-moq-needs", CACHE_VERSION, id, products, placed ], expires_in: 1.day) do
+          parts(id).select { |_, part| part.need_moq? }.transform_values { |part| Need.new(moq: part.moq, balance: part.balance) }
+        end
+        [ id, needs ]
+      end
     end
   end
 end

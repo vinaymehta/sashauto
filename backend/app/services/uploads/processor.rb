@@ -13,6 +13,20 @@ module Uploads
       new(batch_id).call
     end
 
+    # Uploads processed inside the block (on this thread) send no emails: no Qty change, address, MOQ or Ship To
+    # notification and no ageing email is created (e.g. old order files loaded with uploads:backfill).
+    def self.without_emails
+      previous = Thread.current[:uploads_without_emails]
+      Thread.current[:uploads_without_emails] = true
+      yield
+    ensure
+      Thread.current[:uploads_without_emails] = previous
+    end
+
+    def self.emails?
+      !Thread.current[:uploads_without_emails]
+    end
+
     def initialize(batch_id)
       @batch = UploadBatch.find(batch_id)
     end
@@ -97,10 +111,12 @@ module Uploads
         change_count = stats ? @batch.quantity_change_count : 0
         # A separate email for each kind with rows: quantity changes, address changes, MOQ alerts, ageing.
         # Reschedules alone also send the quantity email (they are listed there apart from the Qty changes).
-        notifications = Notifications::Outbox.enqueue_for_upload(@batch, quantity: change_count, rescheduled: @batch.rescheduled_count.to_i,
-                                                                 address: address_changes.to_i, moq: moq_alerts,
-                                                                 ship_to: ship_to_alert_count(result.all_rows))
-        ageing_digest = Ageing::DigestBuilder.call(batch: @batch, today: Time.find_zone!(AppConfig.ageing_time_zone).today)
+        if self.class.emails?
+          notifications = Notifications::Outbox.enqueue_for_upload(@batch, quantity: change_count, rescheduled: @batch.rescheduled_count.to_i,
+                                                                   address: address_changes.to_i, moq: moq_alerts,
+                                                                   ship_to: ship_to_alert_count(result.all_rows))
+          ageing_digest = Ageing::DigestBuilder.call(batch: @batch, today: Time.find_zone!(AppConfig.ageing_time_zone).today)
+        end
         AuditLog.record("upload.completed", user: @batch.uploaded_by, subject: @batch,
                         version: @batch.version_number, rows: result.rows.size, changes: change_count,
                         address_changes: address_changes.to_i, moq_alerts: moq_alerts)
