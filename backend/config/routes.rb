@@ -23,6 +23,7 @@ Rails.application.routes.draw do
 
     resources :uploads, only: %i[index show create] do
       get :history, on: :collection
+      get :compare, on: :collection
       member do
         get :changes
         get :address_changes

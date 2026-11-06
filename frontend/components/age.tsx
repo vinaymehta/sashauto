@@ -2,7 +2,7 @@ import { todayIst } from "@/lib/format";
 import type { FilterGroup } from "./ui/filter-menu";
 
 // Age group of an order row = days since its Firm Date:
-// 30-59 green, 60-89 yellow, 90 or more red; under 30 days, or no Firm Date (Forecast never has one), is uncoloured.
+// 30-59 green, 60-89 yellow, 90 or more red; under 30 days, or no Effective Firm Date (Forecast never has one), is uncoloured.
 // Same rule as the server (Ageing::Rules) and the ageing email.
 // The server filters with the same rule (param `age`), using today's IST date sent as `today`.
 export type AgeGroup = "green" | "yellow" | "red" | null;
@@ -14,18 +14,18 @@ export const AGE_ROW: Record<Exclude<AgeGroup, null>, string> = {
 };
 
 export const AGE_TITLE: Record<Exclude<AgeGroup, null>, string> = {
-  green: "30–59 days since Firm Date",
-  yellow: "60–89 days since Firm Date",
-  red: "90 days or more since Firm Date",
+  green: "30–59 days since Effective Firm Date",
+  yellow: "60–89 days since Effective Firm Date",
+  red: "90 days or more since Effective Firm Date",
 };
 
 export const AGE_FILTER: FilterGroup = {
   key: "age",
   label: "Age group",
   options: [
-    { value: "red", label: "90+ days since Firm Date" },
-    { value: "yellow", label: "60–89 days since Firm Date" },
-    { value: "green", label: "30–59 days since Firm Date" },
+    { value: "red", label: "90+ days since Effective Firm Date" },
+    { value: "yellow", label: "60–89 days since Effective Firm Date" },
+    { value: "green", label: "30–59 days since Effective Firm Date" },
   ],
 };
 
@@ -57,10 +57,10 @@ export function ageRowProps(firmDate: string | null | undefined, today: Date, ne
 // Filter panel; `value` is its comma-separated groups); "Under 30 days" is only a colour key.
 export function AgeLegend({ value, onChange }: { value?: string; onChange?: (value: string) => void } = {}) {
   const items: [AgeGroup | null, string, string][] = [
-    ["red", "bg-age-red border-age-red-ink/30", "90+ days since Firm Date"],
+    ["red", "bg-age-red border-age-red-ink/30", "90+ days since Effective Firm Date"],
     ["yellow", "bg-age-yellow border-age-yellow-ink/30", "60–89 days"],
     ["green", "bg-age-green border-age-green-ink/30", "30–59 days"],
-    [null, "bg-white border-neutral-300", "Under 30 days or no Firm Date"],
+    [null, "bg-white border-neutral-300", "Under 30 days or no Effective Firm Date"],
   ];
   const chosen = (value ?? "").split(",").filter(Boolean);
   const toggle = (group: string) => {

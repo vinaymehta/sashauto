@@ -49,7 +49,7 @@ const AGE = {
   red: { label: "90+ days", color: "bg-age-red-ink" },
   yellow: { label: "60–89 days", color: "bg-age-yellow-ink" },
   green: { label: "30–59 days", color: "bg-age-green-ink" },
-  none: { label: "Under 30 days or no Firm Date", color: "bg-neutral-300" },
+  none: { label: "Under 30 days or no Effective Firm Date", color: "bg-neutral-300" },
 } as const;
 
 function Card({ title, description, info, action, children, className = "" }: {
@@ -209,7 +209,7 @@ export default function DashboardPage() {
           <Card title="Order pipeline" info={<>Open orders by their <b>latest status</b>: No status → Received (at SASH Faridabad) → Dispatched (from Faridabad) → Inbound (at SASH US). Orders delivered to Deere (Outbound) are no longer open.</>} description="Open orders by their latest status">
             <Pipeline items={overview.pipeline} />
           </Card>
-          <Card title="Ageing since Firm Date" info={<>Open orders by <b>days since their Firm Date</b>: 90+ red, 60–89 yellow, 30–59 green; under 30 days or no Firm Date grey. The same colours as on the Orders page.</>} description="Open orders by days since their Firm Date">
+          <Card title="Ageing since Effective Firm Date" info={<>Open orders by <b>days since their Effective Firm Date</b>: 90+ red, 60–89 yellow, 30–59 green; under 30 days or no Effective Firm Date grey. The same colours as on the Orders page.</>} description="Open orders by days since their Effective Firm Date">
             <Ageing items={overview.ageing} />
           </Card>
           <OutlookChart points={overview.outlook} />

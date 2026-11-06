@@ -23,9 +23,14 @@ module Comparison
     end
 
     def call
-      records = pair_reschedules(changed_keys)
+      records = changes
       QuantityChange.insert_all!(records) if records.any?
       stats(records)
+    end
+
+    # The changes as quantity_changes attributes, not stored (also any two versions compared, Comparison::VersionDiff).
+    def changes
+      pair_reschedules(changed_keys)
     end
 
     private

@@ -68,7 +68,7 @@ export function ChangesTable({ uploadId, emptyDescription, manual = false, direc
       {error ? (
         <div className="p-4"><Alert title="Could not load changes">{error.message}</Alert></div>
       ) : loading && !data ? (
-        <TableSkeleton rows={8} columns={10} />
+        <TableSkeleton rows={8} columns={11} />
       ) : data && data.data.length === 0 ? (
         filtered ? (
           <EmptyState
@@ -85,12 +85,13 @@ export function ChangesTable({ uploadId, emptyDescription, manual = false, direc
         )
       ) : data ? (
         <div className={`transition-opacity duration-200 ${loading ? "opacity-50" : ""}`}>
-          <Table dense>
+          <Table dense stickyHeader>
             <thead>
               <tr>
                 <Th>PO</Th>
                 <Th>PO Line</Th>
                 <Th>Part Number</Th>
+                <Th>Part Description</Th>
                 <Th>Commodity Type</Th>
                 <Th>Type</Th>
                 <Th>Ship Date</Th>
@@ -106,6 +107,7 @@ export function ChangesTable({ uploadId, emptyDescription, manual = false, direc
                   <Td className="font-medium">{c.po_number}</Td>
                   <Td className="text-ink-muted">{c.po_line_number}</Td>
                   <Td>{c.part_number}</Td>
+                  <Td><span className="block w-72 whitespace-normal break-words py-1 leading-snug">{c.part_description || "—"}</span></Td>
                   <Td className="text-ink-muted">{c.commodity_type ?? "—"}</Td>
                   <Td>{c.order_type}</Td>
                   <Td className="tabular">

@@ -2,7 +2,7 @@
   <h1 style="font-size:20px;font-weight:700;margin:0 0 4px;color:#1d2636;">Order ageing</h1>
   <p style="margin:0 0 20px;color:#737373;">
     <%= @digest.row_count %> order row<%= "s" unless @digest.row_count == 1 %>
-    by days since their Firm Date, as of <%= @today.strftime("%-d %b %Y") %>. Shipped quantities are deducted; fully shipped orders are left out.
+    by days since their Effective Firm Date, as of <%= @today.strftime("%-d %b %Y") %>. Shipped quantities are deducted; fully shipped orders are left out.
   </p>
   <% @bands.each do |band, rows| %>
     <% next if rows.empty? %>
@@ -18,8 +18,8 @@
           <th style="padding:8px 10px;font-weight:600;">PO Line</th>
           <th style="padding:8px 10px;font-weight:600;">Part Number</th>
           <th style="padding:8px 10px;font-weight:600;">Type</th>
-          <th style="padding:8px 10px;font-weight:600;">Firm Date</th>
-          <th style="padding:8px 10px;font-weight:600;text-align:right;">Days since firm</th>
+          <th style="padding:8px 10px;font-weight:600;">Effective Firm Date</th>
+          <th style="padding:8px 10px;font-weight:600;text-align:right;">Days since effective firm</th>
           <th style="padding:8px 10px;font-weight:600;">Ship Date</th>
           <th style="padding:8px 10px;font-weight:600;text-align:right;">Qty</th>
           <th style="padding:8px 10px;font-weight:600;text-align:right;">Shipped</th>

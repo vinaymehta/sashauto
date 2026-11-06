@@ -73,6 +73,7 @@ module Api
       # (By position: an imported row and a manual order can share an id.)
       firm_keys = rows.map { |row| firm_key(row) }
       firm_dates = Orders::FirmDates.for_keys(firm_keys)
+      came = came_firm_dates(rows)
       products = Product.where(part_number: rows.map(&:part_number).uniq).pluck(:part_number, :description, :discontinued)
       descriptions = products.to_h { |part, description, _| [ part, description ] }
       discontinued = products.filter_map { |part, _, off| part if off }.to_set
@@ -84,7 +85,7 @@ module Api
                                                          ordered_qty: Serializers.qty(ordered[key]),
                                                          deliveries: deliveries.fetch(key, {}),
                                                          **row_invoice(deliveries.dig(key, "dispatched"), row),
-                                                         firm_date: firm_dates[firm_keys[i]], business: row[:business],
+                                                         firm_date: firm_dates[firm_keys[i]], came_firm_date: came[i], business: row[:business],
                                                          part_description: descriptions[row.part_number],
                                                          discontinued: discontinued.include?(row.part_number),
                                                          **combined_info(row, combined))
@@ -140,7 +141,7 @@ module Api
 
     # Order detail of one row: every row of the same upload with the same PO Number + Part Number + Type
     # (the clicked row included), ordered by PO Line Number then Ship Date, plus the product Description, each
-    # row's Firm Date and the combined orders among them (`combined`; `candidate_ids`: orders an admin can add).
+    # row's Effective Firm Date and Firm Date (came_firm_date) and the combined orders among them (`combined`; `candidate_ids`: orders an admin can add).
     def history
       return manual_history(ManualOrder.active.find(params[:id])) if params[:manual] == "1"
 
@@ -150,8 +151,11 @@ module Api
       firm_dates = Orders::FirmDates.for_keys(rows.map { |r| VendorOrderPlacement.order_key(r) })
       combined = Orders::Combiner.call(row.upload_batch_id)
       groups = combined.groups.values.select { |g| Orders::Merges.shown?(g) && g.members.first.group_key == row.group_key }
+      came = came_firm_dates(rows.to_a)
       render json: {
-        data: rows.map { |r| Serializers.order_row(r, source: true).merge(firm_date: firm_dates[VendorOrderPlacement.order_key(r)]) },
+        data: rows.each_with_index.map do |r, i|
+          Serializers.order_row(r, source: true).merge(firm_date: firm_dates[VendorOrderPlacement.order_key(r)], came_firm_date: came[i])
+        end,
         headers: row.source_columns.presence || row.source_data.keys,
         group: group_info(row),
         combined: groups.map { |g| schedule_group(g, combined) }
@@ -573,10 +577,59 @@ module Api
       nil
     end
 
+    # Also by Part Description (the file's Description column, else the product's) and SASH India invoice number (of a
+    # Dispatched mark: its invoice, or one of its invoices sent for the row, as the SASH India Invoice column shows).
     def search(scope, term)
       return scope if term.empty?
       pattern = "%#{OrderSnapshotRow.sanitize_sql_like(term)}%"
-      scope.where(SEARCH_COLUMNS.map { |c| "#{c} ILIKE :t" }.join(" OR "), t: pattern)
+      conditions = SEARCH_COLUMNS.map { |c| "#{c} ILIKE :t" }
+      conditions << "order_rows.source_data ->> 'Description' ILIKE :t"
+      conditions << "EXISTS (SELECT 1 FROM products p WHERE p.part_number = order_rows.part_number AND p.description ILIKE :t)"
+      mark_keys, line_keys = invoice_keys(term)
+      conditions << "#{order_key_sql} IN (:mark_keys)" if mark_keys.any?
+      conditions << "#{own_key_sql} IN (:line_keys)" if line_keys.any?
+      scope.where(conditions.join(" OR "), t: pattern, mark_keys: mark_keys, line_keys: line_keys)
+    end
+
+    # Order keys of the active Dispatched marks whose SASH India invoice contains `term`: [keys of marks with one
+    # invoice for all their rows (placement keys), keys of the rows an invoice was sent for (their own keys)].
+    def invoice_keys(term)
+      needle = term.downcase
+      marks = OrderDelivery.active.where(kind: "dispatched")
+                           .where("invoice_number ILIKE :t OR invoice_lines::text ILIKE :t", t: "%#{OrderDelivery.sanitize_sql_like(term)}%")
+                           .pluck(:order_key, :invoice_number, :invoice_lines)
+      mark_keys = marks.filter_map { |key, number, lines| key if lines.blank? && number.to_s.downcase.include?(needle) }
+      line_keys = marks.flat_map { |_, _, lines| lines.select { |line| line["invoice"].to_s.downcase.include?(needle) }.map { |line| line["order_key"] } }
+      [ mark_keys.uniq, line_keys.compact.uniq ]
+    end
+
+    # A listed row's own order key in SQL (not its combined order's): by id for manual orders.
+    def own_key_sql
+      "(CASE WHEN order_rows.manual THEN encode(sha256(convert_to('manual' || chr(31) || order_rows.id::text, 'UTF8')), 'hex') " \
+        "ELSE #{Orders::FirmDates.key_sql('order_rows')} END)"
+    end
+
+    # Firm Date of each listed row (by position): the day the order (PO + Part + Type + PO Line + Ship Date) first came
+    # as a Firm / Order row, i.e. the first upload of its business with it (a manual order: the day it was added). The
+    # Effective Firm Date (firm_date) is the one ageing counts from. Forecast rows have none.
+    def came_firm_dates(rows)
+      zone = Time.find_zone!(AppConfig.ageing_time_zone)
+      imported = rows.reject { |row| row[:manual] || !%w[Firm Order].include?(row.order_type) }
+      first = {}
+      if imported.any?
+        batch_ids = UploadBatch.completed.where(business: businesses).pluck(:id)
+        tuples = imported.map { |row| [ row.group_key, row.po_line_number, row.ship_date ] }.uniq
+        values = tuples.map { |g, l, d| OrderRow.sanitize_sql_array([ "(?, ?, ?::date)", g, l, d ]) }.join(", ")
+        first = OrderRow.joins(:upload_batch).where(upload_batch_id: batch_ids)
+                        .where("(order_rows.group_key, order_rows.po_line_number, order_rows.ship_date) IN (#{values})")
+                        .group(:group_key, :po_line_number, :ship_date).minimum("upload_batches.completed_at")
+      end
+      rows.map do |row|
+        next row.created_at.in_time_zone(zone).to_date.iso8601 if row[:manual]
+
+        at = first[[ row.group_key, row.po_line_number, row.ship_date ]]
+        at&.in_time_zone(zone)&.to_date&.iso8601
+      end
     end
   end
 end

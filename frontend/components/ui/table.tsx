@@ -5,13 +5,13 @@ import { ChevronLeftIcon, ChevronRightIcon } from "../icons";
 
 // `dense` tightens horizontal cell padding for wide data grids. `fixed`: column widths come from <col> elements;
 // `minWidth` (a min-w-… class) keeps the columns readable on small screens, where the table then scrolls sideways
-// inside its card instead of squeezing.
-export function Table({ children, dense = false, fixed = false, minWidth = "min-w-[720px]" }: {
-  children: ReactNode; dense?: boolean; fixed?: boolean; minWidth?: string;
+// inside its card instead of squeezing. `stickyHeader`: the table scrolls both ways inside its card and the header row stays on top.
+export function Table({ children, dense = false, fixed = false, minWidth = "min-w-[720px]", stickyHeader = false }: {
+  children: ReactNode; dense?: boolean; fixed?: boolean; minWidth?: string; stickyHeader?: boolean;
 }) {
   return (
-    <div className="animate-fade-in overflow-x-auto">
-      <table className={`w-full border-collapse text-base ${fixed ? `${minWidth} table-fixed` : ""} ${dense ? "[&_td]:px-3 [&_th]:px-3 [&_td:first-child]:pl-6 [&_th:first-child]:pl-6 [&_td:last-child]:pr-6 [&_th:last-child]:pr-6" : ""}`}>{children}</table>
+    <div className={`animate-fade-in ${stickyHeader ? "max-h-[calc(100vh-14rem)] overflow-auto" : "overflow-x-auto"}`}>
+      <table className={`w-full border-collapse text-base ${fixed ? `${minWidth} table-fixed` : ""} ${stickyHeader ? "[&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-10 [&_thead_th]:shadow-[inset_0_-1px_0_var(--color-line)]" : ""} ${dense ? "[&_td]:px-3 [&_th]:px-3 [&_td:first-child]:pl-6 [&_th:first-child]:pl-6 [&_td:last-child]:pr-6 [&_th:last-child]:pr-6" : ""}`}>{children}</table>
     </div>
   );
 }

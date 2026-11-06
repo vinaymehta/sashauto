@@ -39,7 +39,7 @@ export function MoqAlertsTable({ uploadId, manual = false }: { uploadId: number;
       {error ? (
         <div className="p-4"><Alert title="Could not load MOQ alerts">{error.message}</Alert></div>
       ) : loading && !data ? (
-        <TableSkeleton rows={6} columns={6} />
+        <TableSkeleton rows={6} columns={7} />
       ) : data && data.data.length === 0 ? (
         <div className="flex flex-col items-center justify-center px-4 py-16 text-center">
           <CheckIcon size={32} className="mb-3 text-neutral-300" />
@@ -48,11 +48,12 @@ export function MoqAlertsTable({ uploadId, manual = false }: { uploadId: number;
         </div>
       ) : data ? (
         <div className={`transition-opacity duration-200 ${loading ? "opacity-50" : ""}`}>
-          <Table dense>
+          <Table dense stickyHeader>
             <thead>
               <tr>
                 <Th>PO Number</Th>
                 <Th>Part Number</Th>
+                <Th>Part Description</Th>
                 <Th>Type</Th>
                 <Th>Ship Date</Th>
                 <Th align="right">Qty</Th>
@@ -64,6 +65,7 @@ export function MoqAlertsTable({ uploadId, manual = false }: { uploadId: number;
                 <tr key={c.id} className="transition-colors hover:bg-canvas">
                   <Td className="font-medium">{c.po_number}</Td>
                   <Td>{c.part_number}</Td>
+                  <Td><span className="block w-72 whitespace-normal break-words py-1 leading-snug">{c.part_description || "—"}</span></Td>
                   <Td>{c.order_type}</Td>
                   <Td className="tabular">{formatDate(c.ship_date)}</Td>
                   <Td align="right" className="tabular font-semibold text-down">{formatQty(c.qty)}</Td>

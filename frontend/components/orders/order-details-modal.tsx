@@ -47,7 +47,8 @@ const COLUMNS: { label: string; value: (r: OrderRow, description: string | null)
   { label: "Deere Part Number", value: (r) => r.part_number },
   { label: "Order Type", value: (r) => r.order_type },
   { label: "Due Date", value: (r) => (r.due_date ? formatDate(r.due_date) : null) },
-  { label: "Firm Date", value: (r) => (r.firm_date ? formatDate(r.firm_date) : null) },
+  { label: "Firm Date", value: (r) => (r.came_firm_date ? formatDate(r.came_firm_date) : null) },
+  { label: "Effective Firm Date", value: (r) => (r.firm_date ? formatDate(r.firm_date) : null) },
   { label: "Ship Date", value: (r) => formatDate(r.ship_date) },
   { label: "Quantity", value: (r) => (r.qty === null ? null : formatQty(r.qty)), align: "right" },
   // ✓ / ✗: the row's Qty (a combined row's total) reaches the part's MOQ or not (MoqMark).
@@ -234,7 +235,7 @@ function ScheduleTr({ r, current, description, today, member = false, manual = f
   return (
     <tr className={current ? "bg-accent/5" : member ? "bg-tint-violet/25" : "hover:bg-neutral-50/60"} aria-current={current || undefined}>
       <td className={`h-11 border-b border-neutral-100 pl-5 ${member ? "shadow-[inset_3px_0_0_var(--color-tint-violet-ink)]" : ""}`}>
-        <span title={age ? AGE_DOT_TITLE[age] : "Under 30 days since Firm Date, or no Firm Date"}
+        <span title={age ? AGE_DOT_TITLE[age] : "Under 30 days since Effective Firm Date, or no Effective Firm Date"}
               className={`block h-2.5 w-2.5 rounded-full ${age ? AGE_DOT[age] : "bg-neutral-200"}`} />
       </td>
       {COLUMNS.map((c, i) => (
@@ -255,8 +256,8 @@ function ScheduleTr({ r, current, description, today, member = false, manual = f
             </span>
           ) : c.label === "MOQ" ? (
             <MoqMark qty={r.qty} />
-          ) : c.label === "Firm Date" && r.qty === null ? (
-            // Every order with a Qty shows its own Firm Date, inside a combined order too (another line with the same
+          ) : c.label === "Effective Firm Date" && r.qty === null ? (
+            // Every order with a Qty shows its own Effective Firm Date, inside a combined order too (another line with the same
             // PO Line and Ship Date but no Qty would otherwise show theirs).
             <span className="text-neutral-300">—</span>
           ) : c.value(r, description) ?? <span className="text-neutral-300">—</span>}

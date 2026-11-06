@@ -34,6 +34,41 @@ module Api
                                                completed_at: b.completed_at, uploaded_by: b.uploaded_by&.name, business: b.business } } }
     end
 
+    COMPARE_DIRECTIONS = %w[increase decrease added removed rescheduled changed].freeze
+
+    # Comparison tab: two versions (`from`, `to`: uploads of one business) compared (Comparison::VersionDiff), paged on
+    # the server. Filters: direction (multi), q (PO, Part Number or Part Description). meta.counts: lines per direction.
+    def compare
+      from = UploadBatch.completed.where(business: businesses).find(params.require(:from))
+      to = UploadBatch.completed.where(business: businesses).find(params.require(:to))
+      return render_error("Choose two versions of the same business.", :unprocessable_content) if from.business != to.business
+
+      lines = Comparison::VersionDiff.call(from_batch_id: from.id, to_batch_id: to.id)
+      row_ids = lines.flat_map { |l| [ l[:order_row_id], l[:previous_order_row_id] ] }.compact
+      from_file = OrderRow.where(id: row_ids).pluck(:id, Arel.sql("order_rows.source_data ->> 'Description'")).to_h
+      products = Product.where(part_number: lines.map { |l| l[:part_number] }.uniq).pluck(:part_number, :description).to_h
+      lines.each do |l|
+        file = from_file[l[:order_row_id]].presence || from_file[l[:previous_order_row_id]]
+        l[:part_description] = file.to_s.squish.presence || products[l[:part_number]]
+      end
+      counts = lines.group_by { |l| l[:direction] }.transform_values(&:size)
+
+      directions = multi_param(:direction, COMPARE_DIRECTIONS)
+      lines = lines.select { |l| directions.include?(l[:direction]) } if directions.any?
+      if (term = params[:q].to_s.strip.downcase.first(100)).present?
+        lines = lines.select { |l| [ l[:po_number], l[:part_number], l[:part_description] ].any? { |v| v.to_s.downcase.include?(term) } }
+      end
+      page, meta = paginate_array(lines)
+      render json: {
+        data: page.map do |l|
+          l.except(:order_row_id, :previous_order_row_id)
+           .merge(old_qty: Serializers.qty(l[:old_qty]), new_qty: Serializers.qty(l[:new_qty]), difference: Serializers.qty(l[:difference]),
+                  fields: l[:fields].map { |f| f.merge(old: f[:old].to_s.presence, new: f[:new].to_s.presence) })
+        end,
+        meta: meta.merge(counts: counts)
+      }
+    end
+
     # Matches the file name or uploader name.
     def search_uploads(scope, query)
       term = "%#{UploadBatch.sanitize_sql_like(query)}%"
@@ -73,7 +108,8 @@ module Api
 
       changes, meta = paginate(scope)
       firm_dates = Orders::FirmDates.for_rows(changes)
-      render json: { data: changes.map { |c| Serializers.quantity_change(c).merge(firm_date: firm_dates[c.id]) },
+      descriptions = part_descriptions(changes)
+      render json: { data: changes.map { |c| Serializers.quantity_change(c).merge(firm_date: firm_dates[c.id], part_description: descriptions[c.id]) },
                      meta: meta.merge(net: Serializers.qty(net), rescheduled: rescheduled) }
     end
 
@@ -120,7 +156,8 @@ module Api
         scope = scope.where("po_number ILIKE :t OR part_number ILIKE :t OR old_address ILIKE :t OR new_address ILIKE :t", t: term)
       end
       changes, meta = paginate(scope)
-      render json: { data: changes.map { |c| Serializers.address_change(c) }, meta: meta }
+      descriptions = part_descriptions(changes)
+      render json: { data: changes.map { |c| Serializers.address_change(c).merge(part_description: descriptions[c.id]) }, meta: meta }
     end
 
     # MOQ alerts for this upload (parts whose Qty still to order is below their MOQ), paged on the server.
@@ -131,7 +168,8 @@ module Api
         scope = scope.where("po_number ILIKE :t OR part_number ILIKE :t", t: term)
       end
       alerts, meta = paginate(scope)
-      render json: { data: alerts.map { |a| Serializers.moq_alert(a) }, meta: meta }
+      descriptions = part_descriptions(alerts)
+      render json: { data: alerts.map { |a| Serializers.moq_alert(a).merge(part_description: descriptions[a.id]) }, meta: meta }
     end
 
     # Row-level problems of a rejected upload, paged on the server. Optional `column` filter
@@ -190,6 +228,15 @@ module Api
 
     # Detection records of `model` for the upload. With `manual=1` on the latest upload, also those from
     # manual order creates/edits made since it was uploaded (the current order data).
+    # Part Description of each listed change or alert (id => text), as on the Orders page: the order file's Description
+    # column (of its order row), else the product's (Products).
+    def part_descriptions(records)
+      row_of = records.to_h { |r| [ r.id, r.try(:order_row_id) || r.try(:previous_order_row_id) ] }
+      from_file = OrderRow.where(id: row_of.values.compact).pluck(:id, Arel.sql("order_rows.source_data ->> 'Description'")).to_h
+      products = Product.where(part_number: records.map(&:part_number).uniq).pluck(:part_number, :description).to_h
+      records.to_h { |r| [ r.id, from_file[row_of[r.id]].to_s.squish.presence || products[r.part_number] ] }
+    end
+
     def detections(batch, model)
       scope = model.where(upload_batch_id: batch.id)
       return scope unless params[:manual] == "1" && batch == UploadBatch.latest_completed(batch.business)

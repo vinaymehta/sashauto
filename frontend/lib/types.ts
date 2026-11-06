@@ -114,7 +114,30 @@ export interface QuantityChange {
   old_qty: string;
   new_qty: string;
   difference: string;
-  firm_date?: string | null; // the order's Firm Date (age colour)
+  firm_date?: string | null; // the order's Effective Firm Date (age colour)
+  part_description?: string | null; // the order file's Description, else the product's
+}
+
+// Comparison tab: one order line (PO + PO Line + Part + Ship Date) that differs between two versions (uploads).
+// direction "changed": same Qty, other fields changed (Type, Due Date, Ship To).
+export interface VersionDiffLine {
+  po_number: string;
+  po_line_number: string;
+  part_number: string;
+  part_description: string | null;
+  order_type: OrderType;
+  ship_date: string;
+  previous_ship_date: string | null;
+  old_qty: string;
+  new_qty: string;
+  difference: string;
+  direction: Direction | "changed";
+  fields: { label: string; old: string | null; new: string | null }[];
+}
+
+export interface VersionDiffPage {
+  data: VersionDiffLine[];
+  meta: PageMeta & { counts: Partial<Record<Direction | "changed", number>> };
 }
 
 export interface ProductConflict {
@@ -366,7 +389,8 @@ export interface OrderRow {
   // Orders list: a row of a combined order (listed on its own, with its own values from the file): the combined order's
   // first row (its PO and Status are recorded there), total Qty and number of rows. Its PO and Status are the combined order's.
   member_of?: { id: number; total: string; count: number };
-  firm_date?: string | null; // from the order file, else the day the order (or the combined order it starts) first reached the MOQ
+  firm_date?: string | null; // Effective Firm Date: from the order file, else the day the order (or the combined order it starts) first reached the MOQ
+  came_firm_date?: string | null; // Firm Date: the day the order first came as Firm / Order (its first upload; a manual order: added)
   deliveries?: Partial<Record<DeliveryKind, OrderDeliveryInfo>>; // Orders list only
   // Orders list: the SASH India invoice shown for this row, and all its invoices (with date and Qty) when it was sent in parts.
   dispatch_invoice?: string | null;
@@ -625,6 +649,7 @@ export interface MoqAlert {
   received_qty: string | null;
   per_part: boolean;
   manual: boolean;
+  part_description?: string | null; // the order file's Description, else the product's
 }
 
 export interface AddressChange {
@@ -635,6 +660,7 @@ export interface AddressChange {
   ship_date: string;
   old_address: string | null;
   new_address: string | null;
+  part_description?: string | null; // the order file's Description, else the product's
 }
 
 // The fields of one vendor workbook row, as text (keys of Vendors::Importer::COLUMNS).

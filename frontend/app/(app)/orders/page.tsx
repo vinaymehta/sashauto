@@ -15,6 +15,7 @@ import { CreateOrderPanel, UploadOrdersPanel } from "@/components/orders/create-
 import { DispatchImportPanel } from "@/components/orders/dispatch-import-panel";
 import { OrderActions, UploadPicker } from "@/components/orders/orders-menu";
 import { ColumnsMenu } from "@/components/orders/columns-menu";
+import { ComparisonTable } from "@/components/comparison-table";
 import { DeliveryCell } from "@/components/orders/delivery-cell";
 import { OpenOrderContext, OrderDetailsLink } from "@/components/orders/order-details-modal";
 import { RelatedLink } from "@/components/orders/related-popover";
@@ -171,9 +172,11 @@ function buildColumns(columns: { key: string; label: string }[], uploadId?: numb
     }
     // The file's own "Firm Date" column is shown as the Firm Date column below (with the date of orders it has none for).
     if (label.trim().toLowerCase() === "firm date") return [];
-    // "Firm Date" (from the file, else the day the order, or its combined order, first reached the MOQ) just after Due Date.
+    // After Due Date: "Firm Date", the day the order first came as Firm / Order (its first upload), and "Effective Firm
+    // Date" (from the file, else the day the order, or its combined order, first reached the MOQ; ageing counts from it).
     if (key === "due_date") {
-      return [column, { key: "firm_date", label: "Firm Date", render: (r) => date(r.qty === null ? null : r.firm_date ?? null) }];
+      return [column, { key: "came_firm_date", label: "Firm Date", sortable: false, render: (r) => date(r.came_firm_date ?? null) },
+              { key: "firm_date", label: "Effective Firm Date", render: (r) => date(r.qty === null ? null : r.firm_date ?? null) }];
     }
     return [column];
   });
@@ -256,10 +259,11 @@ function OrdersView() {
   const [uploadId, setUploadId] = useState<number | null>(null);
   const uploads = useApi<{ data: UploadChoice[] }>(manager ? null : "/api/uploads/history");
 
-  type TabKey = "orders" | "transit" | "fulfilled" | "changes" | "addresses" | "moq";
+  type TabKey = "orders" | "transit" | "fulfilled" | "changes" | "addresses" | "moq" | "compare";
   const [tab, setTab] = useState<TabKey>(params.get("tab") === "changes" ? "changes" : "orders");
   // On a delivery tab (current data only) the list has that tab's Status instead of the Status filter.
   const statusTab = uploadId === null ? STATUS_TABS[tab] : undefined;
+  const business = getBusiness();
 
   const { data, error, loading, reload } = useApi<OrdersPage>("/api/orders", {
     search: term, ...list.filters, status: statusTab ?? list.filters.status, today: todayParam(), sort: list.sort, direction: list.direction, page: list.page, per_page: list.perPage,
@@ -285,7 +289,7 @@ function OrdersView() {
     { section: "Order", key: "source", label: "Source", options: [{ value: "upload", label: "Uploaded file" }, { value: "manual", label: "Manual orders" }] },
     { section: "Dates", key: "timing", label: "Ship timing", options: [{ value: "overdue", label: "Past ship date" }, { value: "next30", label: "Shipping in next 30 days" }] },
     { section: "Dates", key: "ship_date", label: "Ship date", type: "date-range", options: [] },
-    { section: "Dates", key: "firm_date", label: "Firm date", type: "date-range", options: [] },
+    { section: "Dates", key: "firm_date", label: "Effective firm date", type: "date-range", options: [] },
     { ...AGE_FILTER, section: "Dates" },
     { section: "Purchasing", key: "po", label: "Vendor PO", options: [{ value: "none", label: "No PO yet" }, { value: "generated", label: "PO generated" }, { value: "no_qty", label: "No Qty (nothing to order)" }] },
     { section: "Purchasing", key: "vendor", label: "Vendor", options: (facets?.vendors ?? []).map((v) => ({ value: String(v.id), label: v.name })) },
@@ -370,7 +374,12 @@ function OrdersView() {
     ...(!shown || (isFirst && moqAlerts === 0) ? [] : [
       { key: "moq" as const, label: "MOQ alerts", icon: <AlertIcon size={17} />, count: moqAlerts },
     ]),
+    // Two versions of one business compared (not in "All").
+    ...(manager || business === "all" ? [] : [
+      { key: "compare" as const, label: "Comparison", icon: <HistoryIcon size={17} />, count: null },
+    ]),
   ];
+  const businessUploads = useMemo(() => (uploads.data?.data ?? []).filter((u) => u.business === business), [uploads.data, business]);
   // Change type the Quantity changes tab starts filtered on (set by clicking a summary card).
   const [changeFilter, setChangeFilter] = useState<string | undefined>(undefined);
   // Fall back to the order rows when the chosen tab no longer exists (e.g. a new first upload).
@@ -451,7 +460,7 @@ function OrdersView() {
                onClick={() => { setTab("orders"); list.clearFilters(); list.setFilter("type", "Firm,Order"); list.setFilter("po", "none"); }} />
           <Kpi label="Below MOQ" value={formatCount(summary.data.below_moq)} hint="Parts whose balance to order (Firm less PO issued) is below the MOQ" icon={<AlertIcon size={16} />}
                tint="dec" onClick={tabs.some((t) => t.key === "moq") ? () => setTab("moq") : undefined} />
-          <Kpi label="90+ days since Firm Date" value={formatCount(summary.data.aged)} hint="Open orders in the red age group" icon={<HistoryIcon size={16} />}
+          <Kpi label="90+ days since Effective Firm Date" value={formatCount(summary.data.aged)} hint="Open orders in the red age group" icon={<HistoryIcon size={16} />}
                tint="dec" onClick={() => { setTab("orders"); list.clearFilters(); list.setFilter("age", "red"); }} />
         </dl>
       )}
@@ -469,6 +478,8 @@ function OrdersView() {
           <AddressChangesTable uploadId={shown.id} manual={current} />
         ) : activeTab === "moq" && shown ? (
           <MoqAlertsTable uploadId={shown.id} manual={current} />
+        ) : activeTab === "compare" ? (
+          <ComparisonTable uploads={businessUploads} />
         ) : (
         <>
         <ListToolbar summary={data ? `${formatCount(data.meta.total)} order row${data.meta.total === 1 ? "" : "s"}` : ""}>
@@ -494,7 +505,7 @@ function OrdersView() {
           <div className={`transition-opacity duration-200 ${loading ? "opacity-50" : ""}`}>
             <OpenOrderContext.Provider value={openOrder}>
             <PlaceOrderContext.Provider value={manager ? null : setPlacing}>
-            <Table dense>
+            <Table dense stickyHeader>
               <thead>
                 <tr>
                   {showStatus && <Th>Status</Th>}
