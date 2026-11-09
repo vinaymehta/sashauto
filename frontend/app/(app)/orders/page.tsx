@@ -8,7 +8,6 @@ import type { Dashboard, InvoiceKind, OrderRow, OrdersPage, OrdersSummary, Role,
 import { formatCount, formatDate, formatQty } from "@/lib/format";
 import { AlertIcon, ArrowUpDownIcon, CalendarIcon, CheckIcon, FileIcon, HistoryIcon, TableIcon, TruckIcon } from "@/components/icons";
 import { AllChangesTable } from "@/components/all-changes-table";
-import { OrderSummaryPanel } from "@/components/products/order-summary";
 import { MoqAlertsTable } from "@/components/moq-alerts-table";
 import { cell, OrderDetailPanel, PlaceOrderPanel } from "@/components/orders/history-row";
 import { CreateOrderPanel, UploadOrdersPanel } from "@/components/orders/create-order-panel";
@@ -247,7 +246,7 @@ const OrderTr = memo(function OrderTr({ row, columns, open, today, role, onChang
   );
 });
 
-// ?tab=changes opens the Changes tab (e.g. "View all" on the Dashboard), ?tab=summary the Order summary.
+// ?tab=changes opens the Changes tab (e.g. "View all" on the Dashboard).
 // Filter keys a link to the Orders page may set.
 const LINKABLE_FILTERS = ["type", "status", "source", "timing", "ship_date_from", "ship_date_to", "firm_date_from", "firm_date_to", "age",
   "po", "vendor", "moq", "combined", "ship_to"];
@@ -281,8 +280,8 @@ function OrdersView() {
   const [uploadId, setUploadId] = useState<number | null>(null);
   const uploads = useApi<{ data: UploadChoice[] }>(manager ? null : "/api/uploads/history");
 
-  type TabKey = "orders" | "transit" | "fulfilled" | "changes" | "moq" | "summary";
-  const [tab, setTab] = useState<TabKey>(params.get("tab") === "changes" ? "changes" : params.get("tab") === "summary" ? "summary" : "orders");
+  type TabKey = "orders" | "transit" | "fulfilled" | "changes" | "moq";
+  const [tab, setTab] = useState<TabKey>(params.get("tab") === "changes" ? "changes" : "orders");
   // On a delivery tab (current data only) the list has that tab's Status instead of the Status filter.
   const statusTab = uploadId === null ? STATUS_TABS[tab] : undefined;
   const business = getBusiness();
@@ -443,10 +442,6 @@ function OrdersView() {
     ...(!shown || (isFirst && moqAlerts === 0) ? [] : [
       { key: "moq" as const, label: "MOQ alerts", icon: <AlertIcon size={17} />, count: moqAlerts },
     ]),
-    // The Order summary (as on Products), for those who can see the Products.
-    ...(can(me, "products") ? [
-      { key: "summary" as const, label: "Order summary", icon: <CalendarIcon size={17} />, count: null },
-    ] : []),
   ];
   // Change type the Quantity changes tab starts filtered on (set by clicking a summary card).
   const [changeFilter, setChangeFilter] = useState<string | undefined>(undefined);
@@ -536,19 +531,29 @@ function OrdersView() {
         </dl>
       )}
 
-      {/* On a phone the Compare button sits above the tabs, so the tabs keep the full width. */}
+      {/* On a phone the Order summary and Compare buttons sit above the tabs, so the tabs keep the full width. */}
       <div className="flex flex-col-reverse border-b border-line sm:flex-row sm:items-center">
         <div className="min-w-0 overflow-x-auto">
           <Tabs size="lg" active={activeTab} onChange={(t) => { setChangeFilter(undefined); setTab(t); }} tabs={tabs} />
         </div>
+        <div className="mb-2 flex shrink-0 flex-wrap items-center gap-2 self-end sm:mb-1.5 sm:ml-auto sm:self-auto">
+        {/* The Order summary (as on Products), on its own page, for those who can see the Products. */}
+        {can(me, "products") && (
+          <Link href="/orders/summary"
+                className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-3 text-sm font-medium text-ink transition-colors hover:border-neutral-400 hover:bg-subtle">
+            <CalendarIcon size={15} className="text-ink-muted" />
+            Order summary
+          </Link>
+        )}
         {/* Two versions of one business compared, on their own page (not in "All"). */}
         {!manager && business !== "all" && (
           <Link href="/orders/compare"
-                className="mb-2 inline-flex h-9 shrink-0 items-center gap-1.5 self-end rounded-md border border-neutral-300 bg-white px-3 text-sm font-medium text-ink transition-colors hover:border-neutral-400 hover:bg-subtle sm:mb-1.5 sm:ml-auto sm:self-auto">
+                className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-3 text-sm font-medium text-ink transition-colors hover:border-neutral-400 hover:bg-subtle">
             <HistoryIcon size={15} className="text-ink-muted" />
             Compare versions
           </Link>
         )}
+        </div>
       </div>
       {/* Keyed so a tab fades in when opened; the order rows do not depend on the upload summary, so the
           table is not rebuilt when the dashboard data arrives. */}
@@ -557,8 +562,7 @@ function OrdersView() {
           <AllChangesTable key={changeFilter ?? "all"} uploadId={shown.id} manual={current} direction={changeFilter} />
         ) : activeTab === "moq" && shown ? (
           <MoqAlertsTable uploadId={shown.id} manual={current} />
-        ) : activeTab === "summary" ? (
-          <OrderSummaryPanel bare />
+
         ) : (
         <>
         <ListToolbar wrap summary={data ? `${formatCount(data.meta.total)} order row${data.meta.total === 1 ? "" : "s"}` : ""}>

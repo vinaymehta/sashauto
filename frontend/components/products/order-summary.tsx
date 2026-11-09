@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import type { OrderSummaryPage } from "@/lib/types";
 import { formatCount, formatDate, formatDifference, formatQty } from "@/lib/format";
 import { useApi, useDebounced } from "../use-api";
@@ -51,9 +51,8 @@ const zeroFade = (value: string) => (Number(value) === 0 ? "text-neutral-400" : 
 // Products page, "Order summary" tab, like SASH's "Order Summary" Excel: for the business shown (DTP or GMBH), one row per
 // part and, for every day with an upload (newest first; the day's last upload), the part's Firm (Firm and Order rows),
 // Addition (Firm less the previous day's Firm) and Forecast quantity. From / To limit the days; Export downloads the
-// same as an .xlsx file. In "All" it asks to choose a business. `bare`: inside another card (the Orders page's tab), so
-// without its own card and Business menu (the page has one).
-export function OrderSummaryPanel({ bare = false }: { bare?: boolean } = {}) {
+// same as an .xlsx file. In "All" it asks to choose a business.
+export function OrderSummaryPanel() {
   const { view: business } = useBusiness();
   const list = useListQuery({}, 50);
   const [search, setSearch] = useState("");
@@ -70,17 +69,13 @@ export function OrderSummaryPanel({ bare = false }: { bare?: boolean } = {}) {
   const clearAll = () => { setSearch(""); setFrom(""); setTo(""); list.resetPage(); };
   const pickDate = (set: (value: string) => void) => (value: string) => { set(value); list.resetPage(); };
 
-  const Wrapper = bare ? Bare : FlushPanel;
   return (
-    <Wrapper>
-      {(!bare || business !== "all") && (
+    <Panel flush>
       <div className="flex flex-wrap items-end gap-3 border-b border-line px-4 py-4 sm:px-6">
-        {!bare && (
-          <div className="space-y-1.5">
-            <span className="block text-sm font-medium text-ink">Business</span>
-            <BusinessPicker />
-          </div>
-        )}
+        <div className="space-y-1.5">
+          <span className="block text-sm font-medium text-ink">Business</span>
+          <BusinessPicker />
+        </div>
         {business !== "all" && (<>
           <div className="space-y-1.5">
             <label htmlFor="order-summary-from" className="block text-sm font-medium text-ink">From</label>
@@ -94,7 +89,6 @@ export function OrderSummaryPanel({ bare = false }: { bare?: boolean } = {}) {
           </div>
         </>)}
       </div>
-      )}
 
       {business === "all" ? (
         <EmptyState title="Choose DTP or GMBH"
@@ -171,12 +165,9 @@ export function OrderSummaryPanel({ bare = false }: { bare?: boolean } = {}) {
           </div>
         ) : null}
       </>)}
-    </Wrapper>
+    </Panel>
   );
 }
-
-const FlushPanel = ({ children }: { children: ReactNode }) => <Panel flush>{children}</Panel>;
-const Bare = ({ children }: { children: ReactNode }) => <div>{children}</div>;
 
 // Second header row of a day, under its date.
 function DayHeadings() {
