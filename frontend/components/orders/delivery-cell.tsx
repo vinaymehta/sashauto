@@ -15,6 +15,7 @@ import { Button } from "../ui/button";
 import { Alert } from "../ui/feedback";
 import { DatePicker } from "../ui/date-picker";
 import { Input } from "../ui/field";
+import { RelatedLink } from "./related-popover";
 import { Sheet } from "../ui/sheet";
 
 // The status steps of an order, in route order. SASH India (admin) sets the first two, the Warehouse Manager the
@@ -51,7 +52,7 @@ const PILL: Record<OrderStatus, { label: string; cls: string; Icon: typeof Check
   outbound: { label: "Outbound", cls: "border-green-300 bg-green-50 text-green-800", Icon: CheckIcon },
 };
 
-function StatusPill({ kind }: { kind: OrderStatus }) {
+export function StatusPill({ kind }: { kind: OrderStatus }) {
   const { label, cls, Icon } = PILL[kind];
   return (
     <span className={`inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 text-sm font-semibold ${cls}`}>
@@ -261,11 +262,11 @@ function StatusPanel({ row, role, initial, onClose, onChanged }: {
 
         <section className="rounded-lg border border-line bg-white px-5 py-4 shadow-card">
           <div className="flex items-center gap-2">
-            <span className="text-lg font-semibold text-ink">{row.part_number}</span>
+            <span className="text-lg font-semibold text-ink"><RelatedLink kind="part" value={row.part_number} /></span>
             <Badge>{row.order_type}</Badge>
           </div>
           <p className="mt-1 text-sm text-ink-muted">
-            PO <span className="tabular text-ink">{row.po_number}</span> · Line {row.po_line_number} · Ship {formatDate(row.ship_date)}
+            PO <span className="tabular text-ink"><RelatedLink kind="po" value={row.po_number} /></span> · Line {row.po_line_number} · Ship {formatDate(row.ship_date)}
             {row.qty !== null && <> · Qty <span className="tabular text-ink">{formatQty(row.qty)}</span></>}
           </p>
         </section>

@@ -9,6 +9,7 @@ import { AlertIcon, DownloadIcon, FileIcon, MailIcon, PrintIcon, RefreshIcon } f
 import { useSession } from "../session";
 import { useApi } from "../use-api";
 import { useToast } from "../toast";
+import { RelatedLink } from "./related-popover";
 import { Button } from "../ui/button";
 import { Alert, Spinner } from "../ui/feedback";
 import { PdfViewer } from "../ui/pdf-viewer";
@@ -183,7 +184,7 @@ function AllocationForm({ state, path, onPlaced }: { state: VendorOrderState; pa
               <input type="checkbox" checked={checked} onChange={() => toggle(v.vendor_id)} aria-label={`Select ${v.vendor_name}`}
                      className="h-4 w-4 accent-[var(--color-accent)]" />
               <span className="min-w-0">
-                <span className="block break-words font-medium text-ink">{v.vendor_name}</span>
+                <span className="block break-words"><RelatedLink kind="vendor" value={v.vendor_name} id={v.vendor_id} /></span>
                 <span className="block text-xs text-ink-muted">
                   {price ? `${price} / ${unit === "pcs" ? "pc" : pack > 1 ? `set of ${pack}` : "pc"}` : formatPrice(v) ?? "No price"}
                   {moq !== null && ` · MOQ ${formatQty(moq)} ${unit === "pcs" || pack <= 1 ? "pcs" : "sets"}`}
@@ -347,7 +348,7 @@ function EmailDrafts({ placements }: { placements: VendorOrderPlacementInfo[] })
           <li key={vo.id} className="flex items-center gap-3 px-5 py-3 text-sm">
             <MailIcon size={15} className="shrink-0 text-tint-violet-ink" />
             <span className="min-w-0 flex-1">
-              <span className="block truncate font-medium text-ink">{vo.vendor_name}</span>
+              <span className="block truncate"><RelatedLink kind="vendor" value={vo.vendor_name} id={vo.vendor_id ?? undefined} /></span>
               <span className="block truncate text-xs text-ink-muted">PO {vo.number}</span>
             </span>
             <button type="button" onClick={() => setOpen(vo)} className={fileButton}>

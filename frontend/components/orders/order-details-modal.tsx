@@ -11,6 +11,7 @@ import { useSession } from "../session";
 import { useToast } from "../toast";
 import { Button } from "../ui/button";
 import { ConfirmDialog } from "../ui/confirm-dialog";
+import { RelatedLink } from "./related-popover";
 import { Sheet } from "../ui/sheet";
 
 type Source = OrderRow["source_data"];
@@ -109,7 +110,7 @@ export function OrderDetailsBody({ row, rows, description, combined = [], onChan
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-xl font-semibold tracking-tight text-ink">{row.part_number}</h3>
+              <h3 className="text-xl font-semibold tracking-tight text-ink"><RelatedLink kind="part" value={row.part_number} /></h3>
               <span className="rounded-full bg-white px-2.5 py-0.5 text-xs font-semibold text-tint-violet-ink ring-1 ring-tint-violet-ink/20">{row.order_type}</span>
               {row.below_moq && (
                 <span className="rounded-full bg-age-yellow px-2.5 py-0.5 text-xs font-semibold text-age-yellow-ink ring-1 ring-age-yellow-ink/25">
@@ -119,7 +120,7 @@ export function OrderDetailsBody({ row, rows, description, combined = [], onChan
             </div>
             {description && <p className="mt-1 text-sm text-ink-muted">{description}</p>}
             <div className="mt-3 flex flex-wrap gap-2 text-xs">
-              <span className="rounded-md bg-white px-2 py-1 text-ink-muted ring-1 ring-line">PO <span className="tabular font-semibold text-ink">{row.po_number}</span></span>
+              <span className="rounded-md bg-white px-2 py-1 text-ink-muted ring-1 ring-line">PO <span className="tabular font-semibold text-ink"><RelatedLink kind="po" value={row.po_number} /></span></span>
               {facts.map(([label, v]) => (
                 <span key={label} className="max-w-full truncate rounded-md bg-white px-2 py-1 text-ink-muted ring-1 ring-line" title={v ?? undefined}>
                   {label} <span className="font-semibold text-ink">{v}</span>
@@ -293,7 +294,7 @@ function CombinedTr({ group, members, expanded, description, onToggle }: {
           c.align === "right" ? "tabular text-right" : c.align === "center" ? "text-center" : ""}`}>
           {i === 0 ? (
             <span className="inline-flex items-center gap-1.5">
-              {anchor.part_number}
+              <RelatedLink kind="part" value={anchor.part_number} />
               <span className="rounded border border-tint-violet-ink/25 bg-white px-1.5 py-px text-xs font-medium text-tint-violet-ink">Combined · {members.length}</span>
               {group.below_moq && <span className="rounded bg-age-yellow px-1.5 py-px text-xs font-medium text-age-yellow-ink">Below MOQ {formatQty(group.moq)}</span>}
             </span>

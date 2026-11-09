@@ -131,7 +131,7 @@ export function ComparisonTable({ uploads }: { uploads: UploadChoice[] }) {
                 <tbody>
                   {data.data.map((l) => (
                     <tr key={`${l.po_number}|${l.po_line_number}|${l.part_number}|${l.ship_date}|${l.direction}`} className="hover:bg-canvas">
-                      <Td className="font-medium">{l.po_number}</Td>
+                      <Td><RelatedLink kind="po" value={l.po_number} uploadId={shown?.to} /></Td>
                       <Td className="text-ink-muted">{l.po_line_number}</Td>
                       <Td><RelatedLink kind="part" value={l.part_number} uploadId={shown?.to} /></Td>
                       <Td><span className="block w-72 whitespace-normal break-words py-1 leading-snug">{l.part_description || "—"}</span></Td>

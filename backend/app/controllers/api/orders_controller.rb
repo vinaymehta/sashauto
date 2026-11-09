@@ -196,7 +196,7 @@ module Api
         part_number: part, description: product&.description, moq: Serializers.qty(product && (product.moq_sets || product.moq)),
         pack_size: product&.pack_size, discontinued: product&.discontinued? || false, currency: summary_currency,
         vendors: (product&.vendor_products || []).sort_by { |vp| vp.vendor.name }.map do |vp|
-          { name: vp.vendor.name, price: Serializers.qty(vp.price_amount), set_price: Serializers.qty(vp.set_price_amount), currency: vp.price_currency,
+          { vendor_id: vp.vendor_id, name: vp.vendor.name, price: Serializers.qty(vp.price_amount), set_price: Serializers.qty(vp.set_price_amount), currency: vp.price_currency,
             price_text: vp.price_text, note: vp.price_note, pack_size: vp.pack_size, moq: vp.moq_text.presence || Serializers.qty(vp.moq_sets) }
         end,
         totals: summary_figures(lines).merge(forecast: Serializers.qty(rows.select { |r| r.order_type == "Forecast" }.sum(0.to_d) { |r| r.qty.to_d }),
@@ -205,6 +205,28 @@ module Api
           open = list.select { |l| l[:ordered] > l[:shipped] }
           summary_figures(list).merge(po_number: po, types: list.map { |l| l[:row].order_type }.uniq.sort,
                                       next_ship_date: open.map { |l| l[:row].ship_date }.min, last_ship_date: list.map { |l| l[:row].ship_date }.max)
+        end
+      } }
+    end
+
+    # PO summary (PO Number link): each Firm / Order line of one PO in the shown order data with what was ordered,
+    # dispatched, delivered and is still to dispatch, its status and revenue, plus the PO's totals (as #part_summary).
+    def po_summary
+      po = params.require(:po).to_s.strip
+      batches = selected_batches
+      load_combined_orders(Orders::Combiner.for_batches(batches.map(&:id)))
+      rows = dataset(batches).where(po_number: po).to_a
+      lines = summary_lines(rows)
+      descriptions = Product.where(part_number: rows.map(&:part_number).uniq).pluck(:part_number, :description).to_h
+      forecast = rows.select { |r| r.order_type == "Forecast" }
+      render json: { data: {
+        po_number: po, currency: summary_currency,
+        totals: summary_figures(lines).merge(parts: lines.map { |l| l[:row].part_number }.uniq.size,
+                                             forecast: Serializers.qty(forecast.sum(0.to_d) { |r| r.qty.to_d }), forecast_rows: forecast.size),
+        lines: lines.sort_by { |l| [ l[:row].po_line_number, l[:row].ship_date, l[:row].part_number ] }.map do |l|
+          row = l[:row]
+          summary_figures([ l ]).merge(part_number: row.part_number, description: descriptions[row.part_number], po_line_number: row.po_line_number,
+                                       order_type: row.order_type, ship_date: row.ship_date, ship_to_location: row.ship_to_location, status: l[:status])
         end
       } }
     end
@@ -243,7 +265,7 @@ module Api
         delivered = info[:outbound_qty] ? info[:outbound_qty].to_d : (info[:status] == "outbound" ? ordered : 0.to_d)
         text = row.source_data&.dig("Unit Price").to_s.delete(",").strip
         price = text.match?(/\A\d+(\.\d+)?\z/) ? BigDecimal(text) : fallback[row.part_number]
-        { row: row, ordered: ordered, shipped: shipped, delivered: delivered, price: price }
+        { row: row, ordered: ordered, shipped: shipped, delivered: delivered, price: price, status: info[:status] }
       end
     end
 

@@ -48,6 +48,7 @@ Rails.application.routes.draw do
         get :summary
         get :by_po
         get :by_part
+        get :po_summary
         get :part_summary
         get :parts_summary
       end

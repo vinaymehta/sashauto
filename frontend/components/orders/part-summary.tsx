@@ -7,6 +7,7 @@ import { formatAmount, formatCustomer } from "../vendors/price-format";
 import { Badge } from "../ui/badge";
 import { Alert } from "../ui/feedback";
 import { Skeleton } from "../ui/skeleton";
+import { RelatedLink } from "./related-popover";
 
 // Product summary of a Part Number (opened from a Part Number link): the product (description, MOQ), then for its Firm /
 // Order orders in the shown order data (`uploadId`; undefined = the current data) what was ordered, dispatched from India,
@@ -108,7 +109,7 @@ export function PartSummaryPanel({ part, uploadId }: { part: string; uploadId?: 
               <tbody className="divide-y divide-neutral-100">
                 {s.vendors.map((v) => (
                   <tr key={v.name}>
-                    <td className="px-5 py-2 font-medium text-ink">{v.name}{v.note && <span className="block text-xs font-normal text-ink-muted">{v.note}</span>}</td>
+                    <td className="px-5 py-2 font-medium text-ink"><RelatedLink kind="vendor" value={v.name} id={v.vendor_id} uploadId={uploadId} />{v.note && <span className="block text-xs font-normal text-ink-muted">{v.note}</span>}</td>
                     <td className="px-3 py-2 text-right tabular text-ink">{formatAmount(v.price, v.currency) ?? <span className="text-ink-faint">{v.price_text ?? "—"}</span>}</td>
                     <td className="px-3 py-2 text-right tabular text-ink-muted">{v.pack_size > 1 ? `${formatAmount(v.set_price, v.currency) ?? "—"} (${v.pack_size} pcs)` : "—"}</td>
                     <td className="px-5 py-2 text-right tabular text-ink-muted">{v.moq ?? "—"}</td>
@@ -147,7 +148,7 @@ export function PartSummaryPanel({ part, uploadId }: { part: string; uploadId?: 
               <tbody className="divide-y divide-neutral-100">
                 {s.pos.map((p) => (
                   <tr key={p.po_number} className="hover:bg-neutral-50">
-                    <td className="px-5 py-2 font-semibold text-ink">{p.po_number}<span className="ml-2 text-xs font-normal text-ink-muted">{p.types.join(", ")}</span></td>
+                    <td className="px-5 py-2 font-semibold text-ink"><RelatedLink kind="po" value={p.po_number} uploadId={uploadId} /><span className="ml-2 text-xs font-normal text-ink-muted">{p.types.join(", ")}</span></td>
                     <td className="px-3 py-2 text-ink-muted">{formatCount(p.orders)}{p.open_orders > 0 ? ` (${formatCount(p.open_orders)} open)` : ""}</td>
                     <td className="px-3 py-2 text-right tabular text-ink">{formatQty(p.ordered)}</td>
                     <td className="px-3 py-2 text-right tabular text-violet-700">{formatQty(p.dispatched)}</td>

@@ -109,7 +109,7 @@ export function ChangesTable({ uploadId, emptyDescription, manual = false, direc
             <tbody>
               {data.data.map((c) => (
                 <tr key={c.id} {...ageRowProps(c.firm_date, today, "hover:bg-canvas")}>
-                  <Td className="font-medium">{c.po_number}</Td>
+                  <Td><RelatedLink kind="po" value={c.po_number} uploadId={manual ? undefined : uploadId} /></Td>
                   <Td className="text-ink-muted">{c.po_line_number}</Td>
                   <Td><RelatedLink kind="part" value={c.part_number} uploadId={manual ? undefined : uploadId} /></Td>
                   <Td><span className="block w-72 whitespace-normal break-words py-1 leading-snug">{c.part_description || "—"}</span></Td>

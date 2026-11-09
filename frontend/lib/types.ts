@@ -838,10 +838,28 @@ export interface PartSummary {
   pack_size: number | null;
   discontinued: boolean;
   currency: string | null; // of the Deere prices (null: the businesses shown use different ones)
-  vendors: { name: string; price: string | null; set_price: string | null; currency: string; price_text: string | null; note: string | null;
+  vendors: { vendor_id: number; name: string; price: string | null; set_price: string | null; currency: string; price_text: string | null; note: string | null;
              pack_size: number; moq: string | null }[];
   totals: PartSummaryFigures & { forecast: string; vendor_po: string; pos: number };
   pos: (PartSummaryFigures & { po_number: string; types: string[]; next_ship_date: string | null; last_ship_date: string })[];
+}
+
+// PO summary (PO Number link): each Firm / Order line of one PO with the Product summary figures, and the PO's totals.
+export interface PoSummaryLine extends PartSummaryFigures {
+  part_number: string;
+  description: string | null;
+  po_line_number: string;
+  order_type: string;
+  ship_date: string;
+  ship_to_location: string;
+  status: OrderStatus;
+}
+
+export interface PoSummary {
+  po_number: string;
+  currency: string | null;
+  totals: PartSummaryFigures & { parts: number; forecast: string; forecast_rows: number };
+  lines: PoSummaryLine[];
 }
 
 // Products → Product summary: every part of the shown order data with its Product summary figures.

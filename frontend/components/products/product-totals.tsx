@@ -29,7 +29,7 @@ export function ProductTotalsPanel() {
   const { data, error, loading } = useApi<{ data: PartsSummaryRow[]; currency: string | null }>("/api/orders/parts_summary");
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: "revenue_ordered", desc: true });
-  const money = (v: string) => (data?.currency ? formatCustomer(v, data.currency, 0) : Number(v).toLocaleString("en-US", { maximumFractionDigits: 0 }));
+  const money = (v: string) => (data?.currency ? formatCustomer(v, data.currency, 2) : Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
   const rows = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -76,24 +76,24 @@ export function ProductTotalsPanel() {
               {head("part_number", "Part Number", "left")}
               <Th>Description</Th>
               <Th align="right">POs · Orders</Th>
-              {COLUMNS.map((c) => <Fragment key={c.key}>{head(c.key, c.label)}</Fragment>)}
               {head("revenue_ordered", "Revenue ordered")}
               {head("revenue_delivered", "Revenue delivered")}
+              {COLUMNS.map((c) => <Fragment key={c.key}>{head(c.key, c.label)}</Fragment>)}
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.part_number} className="hover:bg-canvas">
                 <Td><RelatedLink kind="part" value={r.part_number} /></Td>
-                <Td><span className="block max-w-64 truncate text-ink-muted" title={r.description ?? undefined}>{r.description ?? "—"}</span></Td>
+                <Td><span className="line-clamp-2 block w-44 whitespace-normal leading-snug text-ink-muted" title={r.description ?? undefined}>{r.description ?? "—"}</span></Td>
                 <Td align="right" className="text-ink-muted">{formatCount(r.pos)} · {formatCount(r.orders)}{r.open_orders > 0 ? ` (${formatCount(r.open_orders)} open)` : ""}</Td>
+                <Td align="right" className="font-semibold text-ink">{money(r.revenue_ordered)}</Td>
+                <Td align="right" className="font-semibold text-green-700">{Number(r.revenue_delivered) === 0 ? <span className="font-normal text-neutral-300">—</span> : money(r.revenue_delivered)}</Td>
                 {COLUMNS.map((c) => (
                   <Td key={c.key} align="right" className={`${c.key === "pending" && Number(r.pending) > 0 ? "font-semibold text-amber-700" : c.tone ?? "text-ink"}`}>
                     {Number(r[c.key]) === 0 ? <span className="text-neutral-300">—</span> : formatQty(r[c.key] as string)}
                   </Td>
                 ))}
-                <Td align="right" className="font-semibold text-ink">{money(r.revenue_ordered)}</Td>
-                <Td align="right" className="font-semibold text-green-700">{Number(r.revenue_delivered) === 0 ? <span className="font-normal text-neutral-300">—</span> : money(r.revenue_delivered)}</Td>
               </tr>
             ))}
           </tbody>

@@ -10,10 +10,11 @@ import { useDismiss } from "../use-dismiss";
 // `wide` is for panels holding wide tables (75% of the window on larger screens).
 // `overlay={false}` keeps the page behind usable: no dim/blur backdrop, the page still scrolls and can be
 // clicked, and only the close button or Escape closes the panel. Text styles are reset (left-aligned, wrapping), so
-// a panel opened from a table cell does not inherit the cell's alignment or no-wrap.
-export function Sheet({ open, title, description, icon, onClose, children, footer, wide = false, overlay = true }: {
+// a panel opened from a table cell does not inherit the cell's alignment or no-wrap. `floating`: the panel is opened
+// over another one (rendered on <body>); clicks in it then do not close the panel below.
+export function Sheet({ open, title, description, icon, onClose, children, footer, wide = false, overlay = true, floating = false }: {
   open: boolean; title: ReactNode; description?: ReactNode; icon?: ReactNode; onClose: () => void; children: ReactNode; footer?: ReactNode;
-  wide?: boolean; overlay?: boolean;
+  wide?: boolean; overlay?: boolean; floating?: boolean;
 }) {
   const panel = useRef<HTMLDivElement>(null);
   useDismiss(panel, open && overlay, onClose);
@@ -46,7 +47,7 @@ export function Sheet({ open, title, description, icon, onClose, children, foote
     <>
       {/* Dimming backdrop behind the drawer, below the navbar and right of the sidebar (both stay sharp). */}
       {overlay && <div aria-hidden className="fixed inset-x-0 top-14 bottom-0 z-40 lg:left-60 animate-fade-in bg-neutral-950/20 backdrop-blur-sm" />}
-      <div ref={panel} role="dialog" aria-modal={overlay} aria-labelledby="sheet-title"
+      <div ref={panel} role="dialog" aria-modal={overlay} aria-labelledby="sheet-title" data-floating={floating || undefined}
            className={`fixed top-14 bottom-0 right-0 z-50 flex w-full animate-slide-in-right flex-col whitespace-normal border-l border-neutral-200 bg-neutral-100 text-left font-normal shadow-2xl ${wide ? "md:w-[75vw]" : "md:w-[40vw]"} md:min-w-110`}>
         <header className="flex items-start justify-between gap-4 border-b border-line bg-white px-4 py-4 sm:px-6 sm:py-5">
           <div className="flex min-w-0 items-start gap-3.5">

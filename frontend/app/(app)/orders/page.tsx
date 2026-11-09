@@ -572,7 +572,7 @@ function OrdersView() {
           <ComparisonTable uploads={businessUploads} />
         ) : (
         <>
-        <ListToolbar summary={data ? `${formatCount(data.meta.total)} order row${data.meta.total === 1 ? "" : "s"}` : ""}>
+        <ListToolbar wrap summary={data ? `${formatCount(data.meta.total)} order row${data.meta.total === 1 ? "" : "s"}` : ""}>
           <SearchInput label="Search orders" placeholder="Search PO, part, type, location…" value={search}
                        onSearch={(v) => { setSearch(v); list.resetPage(); }} className="w-full sm:w-80" />
           <FilterMenu groups={listFilters} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />

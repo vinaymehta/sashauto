@@ -1,79 +1,86 @@
 "use client";
 
-import { useState } from "react";
-import type { RelatedItem } from "@/lib/types";
-import { BoxIcon, FileIcon } from "../icons";
-import { useApi } from "../use-api";
-import { Spinner } from "../ui/feedback";
+import { createContext, useContext, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { BoxIcon, FileIcon, TruckIcon } from "../icons";
 import { Sheet } from "../ui/sheet";
+import { VendorSummaryPanel } from "../vendors/vendor-summary";
 import { PartSummaryPanel } from "./part-summary";
+import { PoSummaryPanel } from "./po-summary";
 
-// Clickable PO Number / Part Number. Opens the right-hand side panel: for a PO the related Part Numbers, for a Part its
-// Product summary (ordered, dispatched, in transit, delivered, pending; per PO), in a wide panel; from the server for the
-// shown upload (`uploadId`; undefined = the current order data).
-export function RelatedLink({ kind, value, uploadId }: { kind: "po" | "part"; value: string; uploadId?: number }) {
-  const [open, setOpen] = useState(false);
+type Kind = "po" | "part" | "vendor";
+// What a summary panel shows: a PO, a Part Number or a vendor (`id`: the vendor's id).
+type Target = { kind: Kind; value: string; id?: number; uploadId?: number };
+
+// Set inside an open summary panel: a link there opens its summary in the same panel (with Back) instead of another one.
+const OpenInPanel = createContext<((target: Target) => void) | null>(null);
+
+const TITLES: Record<Kind, (value: string) => string> = {
+  po: (v) => `PO summary · ${v}`,
+  part: (v) => `Product summary · ${v}`,
+  vendor: (v) => `Vendor · ${v}`,
+};
+const ICONS: Record<Kind, ReactNode> = { po: <FileIcon size={18} />, part: <BoxIcon size={18} />, vendor: <TruckIcon size={18} /> };
+
+// Clickable PO Number, Part Number or vendor name. Opens the wide right-hand side panel with its summary: a PO's lines
+// (ordered, dispatched, delivered, pending, status, revenue), a part's Product summary (ordered, dispatched, in transit,
+// delivered, pending; per PO; vendors and prices) or a vendor's parts and details; from the server for the shown upload
+// (`uploadId`; undefined = the current order data). Links inside the panel open in the same panel, with a Back button.
+// A vendor link needs the vendor's `id`.
+export function RelatedLink({ kind, value, uploadId, id, children }: { kind: Kind; value: string; uploadId?: number; id?: number; children?: ReactNode }) {
+  const inPanel = useContext(OpenInPanel);
+  const [stack, setStack] = useState<Target[]>([]);
+  const top = stack[stack.length - 1];
 
   function openPanel(e: React.MouseEvent) {
     e.stopPropagation(); // do not open the row's history
-    setOpen(true);
+    const target = { kind, value, id, uploadId };
+    if (inPanel) inPanel(target);
+    else setStack([target]);
   }
+
+  const push = (target: Target) => setStack((s) => {
+    const last = s[s.length - 1];
+    return last && last.kind === target.kind && last.value === target.value ? s : [...s, target];
+  });
+  const back = stack[stack.length - 2];
 
   return (
     <>
-      <button type="button" onClick={openPanel}
-              className="font-medium text-ink underline decoration-neutral-300 underline-offset-2 transition-colors hover:text-accent hover:decoration-accent">
-        {value}
+      <button type="button" onClick={openPanel} title={`Open the ${kind === "po" ? "PO" : kind === "part" ? "product" : "vendor"} summary`}
+              className="text-left font-medium text-ink underline decoration-neutral-300 underline-offset-2 transition-colors hover:text-accent hover:decoration-accent">
+        {children ?? value}
       </button>
-      {open && (
-        <span onClick={(e) => e.stopPropagation()}>
+      {/* On <body>, so it is not inside the link's paragraph or table cell and stacks over any panel the link is in;
+          React events still bubble to the link's row, hence the stop. */}
+      {top && createPortal(
+        <div onClick={(e) => e.stopPropagation()}>
           <Sheet
-            open={open}
-            onClose={() => setOpen(false)}
-            wide={kind === "part"}
-            title={kind === "po" ? `PO ${value}` : `Product summary · ${value}`}
-            description={kind === "po" ? "Part Numbers on this PO in the current order data."
-              : uploadId ? "This part's orders in the shown upload." : "This part's orders in the current order data."}
-            icon={kind === "po" ? <FileIcon size={18} /> : <BoxIcon size={18} />}
+            open
+            wide
+            floating
+            onClose={() => setStack([])}
+            title={TITLES[top.kind](top.value)}
+            description={top.kind === "vendor" ? "The vendor's parts, prices and details."
+              : top.uploadId ? "From the shown upload." : "From the current order data."}
+            icon={ICONS[top.kind]}
           >
-            {kind === "part" ? <PartSummaryPanel part={value} uploadId={uploadId} /> : <RelatedList kind={kind} value={value} uploadId={uploadId} />}
+            <OpenInPanel.Provider value={push}>
+              {back && (
+                <button type="button" onClick={() => setStack((s) => s.slice(0, -1))}
+                        className="mb-3 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-medium text-ink-muted transition-colors hover:bg-white hover:text-ink">
+                  ← Back to {TITLES[back.kind](back.value)}
+                </button>
+              )}
+              {top.kind === "part" ? <PartSummaryPanel key={`part-${top.value}`} part={top.value} uploadId={top.uploadId} />
+                : top.kind === "po" ? <PoSummaryPanel key={`po-${top.value}`} po={top.value} uploadId={top.uploadId} />
+                : top.id ? <VendorSummaryPanel key={`vendor-${top.id}`} vendorId={top.id} uploadId={top.uploadId} />
+                : <p className="text-sm text-ink-muted">This vendor is not in the vendor list.</p>}
+            </OpenInPanel.Provider>
           </Sheet>
-        </span>
+        </div>,
+        document.body,
       )}
     </>
-  );
-}
-
-function RelatedList({ kind, value, uploadId }: { kind: "po" | "part"; value: string; uploadId?: number }) {
-  const { data, error, loading } = useApi<{ data: RelatedItem[] }>(
-    kind === "po" ? "/api/orders/by_po" : "/api/orders/by_part", { ...(kind === "po" ? { po: value } : { part: value }), upload_id: uploadId },
-  );
-  const items = data?.data ?? [];
-  const noun = kind === "po" ? "Part Number" : "PO Number";
-
-  if (error) return <p className="text-sm text-down">{error.message}</p>;
-  if (loading && !data) return <div className="flex justify-center py-10"><Spinner /></div>;
-
-  return (
-    <section className="overflow-hidden rounded-lg border border-line bg-white shadow-card">
-      <header className="flex items-center justify-between border-b border-neutral-100 px-5 py-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-muted">{noun}s</h3>
-        <span className="text-xs text-ink-muted">{items.length} {noun.toLowerCase()}{items.length === 1 ? "" : "s"}</span>
-      </header>
-      {items.length === 0 ? (
-        <p className="px-5 py-6 text-sm text-ink-muted">Nothing found.</p>
-      ) : (
-        <ul className="divide-y divide-neutral-100">
-          {items.map((item) => (
-            <li key={item.value} className="flex items-center justify-between gap-3 px-5 py-3 text-sm">
-              <span className="font-medium text-ink">{item.value}</span>
-              <span className="flex items-center gap-1.5 text-xs text-ink-muted">
-                {item.types.map((t) => <span key={t} className="rounded bg-neutral-100 px-1.5 py-0.5 text-neutral-700">{t}</span>)}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
   );
 }
