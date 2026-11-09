@@ -26,6 +26,7 @@ Rails.application.routes.draw do
       get :compare, on: :collection
       member do
         get :changes
+        get :all_changes
         get :address_changes
         get :moq_alerts
         get "moq_alerts/export", action: :moq_alerts_export

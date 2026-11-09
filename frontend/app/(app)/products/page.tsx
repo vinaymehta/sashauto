@@ -141,7 +141,7 @@ function ProductsView() {
             {/* Columns size to their content and Description takes the rest. On smaller screens SASH Part, Description,
                 MOQ, the vendor count and (on phones) the prices drop out of the table and show under the Part Number
                 instead. A row opens the part panel, where everything about the part is edited. */}
-            <Table dense>
+            <Table dense stickyHeader>
               <thead>
                 <tr>
                   <SortTh label="Part Number" sortKey="part_number" {...sortProps} />

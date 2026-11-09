@@ -14,39 +14,39 @@ import { ListToolbar } from "../ui/list-toolbar";
 import { Panel } from "../ui/panel";
 import { SearchInput } from "../ui/search-input";
 import { TableSkeleton } from "../ui/skeleton";
-import { Pagination, Table, Td, Th } from "../ui/table";
+import { Pagination } from "../ui/table";
 
-const dash = <span className="text-neutral-300">—</span>;
 
-// The four part columns stay on the left while the days scroll sideways (Description and MOQ from lg up). Each has a
-// fixed width so the next one knows where to stick: S No 4.75rem (pl-6 + 2.5rem + pr-3), Part Number 8.5rem,
-// Description 15.5rem, MOQ 5.5rem. The header cells sit above the body cells, the top-left ones above both.
-const STICKY = {
-  serial: "sticky left-0",
-  part: "sticky left-[4.75rem]",
-  description: "lg:sticky lg:left-[13.25rem]",
-  moq: "lg:sticky lg:left-[28.75rem]",
+// Laid out like SASH's "DTP - Order Summary" Excel: its colours (light orange part columns, light blue day columns),
+// thin grid lines (a darker rule between days), centred plain numbers (no thousands separators, 0 shown as 0), dd.mm.yyyy dates and the
+// Addition cell filled green above 0 and red below 0. As the Excel's frozen panes, the two header rows stay on top and
+// the part columns on the left (S No and Part Number always, Description and MOQ from lg up).
+const ORANGE = "bg-[#FBE3D6]";
+const BLUE = "bg-[#83CBEB]";
+const GRID = "border-r border-b border-neutral-300";
+// The left rule of each day's Firm column: darker, so each day's three columns read as one group.
+const DAY_EDGE = "border-l-2 border-l-neutral-500";
+// The last sticky part column's right rule, darker too.
+const PART_EDGE = "lg:border-r-2 lg:border-r-neutral-500";
+// The row under the pointer, sticky part columns included.
+const HOVER = "group-hover:bg-[#FFF4C2]";
+// Fixed widths (from the Excel's column widths) so each sticky column knows where the next one starts.
+const COLS = {
+  serial: { width: "w-[52px] min-w-[52px] max-w-[52px]", sticky: "sticky left-0" },
+  part: { width: "w-[120px] min-w-[120px] max-w-[120px]", sticky: "sticky left-[52px]" },
+  description: { width: "w-[216px] min-w-[216px] max-w-[216px]", sticky: "lg:sticky lg:left-[172px]" },
+  moq: { width: "w-[60px] min-w-[60px] max-w-[60px]", sticky: "lg:sticky lg:left-[388px]" },
 };
-const corner = "z-30!";
-const body = "z-[5] bg-surface group-hover:bg-canvas"; // the row hover shows through the sticky cells too
-// Divider after the last sticky column, and the header's bottom rule (Table stickyHeader) on the MOQ heading.
-const edge = "lg:shadow-[inset_-1px_0_0_var(--color-line)]";
-const edgeTh = "lg:shadow-[inset_-1px_0_0_var(--color-line),inset_0_-1px_0_var(--color-line)]!";
+const DAY_COLS = { firm: "min-w-[62px]", addition: "min-w-[72px]", forecast: "min-w-[68px]" };
 
-// Zeros fade to a dash so the quantities that matter stand out.
-const qtyOrDash = (value: string) => (Number(value) === 0 ? dash : formatQty(value));
-// Addition as in SASH's Excel: green above 0, red below 0 (as a pill), nothing for 0.
-const additionPill = (value: string) => {
-  const n = Number(value);
-  if (n === 0) return dash;
-  return (
-    <span className={`inline-flex min-w-12 justify-center rounded-full px-2 py-0.5 text-sm font-semibold tabular ${
-      n > 0 ? "bg-[#92D050] text-neutral-900" : "bg-[#FF0000] text-white"
-    }`}>{formatDifference(value)}</span>
-  );
-};
-// Every other day is shaded, so each day's three columns read as one group.
-const dayShade = (index: number) => (index % 2 === 1 ? "bg-neutral-50/70" : "");
+// A quantity as the Excel's "0" number format shows it: a whole number, no separators.
+const plain = (value: string | null | undefined) => (value === null || value === undefined || value === "" ? "" : String(Number(value)));
+// "2026-11-05" -> "05.11.2026", as in the Excel's first row.
+const excelDate = (iso: string) => iso.split("-").reverse().join(".");
+// Addition cell fill, as the Excel's conditional format: green above 0, red below 0.
+const additionFill = (value: string) => (Number(value) > 0 ? "bg-[#92D050] font-bold text-black" : Number(value) < 0 ? "bg-[#FF0000] font-bold text-white" : `bg-white ${HOVER}`);
+// 0 is shown, as in the Excel, but faded so the quantities that matter stand out.
+const zeroFade = (value: string) => (Number(value) === 0 ? "text-neutral-400" : "");
 
 // Products page, "Order summary" tab, like SASH's "Order Summary" Excel: for the business shown (DTP or GMBH), one row per
 // part and, for every day with an upload (newest first; the day's last upload), the part's Firm (Firm and Order rows),
@@ -119,47 +119,48 @@ export function OrderSummaryPanel() {
           />
         ) : data ? (
           <div className={`transition-opacity duration-200 ${loading ? "opacity-50" : ""}`}>
-            <Table dense stickyHeader>
-              <thead>
-                <tr>
-                  <Th rowSpan={2} align="right" className={`${STICKY.serial} ${corner}`}><span className="block w-10">S No</span></Th>
-                  <Th rowSpan={2} className={`${STICKY.part} ${corner}`}><span className="block w-28">Part Number</span></Th>
-                  <Th rowSpan={2} className={`${STICKY.description} ${corner}`}><span className="block w-56">Description</span></Th>
-                  <Th rowSpan={2} align="right" className={`${STICKY.moq} ${corner} ${edgeTh}`}><span className="block w-16">MOQ</span></Th>
-                  {data.days.map((day, i) => (
-                    <Th key={day.date} colSpan={3} align="center" className="border-l border-line"
-                        title={`${day.filename}${day.version ? ` · ${day.version}` : ""}`}>
-                      <span className="inline-flex items-center gap-1.5">
-                        {formatDate(day.date)}
-                        {i === 0 && day.date === data.last_date && (
-                          <span className="rounded-full bg-accent px-1.5 py-px text-2xs font-semibold normal-case tracking-normal text-white">Latest</span>
-                        )}
-                      </span>
-                    </Th>
-                  ))}
-                </tr>
-                <tr>
-                  {data.days.map((day, i) => (
-                    <DayHeadings key={day.date} shade={dayShade(i)} />
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {data.data.map((row) => (
-                  <tr key={row.part_number} className="group hover:bg-canvas">
-                    <Td align="right" className={`${STICKY.serial} ${body} text-ink-muted`}><span className="block w-10">{row.serial}</span></Td>
-                    <Td className={`${STICKY.part} ${body} font-medium`}><span className="block w-28 truncate" title={row.part_number}>{row.part_number}</span></Td>
-                    <Td className={`${STICKY.description} ${body} text-ink-muted`}>
-                      <span className="block w-56 truncate" title={row.description ?? undefined}>{row.description ?? dash}</span>
-                    </Td>
-                    <Td align="right" className={`${STICKY.moq} ${body} ${edge}`}><span className="block w-16">{row.moq ? formatQty(row.moq) : dash}</span></Td>
-                    {row.values.map(([firm, addition, forecast], i) => (
-                      <DayCells key={data.days[i]?.date ?? i} firm={firm} addition={addition} forecast={forecast} shade={dayShade(i)} />
+            <div className="max-h-[calc(100vh-14rem)] overflow-auto">
+              <table className="border-separate border-spacing-0 text-[15px] leading-tight text-black [font-family:'Aptos_Narrow','Arial_Narrow',Calibri,Arial,sans-serif]">
+                <thead className="whitespace-nowrap">
+                  <tr className="h-7">
+                    {/* Above the part columns, empty as in the Excel. */}
+                    <th className={`${COLS.serial.sticky} top-0 z-30 border-l border-t ${GRID} ${ORANGE}`} />
+                    <th className={`${COLS.part.sticky} top-0 z-30 border-t ${GRID} ${ORANGE}`} />
+                    <th className={`${COLS.description.sticky} top-0 z-30 border-t ${GRID} ${ORANGE}`} />
+                    <th className={`${COLS.moq.sticky} top-0 z-30 border-t ${GRID} ${PART_EDGE} ${ORANGE}`} />
+                    {data.days.map((day) => (
+                      <th key={day.date} colSpan={3} title={`${day.filename}${day.version ? ` · ${day.version}` : ""}`}
+                          className={`sticky top-0 z-20 border-t ${GRID} ${DAY_EDGE} ${BLUE} px-2 text-center font-bold tracking-wide`}>
+                        {excelDate(day.date)}
+                      </th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </Table>
+                  <tr className="h-7">
+                    <th className={`${COLS.serial.sticky} ${COLS.serial.width} top-7 z-30 border-l ${GRID} ${ORANGE} px-2 text-left font-bold`}>S No</th>
+                    <th className={`${COLS.part.sticky} ${COLS.part.width} top-7 z-30 ${GRID} ${ORANGE} px-2 text-left font-bold`}>Part Number</th>
+                    <th className={`${COLS.description.sticky} ${COLS.description.width} top-7 z-30 ${GRID} ${ORANGE} px-2 text-left font-bold`}>Description</th>
+                    <th className={`${COLS.moq.sticky} ${COLS.moq.width} top-7 z-30 ${GRID} ${PART_EDGE} ${ORANGE} px-2 text-center font-bold`}>MOQ</th>
+                    {data.days.map((day) => (
+                      <DayHeadings key={day.date} />
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.data.map((row) => (
+                    <tr key={row.part_number} className="group h-[26px]">
+                      <td className={`${COLS.serial.sticky} ${COLS.serial.width} z-[5] border-l ${GRID} ${ORANGE} ${HOVER} px-2 text-center text-neutral-600`}>{row.serial}</td>
+                      <td className={`${COLS.part.sticky} ${COLS.part.width} z-[5] ${GRID} ${ORANGE} ${HOVER} truncate px-2 font-semibold`} title={row.part_number}>{row.part_number}</td>
+                      <td className={`${COLS.description.sticky} ${COLS.description.width} z-[5] ${GRID} ${ORANGE} ${HOVER} truncate px-2`}
+                          title={row.description ?? undefined}>{row.description ?? ""}</td>
+                      <td className={`${COLS.moq.sticky} ${COLS.moq.width} z-[5] ${GRID} ${PART_EDGE} ${ORANGE} ${HOVER} px-2 text-center`}>{plain(row.moq)}</td>
+                      {row.values.map(([firm, addition, forecast], i) => (
+                        <DayCells key={data.days[i]?.date ?? i} firm={firm} addition={addition} forecast={forecast} />
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
             <Pagination meta={data.meta} onPage={list.setPage} onPerPage={list.setPerPage} noun="parts" />
           </div>
         ) : null}
@@ -168,23 +169,23 @@ export function OrderSummaryPanel() {
   );
 }
 
-// Second header row of a day: under its date, below the first header row (h-10).
-function DayHeadings({ shade }: { shade: string }) {
+// Second header row of a day, under its date.
+function DayHeadings() {
   return (
     <>
-      <Th align="right" className={`top-10! border-l border-line ${shade}`}>Firm</Th>
-      <Th align="center" className={`top-10! ${shade}`}>Addition</Th>
-      <Th align="right" className={`top-10! ${shade}`}>Forecast</Th>
+      <th className={`sticky top-7 z-20 ${DAY_COLS.firm} ${GRID} ${DAY_EDGE} ${BLUE} px-2 text-center font-bold`}>Firm</th>
+      <th className={`sticky top-7 z-20 ${DAY_COLS.addition} ${GRID} ${BLUE} px-2 text-center font-bold`}>Addition</th>
+      <th className={`sticky top-7 z-20 ${DAY_COLS.forecast} ${GRID} ${BLUE} px-2 text-center font-bold`}>Forecast</th>
     </>
   );
 }
 
-function DayCells({ firm, addition, forecast, shade }: { firm: string; addition: string; forecast: string; shade: string }) {
+function DayCells({ firm, addition, forecast }: { firm: string; addition: string; forecast: string }) {
   return (
     <>
-      <Td align="right" className={`border-l border-line-soft font-medium ${shade}`}>{qtyOrDash(firm)}</Td>
-      <Td align="center" className={shade}>{additionPill(addition)}</Td>
-      <Td align="right" className={`text-ink-muted ${shade}`}>{qtyOrDash(forecast)}</Td>
+      <td className={`${GRID} ${DAY_EDGE} bg-white ${HOVER} px-2 text-center font-semibold tabular ${zeroFade(firm)}`}>{plain(firm)}</td>
+      <td className={`${GRID} ${additionFill(addition)} px-2 text-center tabular ${Number(addition) === 0 ? "text-neutral-400" : ""}`}>{plain(addition)}</td>
+      <td className={`${GRID} bg-white ${HOVER} px-2 text-center tabular ${zeroFade(forecast)}`}>{plain(forecast)}</td>
     </>
   );
 }

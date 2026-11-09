@@ -45,8 +45,8 @@ export function Sheet({ open, title, description, icon, onClose, children, foote
 
   return (
     <>
-      {/* Dimming backdrop behind the drawer, below the navbar and right of the sidebar (both stay sharp). */}
-      {overlay && <div aria-hidden className="fixed inset-x-0 top-14 bottom-0 z-40 lg:left-60 animate-fade-in bg-neutral-950/20 backdrop-blur-sm" />}
+      {/* Dimming backdrop behind the drawer, below the navbar and right of the sidebar, open or folded (both stay sharp). */}
+      {overlay && <div aria-hidden className="fixed inset-x-0 top-14 bottom-0 z-40 lg:left-[var(--sidebar-width,15rem)] animate-fade-in bg-neutral-950/20 backdrop-blur-sm" />}
       <div ref={panel} role="dialog" aria-modal={overlay} aria-labelledby="sheet-title" data-floating={floating || undefined}
            className={`fixed top-14 bottom-0 right-0 z-50 flex w-full animate-slide-in-right flex-col whitespace-normal border-l border-neutral-200 bg-neutral-100 text-left font-normal shadow-2xl ${wide ? "md:w-[75vw]" : "md:w-[40vw]"} md:min-w-110`}>
         <header className="flex items-start justify-between gap-4 border-b border-line bg-white px-4 py-4 sm:px-6 sm:py-5">

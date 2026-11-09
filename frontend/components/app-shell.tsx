@@ -77,6 +77,11 @@ function Shell({ children }: { children: ReactNode }) {
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
   useDismiss(drawer, drawerOpen, closeDrawer);
   const collapsed = useSyncExternalStore(subscribeRailed, getRailed, () => false);
+  // The desktop sidebar's width, for what is laid out next to it (the side panel's dim backdrop starts after it):
+  // 4rem folded, 15rem open, none on full-window pages.
+  useEffect(() => {
+    document.documentElement.style.setProperty("--sidebar-width", fullWindow ? "0px" : collapsed ? "4rem" : "15rem");
+  }, [collapsed, fullWindow]);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login");

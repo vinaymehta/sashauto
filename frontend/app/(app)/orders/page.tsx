@@ -6,9 +6,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { createContext, memo, Suspense, useCallback, useContext, useEffect, useMemo, useState, type DragEvent, type ReactNode } from "react";
 import type { Dashboard, InvoiceKind, OrderRow, OrdersPage, OrdersSummary, Role, UploadChoice, UploadDetail } from "@/lib/types";
 import { formatCount, formatDate, formatQty } from "@/lib/format";
-import { AlertIcon, ArrowUpDownIcon, CalendarIcon, CheckIcon, FileIcon, HistoryIcon, MapPinIcon, TableIcon, TruckIcon } from "@/components/icons";
-import { AddressChangesTable } from "@/components/address-changes-table";
-import { ChangesTable } from "@/components/changes-table";
+import { AlertIcon, ArrowUpDownIcon, CheckIcon, FileIcon, HistoryIcon, TableIcon, TruckIcon } from "@/components/icons";
+import { AllChangesTable } from "@/components/all-changes-table";
 import { MoqAlertsTable } from "@/components/moq-alerts-table";
 import { cell, OrderDetailPanel, PlaceOrderPanel } from "@/components/orders/history-row";
 import { CreateOrderPanel, UploadOrdersPanel } from "@/components/orders/create-order-panel";
@@ -16,7 +15,6 @@ import { InvoiceUploadPanel } from "@/components/orders/invoice-upload-panel";
 import { DispatchImportPanel } from "@/components/orders/dispatch-import-panel";
 import { OrderActions, UploadPicker } from "@/components/orders/orders-menu";
 import { ColumnsMenu } from "@/components/orders/columns-menu";
-import { ComparisonTable } from "@/components/comparison-table";
 import { DeliveryCell } from "@/components/orders/delivery-cell";
 import { OpenOrderContext, OrderDetailsLink } from "@/components/orders/order-details-modal";
 import { RelatedLink } from "@/components/orders/related-popover";
@@ -282,7 +280,7 @@ function OrdersView() {
   const [uploadId, setUploadId] = useState<number | null>(null);
   const uploads = useApi<{ data: UploadChoice[] }>(manager ? null : "/api/uploads/history");
 
-  type TabKey = "orders" | "transit" | "fulfilled" | "changes" | "moq" | "compare";
+  type TabKey = "orders" | "transit" | "fulfilled" | "changes" | "moq";
   const [tab, setTab] = useState<TabKey>(params.get("tab") === "changes" ? "changes" : "orders");
   // On a delivery tab (current data only) the list has that tab's Status instead of the Status filter.
   const statusTab = uploadId === null ? STATUS_TABS[tab] : undefined;
@@ -444,21 +442,9 @@ function OrdersView() {
     ...(!shown || (isFirst && moqAlerts === 0) ? [] : [
       { key: "moq" as const, label: "MOQ alerts", icon: <AlertIcon size={17} />, count: moqAlerts },
     ]),
-    // Two versions of one business compared (not in "All").
-    ...(manager || business === "all" ? [] : [
-      { key: "compare" as const, label: "Comparison", icon: <HistoryIcon size={17} />, count: null },
-    ]),
   ];
-  const businessUploads = useMemo(() => (uploads.data?.data ?? []).filter((u) => u.business === business), [uploads.data, business]);
   // Change type the Quantity changes tab starts filtered on (set by clicking a summary card).
   const [changeFilter, setChangeFilter] = useState<string | undefined>(undefined);
-  // Sub-tab of the Changes tab: Quantity, Address or Date (same Qty moved to another Ship Date).
-  const [changeView, setChangeView] = useState<"quantity" | "address" | "date">("quantity");
-  const changeTabs = [
-    { key: "quantity" as const, label: "Quantity", icon: <ArrowUpDownIcon size={15} />, count: quantityChanges },
-    { key: "address" as const, label: "Address", icon: <MapPinIcon size={15} />, count: addressChanges },
-    { key: "date" as const, label: "Date", icon: <CalendarIcon size={15} />, count: dateChanges },
-  ];
   // Fall back to the order rows when the chosen tab no longer exists (e.g. a new first upload).
   const activeTab: TabKey = tabs.some((t) => t.key === tab) ? tab : "orders";
 
@@ -545,31 +531,27 @@ function OrdersView() {
         </dl>
       )}
 
-      <div className="flex items-center overflow-x-auto border-b border-line">
-        <Tabs size="lg" active={activeTab} onChange={(t) => { setChangeFilter(undefined); setTab(t); }} tabs={tabs} />
+      {/* On a phone the Compare button sits above the tabs, so the tabs keep the full width. */}
+      <div className="flex flex-col-reverse border-b border-line sm:flex-row sm:items-center">
+        <div className="min-w-0 overflow-x-auto">
+          <Tabs size="lg" active={activeTab} onChange={(t) => { setChangeFilter(undefined); setTab(t); }} tabs={tabs} />
+        </div>
+        {/* Two versions of one business compared, on their own page (not in "All"). */}
+        {!manager && business !== "all" && (
+          <Link href="/orders/compare"
+                className="mb-2 inline-flex h-9 shrink-0 items-center gap-1.5 self-end rounded-md border border-neutral-300 bg-white px-3 text-sm font-medium text-ink transition-colors hover:border-neutral-400 hover:bg-subtle sm:mb-1.5 sm:ml-auto sm:self-auto">
+            <HistoryIcon size={15} className="text-ink-muted" />
+            Compare versions
+          </Link>
+        )}
       </div>
       {/* Keyed so a tab fades in when opened; the order rows do not depend on the upload summary, so the
           table is not rebuilt when the dashboard data arrives. */}
       <section key={activeTab === "orders" ? "orders" : `${activeTab}-${shown?.id}`} className="animate-fade-in overflow-hidden rounded-lg border border-line border-t-0 bg-surface shadow-card">
         {activeTab === "changes" && shown ? (
-          <>
-            <div className="border-b border-line px-2 sm:px-4">
-              <Tabs active={changeView} onChange={setChangeView} tabs={changeTabs} />
-            </div>
-            {changeView === "address" ? (
-              <AddressChangesTable uploadId={shown.id} manual={current} />
-            ) : changeView === "date" ? (
-              <ChangesTable key="date" mode="date" uploadId={shown.id} manual={current}
-                            emptyDescription="No order row kept its quantity and moved to another Ship Date." />
-            ) : (
-              <ChangesTable key={changeFilter ?? "all"} mode="quantity" uploadId={shown.id} manual={current} direction={changeFilter}
-                            emptyDescription="Every order row present in both the previous and the latest upload has the same quantity." />
-            )}
-          </>
+          <AllChangesTable key={changeFilter ?? "all"} uploadId={shown.id} manual={current} direction={changeFilter} />
         ) : activeTab === "moq" && shown ? (
           <MoqAlertsTable uploadId={shown.id} manual={current} />
-        ) : activeTab === "compare" ? (
-          <ComparisonTable uploads={businessUploads} />
         ) : (
         <>
         <ListToolbar wrap summary={data ? `${formatCount(data.meta.total)} order row${data.meta.total === 1 ? "" : "s"}` : ""}>

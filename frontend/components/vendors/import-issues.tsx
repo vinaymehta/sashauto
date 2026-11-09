@@ -163,7 +163,7 @@ export function ImportIssuesPanel({ canEdit, onChanged }: { canEdit: boolean; on
         />
       ) : data ? (
         <div className={`transition-opacity duration-200 ${loading ? "opacity-50" : ""}`}>
-          <Table fixed minWidth="min-w-[960px]">
+          <Table fixed minWidth="min-w-[960px]" stickyHeader>
             <colgroup>
               <col className="w-60" />
               {showPart && <col className="w-40" />}

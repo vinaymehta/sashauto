@@ -270,7 +270,8 @@ module Api
     end
 
     # Totals of summary lines: Qty ordered, dispatched, in transit, delivered, still to dispatch, orders (open), and the
-    # revenue of the Qty ordered and delivered (Qty × price ÷ 100; lines without a price left out, counted in unpriced).
+    # revenue of the Qty ordered, dispatched and delivered (Qty × price ÷ 100; lines without a price left out, counted in
+    # unpriced). Dispatched includes what is still in transit, so it is not 0 before Deere receives the goods.
     def summary_figures(lines)
       ordered, shipped, delivered = %i[ordered shipped delivered].map { |k| lines.sum(0.to_d) { |l| l[k] } }
       priced = lines.select { |l| l[:price] }
@@ -278,6 +279,7 @@ module Api
         delivered: Serializers.qty(delivered), pending: Serializers.qty([ ordered - shipped, 0 ].max), orders: lines.size,
         open_orders: lines.count { |l| l[:ordered] > l[:shipped] },
         revenue_ordered: (priced.sum(0.to_d) { |l| l[:ordered] * l[:price] / 100 }).round(2).to_s("F"),
+        revenue_dispatched: (priced.sum(0.to_d) { |l| l[:shipped] * l[:price] / 100 }).round(2).to_s("F"),
         revenue_delivered: (priced.sum(0.to_d) { |l| l[:delivered] * l[:price] / 100 }).round(2).to_s("F"),
         unpriced: lines.size - priced.size }
     end

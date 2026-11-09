@@ -77,14 +77,19 @@ export function PartSummaryPanel({ part, uploadId }: { part: string; uploadId?: 
         <section className="rounded-lg border border-line bg-white px-5 py-4 shadow-card">
           <h3 className="text-sm font-semibold text-ink">Revenue</h3>
           <p className="text-xs text-ink-muted">Qty × Deere Unit Price ÷ 100{s.currency ? ` · ${s.currency}` : ""}</p>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <div className="rounded-md bg-neutral-50 px-3 py-2 ring-1 ring-line">
+          {/* Dispatched counts goods on the way too; delivered only what Deere has received (SASH Inc invoice or Outbound). */}
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <div className="min-w-0 rounded-md bg-neutral-50 px-3 py-2 ring-1 ring-line">
               <span className="block text-xs text-ink-muted">On Qty ordered</span>
-              <span className="block text-xl font-semibold tabular text-ink">{money(t.revenue_ordered)}</span>
+              <span className="block truncate text-lg font-semibold tabular text-ink">{money(t.revenue_ordered)}</span>
             </div>
-            <div className="rounded-md bg-green-50/60 px-3 py-2 ring-1 ring-green-200">
-              <span className="block text-xs text-ink-muted">On Qty delivered</span>
-              <span className="block text-xl font-semibold tabular text-green-700">{money(t.revenue_delivered)}</span>
+            <div className="min-w-0 rounded-md bg-violet-50/60 px-3 py-2 ring-1 ring-violet-200">
+              <span className="block text-xs text-ink-muted">On Qty dispatched</span>
+              <span className="block truncate text-lg font-semibold tabular text-violet-700">{money(t.revenue_dispatched ?? "0")}</span>
+            </div>
+            <div className="min-w-0 rounded-md bg-green-50/60 px-3 py-2 ring-1 ring-green-200">
+              <span className="block text-xs text-ink-muted">On Qty delivered to Deere</span>
+              <span className="block truncate text-lg font-semibold tabular text-green-700">{money(t.revenue_delivered)}</span>
             </div>
           </div>
           {t.unpriced > 0 && <p className="mt-2 text-xs text-amber-700">{formatCount(t.unpriced)} order{t.unpriced === 1 ? "" : "s"} without a Deere price, left out.</p>}

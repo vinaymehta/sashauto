@@ -37,7 +37,8 @@ export function PoSummaryPanel({ po, uploadId }: { po: string; uploadId?: number
         <div className="mt-3 flex flex-wrap gap-2 text-xs">
           {([["Parts", formatCount(t.parts)], ["Orders", `${formatCount(t.orders)} (${formatCount(t.open_orders)} open)`],
              ["Forecast", t.forecast_rows ? `${formatQty(t.forecast)} (${formatCount(t.forecast_rows)} rows)` : "—"],
-             ["Revenue (ordered)", money(t.revenue_ordered)], ["Revenue (delivered)", money(t.revenue_delivered)]] as [string, string][]).map(([label, value]) => (
+             ["Revenue (ordered)", money(t.revenue_ordered)], ["Revenue (dispatched)", money(t.revenue_dispatched ?? "0")],
+             ["Revenue (delivered to Deere)", money(t.revenue_delivered)]] as [string, string][]).map(([label, value]) => (
             <span key={label} className="max-w-full truncate rounded-md bg-white px-2 py-1 text-ink-muted ring-1 ring-line" title={value}>
               {label} <span className="font-semibold text-ink">{value}</span>
             </span>

@@ -113,6 +113,50 @@ module Api
                      meta: meta.merge(net: Serializers.qty(net), rescheduled: rescheduled) }
     end
 
+    CHANGE_KINDS = (QuantityChange::DIRECTIONS + %w[address]).freeze
+
+    # Changes tab: every change of this upload in one list, each with its `direction`: Qty up / down (increase,
+    # decrease), row added / removed, date moved (rescheduled: same Qty, another Ship Date) or "address" (Ship To
+    # Address changed). Filters: direction (multi), type (multi), age, q; sort as `changes`. Address changes have no
+    # PO line or Firm Date, so an age filter leaves them out. meta.counts: changes per direction (before the direction
+    # filter); meta.net: the Qty difference of the listed quantity changes.
+    def all_changes
+      batch = UploadBatch.find(params[:id])
+      directions = multi_param(:direction, CHANGE_KINDS)
+      types = multi_param(:type, OrderRows::Normalizer::ORDER_TYPES)
+      term = params[:q].to_s.strip.first(100).presence
+      like = term && "%#{QuantityChange.sanitize_sql_like(term)}%"
+
+      quantity = filter_by_age(detections(batch, QuantityChange))
+      quantity = quantity.where(order_type: types) if types.any?
+      quantity = quantity.where("po_number ILIKE :t OR part_number ILIKE :t OR commodity_type ILIKE :t", t: like) if like
+      address = detections(batch, AddressChange)
+      address = address.where(order_type: types) if types.any?
+      address = address.where("po_number ILIKE :t OR part_number ILIKE :t OR old_address ILIKE :t OR new_address ILIKE :t", t: like) if like
+      address = address.none if params[:age].present?
+
+      counts = quantity.group(:direction).count.merge("address" => address.count)
+      if directions.any?
+        quantity = quantity.where(direction: directions & QuantityChange::DIRECTIONS)
+        address = address.none unless directions.include?("address")
+      end
+      net = quantity.sum(:difference)
+
+      changes = (quantity.to_a + address.to_a).sort_by(&all_changes_order(params[:sort].to_s))
+      page, meta = paginate_array(changes)
+      quantities = page.grep(QuantityChange)
+      firm_dates = Orders::FirmDates.for_rows(quantities)
+      descriptions = part_descriptions(quantities).transform_keys { |id| [ QuantityChange, id ] }
+                       .merge(part_descriptions(page.grep(AddressChange)).transform_keys { |id| [ AddressChange, id ] })
+      render json: {
+        data: page.map do |c|
+          row = c.is_a?(QuantityChange) ? Serializers.quantity_change(c).merge(firm_date: firm_dates[c.id]) : Serializers.address_change(c).merge(direction: "address")
+          row.merge(part_description: descriptions[[ c.class, c.id ]])
+        end,
+        meta: meta.merge(counts: counts, net: Serializers.qty(net))
+      }
+    end
+
     # Uploaded-rows sort keys => fixed SQL (whitelist). "po" and "part" kept for older links.
     ROW_SORTS = {
       "excel_row" => "order_snapshot_rows.source_row_numbers[1]", "type" => "order_snapshot_rows.order_type",
@@ -235,6 +279,16 @@ module Api
       from_file = OrderRow.where(id: row_of.values.compact).pluck(:id, Arel.sql("order_rows.source_data ->> 'Description'")).to_h
       products = Product.where(part_number: records.map(&:part_number).uniq).pluck(:part_number, :description).to_h
       records.to_h { |r| [ r.id, from_file[row_of[r.id]].to_s.squish.presence || products[r.part_number] ] }
+    end
+
+    # Sort key of a change in the Changes tab's one list (quantity and address changes together), as CHANGE_SORTS.
+    def all_changes_order(sort)
+      case sort
+      when "po" then ->(c) { [ c.po_number, c.try(:po_line_number).to_s.rjust(10, "0"), c.ship_date, c.class.name, c.id ] }
+      when "part" then ->(c) { [ c.part_number, c.ship_date, c.class.name, c.id ] }
+      when "difference" then ->(c) { [ -(c.try(:difference) || 0).abs, c.ship_date, c.class.name, c.id ] }
+      else ->(c) { [ c.ship_date, c.po_number, c.try(:po_line_number).to_s.rjust(10, "0"), c.class.name, c.id ] }
+      end
     end
 
     def detections(batch, model)

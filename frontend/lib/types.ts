@@ -751,6 +751,16 @@ export interface AddressChange {
   part_description?: string | null; // the order file's Description, else the product's
 }
 
+// Changes tab of the Orders page: one change of an upload, a quantity or date change (QuantityChange) or a Ship To
+// Address change (direction "address"), in one list.
+export type ChangeKind = Direction | "address";
+export type AnyChange = QuantityChange | (AddressChange & { direction: "address" });
+
+export interface AllChangesPage {
+  data: AnyChange[];
+  meta: PageMeta & { counts: Partial<Record<ChangeKind, number>>; net: string };
+}
+
 // The fields of one vendor workbook row, as text (keys of Vendors::Importer::COLUMNS).
 export type ImportRowData = Partial<Record<"part_number" | "sash_part" | "vendor_part" | "description" | "moq" | "weight_kg" | "vendor_name" | "price", string | null>>;
 
@@ -827,6 +837,7 @@ export interface PartSummaryFigures {
   orders: number; // Firm / Order rows
   open_orders: number; // of them still to dispatch
   revenue_ordered: string; // Qty ordered × Deere Unit Price ÷ 100, in the business's currency
+  revenue_dispatched?: string; // Qty dispatched (in transit and delivered) × Deere Unit Price ÷ 100
   revenue_delivered: string; // Qty delivered × Deere Unit Price ÷ 100
   unpriced: number; // rows without a Deere price (left out of the revenue)
 }

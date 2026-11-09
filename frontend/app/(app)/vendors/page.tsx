@@ -109,7 +109,7 @@ export default function VendorsPage() {
                 name takes the rest. On smaller screens Contact No, Place of Supply, Current Inventory and Code drop out of
                 the table; code, phone and place then show under the name. Some phone fields hold names and notes, so the
                 number is cut with "…" (full text on hover). */}
-            <Table dense>
+            <Table dense stickyHeader>
               <thead>
                 <tr>
                   <SortTh label="Vendor Name" sortKey="name" className="w-full" {...sortProps} />

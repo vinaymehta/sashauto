@@ -43,7 +43,7 @@ export function AvailablePartsPanel() {
         <div className={`transition-opacity duration-200 ${loading ? "opacity-50" : ""}`}>
           {/* Columns size to their content and Description takes the rest; on smaller screens Description and SASH Part
               show under the Part Number instead (and on phones the vendor). */}
-          <Table dense>
+          <Table dense stickyHeader>
             <thead>
               <tr>
                 <Th>Part Number</Th>
