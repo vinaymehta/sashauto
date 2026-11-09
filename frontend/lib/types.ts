@@ -824,6 +824,8 @@ export interface DispatchImportResult {
   orders_marked: number;
   rows_marked: number;
   skipped: { row: number; po_number: string | null; part_number: string | null; invoice_number: string | null; date: string | null; reason: string }[];
+  // Rows marked under our order data's PO (found by Part Number and date), not the PO the file names.
+  po_corrected: { row: number; file_po: string | null; po_number: string; part_number: string | null; invoice_number: string | null; date: string | null }[];
 }
 
 // Product summary (click a Part Number): the part's Firm / Order Qty in the shown order data, dispatched from India, in

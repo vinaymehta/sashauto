@@ -1,12 +1,17 @@
 module Orders
-  # Imports SASH India's list of dispatched orders (columns SASH PART, Qty, POnumber, Invoice Number, Invoice Date and
-  # SHIP DATE REQD or Due Date): each row whose order is in the current order data (the latest upload of each
-  # business) is marked "Dispatched from SASH Faridabad" with its invoice number and date, and "Received at SASH
-  # Faridabad" first when it has no such mark yet (statuses go in route order).
+  # Imports SASH India's dispatched orders: the "List of Dispatched Orders" (one row per shipment: SASH PART, Qty,
+  # POnumber, Invoice Number, Invoice Date and SHIP DATE REQD or Due Date) or "Book 38" (one row per order: Part, Calc
+  # Sales Order No, SHIP DATE REQD, Quantity, Shipped and up to 21 shipments of Invoice No + Qty; each shipment is a
+  # row here, orders with nothing shipped are left out). Each row whose order is in the current order data (the
+  # latest upload of each business) is marked "Dispatched from SASH Faridabad" with its invoice number and date, and
+  # "Received at SASH Faridabad" first when it has no such mark yet (statuses go in route order). Book 38 has no
+  # invoice date: the date of that SASH India invoice when it was uploaded (Invoices), else the import day.
   #
   # A row matches the order with its PO Number + Part Number whose Ship Date or Due Date is the row's date (Firm and
   # Order before Forecast, then those with a Qty, then the same Qty, while that leaves several); with none on that date,
-  # the one Firm / Order order of the PO + Part with the row's Qty. A row of a combined order marks the combined
+  # the one Firm / Order order of the PO + Part with the row's Qty. When the file's PO has no such order (SASH India's
+  # files sometimes name another PO), the PO is taken from the order data: the order of the Part Number on the row's
+  # date, as above, under any PO (listed in po_corrected). A row of a combined order marks the combined
   # order (Orders::Combiner), as the Orders page does. Rows of the same order (sent on several invoices) give one mark
   # with all their invoice numbers; importing the list again adds the invoices such a mark does not have yet. Rows that
   # match nothing, or several orders, and orders already dispatched otherwise are skipped and listed with the reason,
@@ -16,7 +21,8 @@ module Orders
   class DispatchImport
     class InvalidFile < StandardError; end
 
-    Result = Data.define(:rows, :orders_marked, :rows_marked, :skipped)
+    # po_corrected: rows matched under another PO than the file's ({ row:, part_number:, file_po:, po_number:, ... }).
+    Result = Data.define(:rows, :orders_marked, :rows_marked, :skipped, :po_corrected)
 
     # Field => accepted headers (compared without case, spaces and punctuation).
     COLUMNS = {
@@ -25,6 +31,9 @@ module Orders
       date: [ "SHIP DATE REQD", "Ship Date", "Due Date" ]
     }.freeze
     REQUIRED = %i[part_number po_number invoice_number invoice_date date].freeze
+    # Book 38: field => header, and the header of each shipment's invoice number (followed by its Qty column).
+    BOOK_COLUMNS = { part_number: "Part", po_number: "Calc Sales Order No", date: "SHIP DATE REQD", shipped: "Shipped" }.freeze
+    BOOK_INVOICE = "Invoice No"
     # Start of the note of the Dispatched marks it makes (followed by each row's invoice, date and Qty).
     NOTE = "From the dispatched orders list: ".freeze
     HEADER_SEARCH_ROWS = 20
@@ -42,6 +51,7 @@ module Orders
     def call
       rows = read_rows
       skipped = []
+      corrected = []
       orders = {} # anchor row id => [anchor row, [file rows]]
       combined = Combiner.for_batches(batch_ids)
       anchor_of = combined.groups.values.select(&:combined?).flat_map { |g| g.members.map { |m| [ m.id, g.anchor_id ] } }.to_h
@@ -51,6 +61,11 @@ module Orders
 
         match = find_order(row)
         next skipped << skip(row, match) if match.is_a?(String)
+
+        if match.po_number != row[:po_number]
+          corrected << skip(row, nil).except(:reason).merge(file_po: row[:po_number], po_number: match.po_number)
+          row[:po_number] = match.po_number
+        end
 
         row[:order_key] = VendorOrderPlacement.order_key(match) # the order row it was sent for (shown on that row)
         anchor_id = anchor_of.fetch(match.id, match.id)
@@ -68,7 +83,8 @@ module Orders
           rows_marked += file_rows.size
         end
       end
-      Result.new(rows: rows.size, orders_marked: marked, rows_marked: rows_marked, skipped: skipped.sort_by { |s| s[:row] })
+      Result.new(rows: rows.size, orders_marked: marked, rows_marked: rows_marked, skipped: skipped.sort_by { |s| s[:row] },
+                 po_corrected: corrected.sort_by { |c| c[:row] })
     end
 
     private
@@ -77,37 +93,65 @@ module Orders
       @batch_ids ||= UploadBatch.latest_for("all").map(&:id)
     end
 
-    # The order of a file row, or why there is none (a message).
+    # The order of a file row, or why there is none (a message): under the file's PO + Part, else (that PO has no order
+    # of the Part on the row's date or with its Qty, or is not in the order data) the Part's order on the row's date
+    # under any PO of the order data (the PO in our latest pull).
     def find_order(row)
       lines = OrderRow.where(upload_batch_id: batch_ids, po_number: row[:po_number], part_number: row[:part_number])
-      return "PO #{row[:po_number]} + Part #{row[:part_number]} is not in the current order data" unless lines.exists?
+      if lines.exists?
+        found = on_date(lines, row, "this PO + Part")
+        found = same_qty_order(lines, row) if found.nil?
+        return found unless found.is_a?(Symbol)
+      end
 
-      on_date = lines.where(ship_date: row[:date]).or(lines.where(due_date: row[:date])).to_a
-      return same_qty_order(lines, row) if on_date.empty?
+      part_lines = OrderRow.where(upload_batch_id: batch_ids, part_number: row[:part_number])
+      return "Part #{row[:part_number]} is not in the current order data" unless part_lines.exists?
 
-      firm = on_date.reject { |line| line.order_type == "Forecast" }
-      on_date = firm if firm.any?
+      found = on_date(part_lines, row, "this Part")
+      return found unless found.nil?
+
+      if lines.exists?
+        "no order of this PO + Part is on #{row[:date].strftime('%d %b %Y')} or has its Qty, and no other PO of the Part is on that date " \
+          "(the delivery is no longer in Deere's file)"
+      else
+        "PO #{row[:po_number]} + Part #{row[:part_number]} is not in the current order data, and no order of the Part is on " \
+          "#{row[:date].strftime('%d %b %Y')}"
+      end
+    end
+
+    # The one order of `lines` on the row's date (Ship Date or Due Date), a message when there are several, nil when none.
+    def on_date(lines, row, what)
+      found = lines.where(ship_date: row[:date]).or(lines.where(due_date: row[:date])).to_a
+      return nil if found.empty?
+
+      firm = found.reject { |line| line.order_type == "Forecast" }
+      found = firm if firm.any?
       # Deere's file can list the same order line twice, once without a Qty (nothing required): the one with a Qty.
-      with_qty = on_date.select { |line| line.qty.to_d.positive? }
-      on_date = with_qty if with_qty.any?
-      same_qty = on_date.select { |line| row[:qty] && line.qty == row[:qty] }
-      on_date = same_qty if on_date.size > 1 && same_qty.any?
-      on_date = distinct_orders(on_date)
-      return "#{on_date.size} orders of this PO + Part are on #{row[:date].strftime('%d %b %Y')} (PO Lines #{on_date.map(&:po_line_number).join(', ')})" if on_date.size > 1
+      with_qty = found.select { |line| line.qty.to_d.positive? }
+      found = with_qty if with_qty.any?
+      same_qty = found.select { |line| row[:qty] && line.qty == row[:qty] }
+      found = same_qty if found.size > 1 && same_qty.any?
+      # Several POs of the Part on that date: the file's PO among them.
+      own_po = found.select { |line| line.po_number == row[:po_number] }
+      found = own_po if found.size > 1 && own_po.any?
+      found = distinct_orders(found)
+      return found.first if found.one?
 
-      on_date.first
+      "#{found.size} orders of #{what} are on #{row[:date].strftime('%d %b %Y')} " \
+        "(#{found.map { |line| "PO #{line.po_number} Line #{line.po_line_number}" }.join(', ')})"
     end
 
     # No order on the list's date (its date is not always Deere's, e.g. GMBH's Due Date moved): the one Firm / Order
     # order of this PO + Part with the same Qty. Only with the same Qty: an order of the PO + Part on another date with
     # another Qty is a later delivery, not the one dispatched (Deere drops a delivery from its file once received).
+    # :none when there is none.
     def same_qty_order(lines, row)
       on = row[:date].strftime("%d %b %Y")
       same = distinct_orders(lines.where.not(order_type: "Forecast").where(qty: row[:qty]).to_a) if row[:qty]&.positive?
       return same.first if same&.one?
       return "#{same.size} orders of this PO + Part have Qty #{row[:qty].to_s('F').sub(/\.0\z/, '')} and none is on #{on}" if same&.many?
 
-      "no order of this PO + Part is on #{on} or has its Qty (the delivery is no longer in Deere's file)"
+      :none
     end
 
     # Order lines that are the same order (Deere's file can list an order line twice) once.
@@ -195,8 +239,15 @@ module Orders
       sheet = Roo::Excelx.new(@path.to_s, extension: :xlsx, file_warning: :ignore).sheet(0)
       raise InvalidFile, "The workbook is empty." unless sheet.first_row
 
-      header_row = (sheet.first_row..[ sheet.last_row, sheet.first_row + HEADER_SEARCH_ROWS ].min).find { |n| header_index(sheet.row(n)) }
-      raise InvalidFile, "Could not find the header row. Expected columns: SASH PART, POnumber, Invoice Number, Invoice Date, SHIP DATE REQD or Due Date." unless header_row
+      search = sheet.first_row..[ sheet.last_row, sheet.first_row + HEADER_SEARCH_ROWS ].min
+      header_row = search.find { |n| header_index(sheet.row(n)) }
+      unless header_row
+        book_row = search.find { |n| book_index(sheet.row(n)) }
+        return book_rows(sheet, book_row) if book_row
+
+        raise InvalidFile, "Could not find the header row. Expected the List of Dispatched Orders (SASH PART, POnumber, Invoice Number, " \
+                           "Invoice Date, SHIP DATE REQD or Due Date) or Book 38 (Part, Calc Sales Order No, SHIP DATE REQD, Invoice No, Qty)."
+      end
 
       index = header_index(sheet.row(header_row))
       ((header_row + 1)..sheet.last_row).filter_map do |number|
@@ -238,6 +289,40 @@ module Orders
       end
     rescue Date::Error
       nil
+    end
+
+    # Book 38's rows: each shipment (Invoice No + Qty) of each order as a row of the list, its invoice date from the
+    # uploaded SASH India invoice, else today. Orders without a shipment are left out.
+    def book_rows(sheet, header_row)
+      index = book_index(sheet.row(header_row))
+      rows = ((header_row + 1)..sheet.last_row).filter_map do |number|
+        cells = sheet.row(number)
+        next if cells.all? { |c| OrderRows::Normalizer.text(c).nil? }
+        raise InvalidFile, "The file has more than #{MAX_ROWS} rows." if number - header_row > MAX_ROWS
+
+        shipments = index[:invoices].filter_map do |i|
+          invoice = OrderRows::Normalizer.text(cells[i])&.first(64)
+          [ invoice, cells[i + 1] ] if invoice
+        end
+        next if shipments.empty?
+
+        shipments.map do |invoice, qty|
+          # Today for now (the file has no invoice date); the uploaded invoice's date replaces it below.
+          read_row(number, { part_number: cells[index[:part_number]], po_number: cells[index[:po_number]], invoice_number: invoice,
+                             qty: qty, date: cells[index[:date]], invoice_date: Date.current })
+        end
+      end.flatten
+      dates = Invoice.where(kind: "india", invoice_number: rows.map { |r| r[:invoice_number] }.uniq, removed_at: nil)
+                     .group(:invoice_number).minimum(:invoice_date)
+      rows.each { |row| row[:invoice_date] = dates.fetch(row[:invoice_number], row[:invoice_date]) }
+    end
+
+    # Book 38's header row: { field => column index, invoices: [column of each shipment's Invoice No] }, else nil.
+    def book_index(cells)
+      labels = cells.map { |c| canonical(c) }
+      found = BOOK_COLUMNS.transform_values { |name| labels.index(canonical(name)) }
+      invoices = labels.each_index.select { |i| labels[i] == canonical(BOOK_INVOICE) && labels[i + 1] == canonical("Qty") }
+      found.values.all? && invoices.any? ? found.merge(invoices: invoices) : nil
     end
 
     # { field => column index } when this row has every required header, else nil.

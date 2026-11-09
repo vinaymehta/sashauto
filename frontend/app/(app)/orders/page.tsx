@@ -6,8 +6,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { createContext, memo, Suspense, useCallback, useContext, useEffect, useMemo, useState, type DragEvent, type ReactNode } from "react";
 import type { Dashboard, InvoiceKind, OrderRow, OrdersPage, OrdersSummary, Role, UploadChoice, UploadDetail } from "@/lib/types";
 import { formatCount, formatDate, formatQty } from "@/lib/format";
-import { AlertIcon, ArrowUpDownIcon, CheckIcon, FileIcon, HistoryIcon, TableIcon, TruckIcon } from "@/components/icons";
+import { AlertIcon, ArrowUpDownIcon, CalendarIcon, CheckIcon, FileIcon, HistoryIcon, TableIcon, TruckIcon } from "@/components/icons";
 import { AllChangesTable } from "@/components/all-changes-table";
+import { OrderSummaryPanel } from "@/components/products/order-summary";
 import { MoqAlertsTable } from "@/components/moq-alerts-table";
 import { cell, OrderDetailPanel, PlaceOrderPanel } from "@/components/orders/history-row";
 import { CreateOrderPanel, UploadOrdersPanel } from "@/components/orders/create-order-panel";
@@ -246,7 +247,7 @@ const OrderTr = memo(function OrderTr({ row, columns, open, today, role, onChang
   );
 });
 
-// ?tab=changes opens the Changes tab (Quantity view) (e.g. "View all" on the Dashboard).
+// ?tab=changes opens the Changes tab (e.g. "View all" on the Dashboard), ?tab=summary the Order summary.
 // Filter keys a link to the Orders page may set.
 const LINKABLE_FILTERS = ["type", "status", "source", "timing", "ship_date_from", "ship_date_to", "firm_date_from", "firm_date_to", "age",
   "po", "vendor", "moq", "combined", "ship_to"];
@@ -280,8 +281,8 @@ function OrdersView() {
   const [uploadId, setUploadId] = useState<number | null>(null);
   const uploads = useApi<{ data: UploadChoice[] }>(manager ? null : "/api/uploads/history");
 
-  type TabKey = "orders" | "transit" | "fulfilled" | "changes" | "moq";
-  const [tab, setTab] = useState<TabKey>(params.get("tab") === "changes" ? "changes" : "orders");
+  type TabKey = "orders" | "transit" | "fulfilled" | "changes" | "moq" | "summary";
+  const [tab, setTab] = useState<TabKey>(params.get("tab") === "changes" ? "changes" : params.get("tab") === "summary" ? "summary" : "orders");
   // On a delivery tab (current data only) the list has that tab's Status instead of the Status filter.
   const statusTab = uploadId === null ? STATUS_TABS[tab] : undefined;
   const business = getBusiness();
@@ -442,6 +443,10 @@ function OrdersView() {
     ...(!shown || (isFirst && moqAlerts === 0) ? [] : [
       { key: "moq" as const, label: "MOQ alerts", icon: <AlertIcon size={17} />, count: moqAlerts },
     ]),
+    // The Order summary (as on Products), for those who can see the Products.
+    ...(can(me, "products") ? [
+      { key: "summary" as const, label: "Order summary", icon: <CalendarIcon size={17} />, count: null },
+    ] : []),
   ];
   // Change type the Quantity changes tab starts filtered on (set by clicking a summary card).
   const [changeFilter, setChangeFilter] = useState<string | undefined>(undefined);
@@ -552,6 +557,8 @@ function OrdersView() {
           <AllChangesTable key={changeFilter ?? "all"} uploadId={shown.id} manual={current} direction={changeFilter} />
         ) : activeTab === "moq" && shown ? (
           <MoqAlertsTable uploadId={shown.id} manual={current} />
+        ) : activeTab === "summary" ? (
+          <OrderSummaryPanel bare />
         ) : (
         <>
         <ListToolbar wrap summary={data ? `${formatCount(data.meta.total)} order row${data.meta.total === 1 ? "" : "s"}` : ""}>
