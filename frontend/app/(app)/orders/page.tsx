@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { createContext, memo, Suspense, useCallback, useContext, useEffect, useMemo, useState, type DragEvent, type ReactNode } from "react";
 import type { Dashboard, InvoiceKind, OrderRow, OrdersPage, OrdersSummary, Role, UploadChoice, UploadDetail } from "@/lib/types";
 import { formatCount, formatDate, formatQty } from "@/lib/format";
-import { AlertIcon, ArrowUpDownIcon, CheckIcon, FileIcon, HistoryIcon, MapPinIcon, TableIcon, TruckIcon } from "@/components/icons";
+import { AlertIcon, ArrowUpDownIcon, CalendarIcon, CheckIcon, FileIcon, HistoryIcon, MapPinIcon, TableIcon, TruckIcon } from "@/components/icons";
 import { AddressChangesTable } from "@/components/address-changes-table";
 import { ChangesTable } from "@/components/changes-table";
 import { MoqAlertsTable } from "@/components/moq-alerts-table";
@@ -248,7 +248,7 @@ const OrderTr = memo(function OrderTr({ row, columns, open, today, role, onChang
   );
 });
 
-// ?tab=changes opens the Quantity changes tab (e.g. "View all" on the Dashboard).
+// ?tab=changes opens the Changes tab (Quantity view) (e.g. "View all" on the Dashboard).
 // Filter keys a link to the Orders page may set.
 const LINKABLE_FILTERS = ["type", "status", "source", "timing", "ship_date_from", "ship_date_to", "firm_date_from", "firm_date_to", "age",
   "po", "vendor", "moq", "combined", "ship_to"];
@@ -282,7 +282,7 @@ function OrdersView() {
   const [uploadId, setUploadId] = useState<number | null>(null);
   const uploads = useApi<{ data: UploadChoice[] }>(manager ? null : "/api/uploads/history");
 
-  type TabKey = "orders" | "transit" | "fulfilled" | "changes" | "addresses" | "moq" | "compare";
+  type TabKey = "orders" | "transit" | "fulfilled" | "changes" | "moq" | "compare";
   const [tab, setTab] = useState<TabKey>(params.get("tab") === "changes" ? "changes" : "orders");
   // On a delivery tab (current data only) the list has that tab's Status instead of the Status filter.
   const statusTab = uploadId === null ? STATUS_TABS[tab] : undefined;
@@ -427,6 +427,8 @@ function OrdersView() {
   const isFirst = shown?.previous_version === null;
   const quantityChanges = (shown?.stats.increase_count ?? 0) + (shown?.stats.decrease_count ?? 0) + (shown?.stats.new_row_count ?? 0) + (shown?.stats.missing_row_count ?? 0) + (manual?.quantity_changes ?? 0);
   const addressChanges = (shown?.stats.address_change_count ?? 0) + (manual?.address_changes ?? 0);
+  const dateChanges = shown?.stats.rescheduled_count ?? 0;
+  const allChanges = quantityChanges + addressChanges + dateChanges;
   const moqAlerts = (shown?.stats.moq_alert_count ?? 0) + (manual?.moq_alerts ?? 0);
   // The delivery tabs fix the Status, so its filter is not offered there.
   const listFilters = statusTab ? filters.filter((g) => g.key !== "status") : filters;
@@ -436,9 +438,8 @@ function OrdersView() {
       { key: "transit" as const, label: "In transit", icon: <TruckIcon size={17} />, count: summary.data.in_transit },
       { key: "fulfilled" as const, label: "Orders fulfilled", icon: <CheckIcon size={17} />, count: summary.data.fulfilled },
     ] : []),
-    ...(!shown || (isFirst && quantityChanges + addressChanges === 0) ? [] : [
-      { key: "changes" as const, label: "Quantity changes", icon: <ArrowUpDownIcon size={17} />, count: quantityChanges },
-      { key: "addresses" as const, label: "Address changes", icon: <MapPinIcon size={17} />, count: addressChanges },
+    ...(!shown || (isFirst && allChanges === 0) ? [] : [
+      { key: "changes" as const, label: "Changes", icon: <ArrowUpDownIcon size={17} />, count: allChanges },
     ]),
     ...(!shown || (isFirst && moqAlerts === 0) ? [] : [
       { key: "moq" as const, label: "MOQ alerts", icon: <AlertIcon size={17} />, count: moqAlerts },
@@ -451,6 +452,13 @@ function OrdersView() {
   const businessUploads = useMemo(() => (uploads.data?.data ?? []).filter((u) => u.business === business), [uploads.data, business]);
   // Change type the Quantity changes tab starts filtered on (set by clicking a summary card).
   const [changeFilter, setChangeFilter] = useState<string | undefined>(undefined);
+  // Sub-tab of the Changes tab: Quantity, Address or Date (same Qty moved to another Ship Date).
+  const [changeView, setChangeView] = useState<"quantity" | "address" | "date">("quantity");
+  const changeTabs = [
+    { key: "quantity" as const, label: "Quantity", icon: <ArrowUpDownIcon size={15} />, count: quantityChanges },
+    { key: "address" as const, label: "Address", icon: <MapPinIcon size={15} />, count: addressChanges },
+    { key: "date" as const, label: "Date", icon: <CalendarIcon size={15} />, count: dateChanges },
+  ];
   // Fall back to the order rows when the chosen tab no longer exists (e.g. a new first upload).
   const activeTab: TabKey = tabs.some((t) => t.key === tab) ? tab : "orders";
 
@@ -544,10 +552,20 @@ function OrdersView() {
           table is not rebuilt when the dashboard data arrives. */}
       <section key={activeTab === "orders" ? "orders" : `${activeTab}-${shown?.id}`} className="animate-fade-in overflow-hidden rounded-lg border border-line border-t-0 bg-surface shadow-card">
         {activeTab === "changes" && shown ? (
-          <ChangesTable key={changeFilter ?? "all"} uploadId={shown.id} manual={current} direction={changeFilter}
-                        emptyDescription="Every order row present in both the previous and the latest upload has the same quantity." />
-        ) : activeTab === "addresses" && shown ? (
-          <AddressChangesTable uploadId={shown.id} manual={current} />
+          <>
+            <div className="border-b border-line px-2 sm:px-4">
+              <Tabs active={changeView} onChange={setChangeView} tabs={changeTabs} />
+            </div>
+            {changeView === "address" ? (
+              <AddressChangesTable uploadId={shown.id} manual={current} />
+            ) : changeView === "date" ? (
+              <ChangesTable key="date" mode="date" uploadId={shown.id} manual={current}
+                            emptyDescription="No order row kept its quantity and moved to another Ship Date." />
+            ) : (
+              <ChangesTable key={changeFilter ?? "all"} mode="quantity" uploadId={shown.id} manual={current} direction={changeFilter}
+                            emptyDescription="Every order row present in both the previous and the latest upload has the same quantity." />
+            )}
+          </>
         ) : activeTab === "moq" && shown ? (
           <MoqAlertsTable uploadId={shown.id} manual={current} />
         ) : activeTab === "compare" ? (

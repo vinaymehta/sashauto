@@ -31,17 +31,24 @@ const FILTERS: FilterGroup[] = [
   AGE_FILTER,
 ];
 
+// Quantity changes without the date moves; `mode` "date" lists only the date moves (rescheduled: same Qty, another Ship Date).
+const QUANTITY_FILTERS = FILTERS.map((g) => (g.key === "direction" ? { ...g, options: g.options.filter((o) => o.value !== "rescheduled") } : g));
+const DATE_FILTERS = FILTERS.filter((g) => g.key !== "direction");
+
 // `manual`: also list quantity changes from manual order edits since this (latest) upload.
-// `direction`: start filtered on one change type (e.g. from a summary card).
-export function ChangesTable({ uploadId, emptyDescription, manual = false, direction }: {
-  uploadId: number; emptyDescription?: string; manual?: boolean; direction?: string;
+// `direction`: start filtered on one change type (e.g. from a summary card). `mode`: "quantity" (Qty up / down, rows added /
+// removed) or "date" (Ship Date moves only), the Changes tab's Quantity and Date sub-tabs.
+export function ChangesTable({ uploadId, emptyDescription, manual = false, direction, mode = "quantity" }: {
+  uploadId: number; emptyDescription?: string; manual?: boolean; direction?: string; mode?: "quantity" | "date";
 }) {
+  const filterGroups = mode === "date" ? DATE_FILTERS : QUANTITY_FILTERS;
   const list = useListQuery(direction ? { direction } : {});
   const [search, setSearch] = useState("");
   const q = useDebounced(search.trim());
 
   const { data, error, loading } = useApi<Paginated<QuantityChange> & { meta: { net: string; rescheduled: number } }>(`/api/uploads/${uploadId}/changes`, {
-    q, ...list.filters, today: todayParam(), page: list.page, per_page: list.perPage, manual: manual ? 1 : undefined,
+    q, ...list.filters, ...(mode === "date" ? { direction: "rescheduled" } : {}), today: todayParam(), page: list.page, per_page: list.perPage,
+    manual: manual ? 1 : undefined,
   });
   const filtered = q !== "" || Object.values(list.filters).some(Boolean);
   const clearAll = () => { list.clearFilters(); setSearch(""); };
@@ -51,19 +58,16 @@ export function ChangesTable({ uploadId, emptyDescription, manual = false, direc
     <div>
       <ListToolbar summary={data ? (
         <>
-          {formatCount(data.meta.total)} change{data.meta.total === 1 ? "" : "s"} · net {formatDifference(data.meta.net)}
-          {data.meta.rescheduled > 0 && !list.filters.direction && (
-            <> · <button type="button" className="font-medium text-accent hover:underline" onClick={() => list.setFilter("direction", "rescheduled")}>
-              {formatCount(data.meta.rescheduled)} rescheduled
-            </button></>
-          )}
+          {mode === "date"
+            ? <>{formatCount(data.meta.total)} date change{data.meta.total === 1 ? "" : "s"} (same Qty, another Ship Date)</>
+            : <>{formatCount(data.meta.total)} change{data.meta.total === 1 ? "" : "s"} · net {formatDifference(data.meta.net)}</>}
         </>
       ) : ""}>
         <SearchInput label="Search changes" placeholder="Search PO, part number or commodity" value={search}
                      onSearch={(v) => { setSearch(v); list.resetPage(); }} className="w-full sm:w-72" />
-        <FilterMenu groups={FILTERS} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
+        <FilterMenu groups={filterGroups} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
       </ListToolbar>
-      <FilterChips groups={FILTERS} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
+      <FilterChips groups={filterGroups} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
       <AgeLegend value={list.filters.age} onChange={(v) => list.setFilter("age", v)} />
 
       {error ? (
@@ -80,7 +84,7 @@ export function ChangesTable({ uploadId, emptyDescription, manual = false, direc
         ) : (
           <div className="py-16 px-4 flex flex-col items-center justify-center text-center">
             <CheckIcon size={32} className="text-neutral-300 mb-3" />
-            <p className="text-sm font-semibold text-neutral-900">No quantity changes</p>
+            <p className="text-sm font-semibold text-neutral-900">{mode === "date" ? "No date changes" : "No quantity changes"}</p>
             {emptyDescription && <p className="text-xs text-neutral-400 mt-1 max-w-xs">{emptyDescription}</p>}
           </div>
         )
