@@ -48,6 +48,8 @@ Rails.application.routes.draw do
         get :summary
         get :by_po
         get :by_part
+        get :part_summary
+        get :parts_summary
       end
     end
     resources :order_deliveries, only: :destroy do

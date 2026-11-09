@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { UploadChoice, VersionDiffPage } from "@/lib/types";
 import { formatCount, formatDate, formatDateTime, formatDifference, formatQty } from "@/lib/format";
+import { RelatedLink } from "./orders/related-popover";
 import { useApi, useDebounced } from "./use-api";
 import { useListQuery } from "./use-list-query";
 import { ChangeArrow } from "./direction";
@@ -132,7 +133,7 @@ export function ComparisonTable({ uploads }: { uploads: UploadChoice[] }) {
                     <tr key={`${l.po_number}|${l.po_line_number}|${l.part_number}|${l.ship_date}|${l.direction}`} className="hover:bg-canvas">
                       <Td className="font-medium">{l.po_number}</Td>
                       <Td className="text-ink-muted">{l.po_line_number}</Td>
-                      <Td>{l.part_number}</Td>
+                      <Td><RelatedLink kind="part" value={l.part_number} uploadId={shown?.to} /></Td>
                       <Td><span className="block w-72 whitespace-normal break-words py-1 leading-snug">{l.part_description || "—"}</span></Td>
                       <Td>{l.order_type}</Td>
                       <Td className="tabular">

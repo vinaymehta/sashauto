@@ -6,10 +6,11 @@ import { BoxIcon, FileIcon } from "../icons";
 import { useApi } from "../use-api";
 import { Spinner } from "../ui/feedback";
 import { Sheet } from "../ui/sheet";
+import { PartSummaryPanel } from "./part-summary";
 
-// Clickable PO Number / Part Number. Opens the right-hand side panel listing the related Part Numbers
-// (for a PO) or PO Numbers (for a Part), fetched from the server for the shown upload (`uploadId`;
-// undefined = the current order data).
+// Clickable PO Number / Part Number. Opens the right-hand side panel: for a PO the related Part Numbers, for a Part its
+// Product summary (ordered, dispatched, in transit, delivered, pending; per PO), in a wide panel; from the server for the
+// shown upload (`uploadId`; undefined = the current order data).
 export function RelatedLink({ kind, value, uploadId }: { kind: "po" | "part"; value: string; uploadId?: number }) {
   const [open, setOpen] = useState(false);
 
@@ -29,11 +30,13 @@ export function RelatedLink({ kind, value, uploadId }: { kind: "po" | "part"; va
           <Sheet
             open={open}
             onClose={() => setOpen(false)}
-            title={kind === "po" ? `PO ${value}` : `Part ${value}`}
-            description={kind === "po" ? "Part Numbers on this PO in the current order data." : "PO Numbers that include this part in the current order data."}
+            wide={kind === "part"}
+            title={kind === "po" ? `PO ${value}` : `Product summary · ${value}`}
+            description={kind === "po" ? "Part Numbers on this PO in the current order data."
+              : uploadId ? "This part's orders in the shown upload." : "This part's orders in the current order data."}
             icon={kind === "po" ? <FileIcon size={18} /> : <BoxIcon size={18} />}
           >
-            <RelatedList kind={kind} value={value} uploadId={uploadId} />
+            {kind === "part" ? <PartSummaryPanel part={value} uploadId={uploadId} /> : <RelatedList kind={kind} value={value} uploadId={uploadId} />}
           </Sheet>
         </span>
       )}

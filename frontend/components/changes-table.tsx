@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { Paginated, QuantityChange } from "@/lib/types";
 import { formatCount, formatDate, formatDifference, formatQty } from "@/lib/format";
 import { AGE_FILTER, AgeLegend, ageRowProps, todayParam } from "./age";
+import { RelatedLink } from "./orders/related-popover";
 import { useApi, useDebounced } from "./use-api";
 import { useListQuery } from "./use-list-query";
 import { ChangeArrow } from "./direction";
@@ -106,7 +107,7 @@ export function ChangesTable({ uploadId, emptyDescription, manual = false, direc
                 <tr key={c.id} {...ageRowProps(c.firm_date, today, "hover:bg-canvas")}>
                   <Td className="font-medium">{c.po_number}</Td>
                   <Td className="text-ink-muted">{c.po_line_number}</Td>
-                  <Td>{c.part_number}</Td>
+                  <Td><RelatedLink kind="part" value={c.part_number} uploadId={manual ? undefined : uploadId} /></Td>
                   <Td><span className="block w-72 whitespace-normal break-words py-1 leading-snug">{c.part_description || "—"}</span></Td>
                   <Td className="text-ink-muted">{c.commodity_type ?? "—"}</Td>
                   <Td>{c.order_type}</Td>

@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { AddressChange, Paginated } from "@/lib/types";
 import { formatCount, formatDate } from "@/lib/format";
 import { CheckIcon } from "./icons";
+import { RelatedLink } from "./orders/related-popover";
 import { useApi, useDebounced } from "./use-api";
 import { useListQuery } from "./use-list-query";
 import { Alert } from "./ui/feedback";
@@ -58,7 +59,7 @@ export function AddressChangesTable({ uploadId, manual = false }: { uploadId: nu
               {data.data.map((c) => (
                 <tr key={c.id} className="transition-colors hover:bg-canvas">
                   <Td className="font-medium">{c.po_number}</Td>
-                  <Td>{c.part_number}</Td>
+                  <Td><RelatedLink kind="part" value={c.part_number} uploadId={manual ? undefined : uploadId} /></Td>
                   <Td><span className="block w-72 whitespace-normal break-words py-1 leading-snug">{c.part_description || "—"}</span></Td>
                   <Td>{c.order_type}</Td>
                   <Td className="tabular">{formatDate(c.ship_date)}</Td>

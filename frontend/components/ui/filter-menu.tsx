@@ -83,6 +83,14 @@ export function FilterMenu({ groups, values, onChange, onClear }: {
           </span>
         )}
       </button>
+      {/* With a filter applied: clear every filter at once, without opening the panel. */}
+      {active > 0 && (
+        <button type="button" onClick={onClear} title="Clear all filters"
+                className="inline-flex h-9 shrink-0 animate-fade-in items-center gap-1.5 rounded-md px-2.5 text-sm font-medium text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900">
+          <CloseIcon size={14} />
+          Clear
+        </button>
+      )}
 
       <Sheet
         open={open}

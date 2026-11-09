@@ -815,3 +815,40 @@ export interface DispatchImportResult {
   rows_marked: number;
   skipped: { row: number; po_number: string | null; part_number: string | null; invoice_number: string | null; date: string | null; reason: string }[];
 }
+
+// Product summary (click a Part Number): the part's Firm / Order Qty in the shown order data, dispatched from India, in
+// transit, delivered to Deere and still to dispatch, in total and per PO, plus its Forecast, vendor PO Qty and product.
+export interface PartSummaryFigures {
+  ordered: string;
+  dispatched: string;
+  in_transit: string;
+  delivered: string;
+  pending: string;
+  orders: number; // Firm / Order rows
+  open_orders: number; // of them still to dispatch
+  revenue_ordered: string; // Qty ordered × Deere Unit Price ÷ 100, in the business's currency
+  revenue_delivered: string; // Qty delivered × Deere Unit Price ÷ 100
+  unpriced: number; // rows without a Deere price (left out of the revenue)
+}
+
+export interface PartSummary {
+  part_number: string;
+  description: string | null;
+  moq: string | null;
+  pack_size: number | null;
+  discontinued: boolean;
+  currency: string | null; // of the Deere prices (null: the businesses shown use different ones)
+  vendors: { name: string; price: string | null; set_price: string | null; currency: string; price_text: string | null; note: string | null;
+             pack_size: number; moq: string | null }[];
+  totals: PartSummaryFigures & { forecast: string; vendor_po: string; pos: number };
+  pos: (PartSummaryFigures & { po_number: string; types: string[]; next_ship_date: string | null; last_ship_date: string })[];
+}
+
+// Products → Product summary: every part of the shown order data with its Product summary figures.
+export interface PartsSummaryRow extends PartSummaryFigures {
+  part_number: string;
+  description: string | null;
+  moq: string | null;
+  forecast: string;
+  pos: number;
+}

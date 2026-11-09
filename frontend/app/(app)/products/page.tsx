@@ -13,6 +13,7 @@ import { DtpImportButton } from "@/components/vendors/dtp-import";
 import { ImportIssuesPanel, useOpenImportIssues } from "@/components/vendors/import-issues";
 import { AvailablePartsPanel } from "@/components/products/available-parts";
 import { OrderSummaryPanel } from "@/components/products/order-summary";
+import { ProductTotalsPanel } from "@/components/products/product-totals";
 import { Tabs } from "@/components/ui/tabs";
 import { useSession } from "@/components/session";
 import { useApi, useDebounced } from "@/components/use-api";
@@ -74,9 +75,10 @@ function ProductsView() {
   const sortProps = { sort: list.sort, direction: list.direction, onSort: list.toggleSort };
   const [viewing, setViewing] = useState<{ product: Product; edit: boolean } | null>(null);
   const [adding, setAdding] = useState(false);
-  // The list, the Current inventory tab (vendor-wise check list), the Order summary tab (Firm / Addition / Forecast per
-  // part and day) or the Import issues tab (problems from vendor file imports).
-  const [view, setView] = useState<"list" | "available" | "summary" | "issues">(params.get("tab") === "summary" ? "summary" : "list");
+  // The list, the Current inventory tab (vendor-wise check list), the Product summary tab (each part's ordered,
+  // dispatched, delivered, pending and revenue), the Order summary tab (Firm / Addition / Forecast per part and day) or
+  // the Import issues tab (problems from vendor file imports).
+  const [view, setView] = useState<"list" | "available" | "totals" | "summary" | "issues">(params.get("tab") === "summary" ? "summary" : "list");
   // The Order summary is kept in the address (?tab=summary), so it stays open when DTP / GMBH is switched (the page is
   // shown anew).
   const router = useRouter();
@@ -102,6 +104,7 @@ function ProductsView() {
         <Tabs active={view} onChange={openView} tabs={[
           { key: "list" as const, label: "Products", count: data?.meta.total ?? null },
           { key: "available" as const, label: "Current inventory" },
+          { key: "totals" as const, label: "Product summary" },
           { key: "summary" as const, label: "Order summary" },
           { key: "issues" as const, label: "Import issues", count: issues.count },
         ]} />
@@ -111,6 +114,8 @@ function ProductsView() {
         <div className="mt-4"><ImportIssuesPanel canEdit={isAdmin} onChanged={() => { reload(); issues.reload(); }} /></div>
       ) : view === "available" ? (
         <div className="mt-4"><AvailablePartsPanel /></div>
+      ) : view === "totals" ? (
+        <div className="mt-4"><ProductTotalsPanel /></div>
       ) : view === "summary" ? (
         <div className="mt-4"><OrderSummaryPanel /></div>
       ) : (

@@ -244,7 +244,7 @@ function StatusPanel({ row, role, initial, onClose, onChanged }: {
   const invoices: Partial<Record<DeliveryKind, string | null>> = { dispatched: invoiceSummary(row, "india"), outbound: invoiceSummary(row, "inc") };
 
   return (
-    <Sheet open onClose={onClose} title="Order status" icon={<TruckIcon size={18} />}
+    <Sheet open wide onClose={onClose} title="Order status" icon={<TruckIcon size={18} />}
            description={`${doneSteps} of ${STATUS_STEPS.length} steps done`}
            footer={
              <>

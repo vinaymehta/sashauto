@@ -179,6 +179,93 @@ module Api
       }
     end
 
+    # Product summary (click a Part Number): the part's orders in the shown order data (see #dataset) with, for its
+    # Firm / Order rows, the Qty ordered, dispatched from India (SASH India invoices or the dispatched orders list), in
+    # transit, delivered to Deere (SASH Inc invoices or Outbound) and still to dispatch, as the Orders list shows each row,
+    # and the revenue (Qty × Deere Unit Price ÷ 100, as on the Dashboard) of what was ordered and delivered; totals, per
+    # PO, its Forecast Qty and vendor PO Qty, and the product with each vendor's price.
+    def part_summary
+      part = OrderRows::Normalizer.part_number(params.require(:part).to_s)
+      batches = selected_batches
+      load_combined_orders(Orders::Combiner.for_batches(batches.map(&:id)))
+      rows = dataset(batches).where(part_number: part).to_a
+      lines = summary_lines(rows)
+      placed = ordered_by_key(rows)
+      product = Product.includes(vendor_products: :vendor).find_by(part_number: part)
+      render json: { data: {
+        part_number: part, description: product&.description, moq: Serializers.qty(product && (product.moq_sets || product.moq)),
+        pack_size: product&.pack_size, discontinued: product&.discontinued? || false, currency: summary_currency,
+        vendors: (product&.vendor_products || []).sort_by { |vp| vp.vendor.name }.map do |vp|
+          { name: vp.vendor.name, price: Serializers.qty(vp.price_amount), set_price: Serializers.qty(vp.set_price_amount), currency: vp.price_currency,
+            price_text: vp.price_text, note: vp.price_note, pack_size: vp.pack_size, moq: vp.moq_text.presence || Serializers.qty(vp.moq_sets) }
+        end,
+        totals: summary_figures(lines).merge(forecast: Serializers.qty(rows.select { |r| r.order_type == "Forecast" }.sum(0.to_d) { |r| r.qty.to_d }),
+                                             vendor_po: Serializers.qty(placed.values.sum(0.to_d)), pos: lines.map { |l| l[:row].po_number }.uniq.size),
+        pos: lines.group_by { |l| l[:row].po_number }.sort_by { |po, list| [ list.map { |l| l[:row].ship_date }.min, po ] }.map do |po, list|
+          open = list.select { |l| l[:ordered] > l[:shipped] }
+          summary_figures(list).merge(po_number: po, types: list.map { |l| l[:row].order_type }.uniq.sort,
+                                      next_ship_date: open.map { |l| l[:row].ship_date }.min, last_ship_date: list.map { |l| l[:row].ship_date }.max)
+        end
+      } }
+    end
+
+    # Product-wise summary (Products → Product summary): every part of the shown order data with the same figures as its
+    # Product summary (#part_summary), largest revenue first.
+    def parts_summary
+      batches = selected_batches
+      load_combined_orders(Orders::Combiner.for_batches(batches.map(&:id)))
+      rows = dataset(batches).to_a
+      lines = summary_lines(rows)
+      products = Product.where(part_number: rows.map(&:part_number).uniq).pluck(:part_number, :description, :moq_sets, :moq).to_h { |p, *v| [ p, v ] }
+      forecast = rows.select { |r| r.order_type == "Forecast" }.group_by(&:part_number).transform_values { |l| l.sum(0.to_d) { |r| r.qty.to_d } }
+      data = lines.group_by { |l| l[:row].part_number }.map do |part, list|
+        description, moq_sets, moq = products[part]
+        summary_figures(list).merge(part_number: part, description: description, moq: Serializers.qty(moq_sets || moq),
+                                    forecast: Serializers.qty(forecast[part] || 0), pos: list.map { |l| l[:row].po_number }.uniq.size)
+      end
+      render json: { data: data.sort_by { |d| -d[:revenue_ordered].to_d }, currency: summary_currency }
+    end
+
+    # Firm / Order rows of `rows` (a list of the shown order data) with what the Orders list shows for each: Qty ordered,
+    # dispatched (invoices, the dispatched orders list or a Dispatched mark), delivered (SASH Inc invoices or Outbound)
+    # and the Deere Unit Price (the row's, else the product's customer price; per 100 pcs).
+    def summary_lines(rows)
+      deliveries = deliveries_by_key(rows)
+      own_keys = rows.map { |row| own_key(row) }
+      progress = Invoices::Progress.for_keys(own_keys)
+      fallback = Product.where(part_number: rows.map(&:part_number).uniq).pluck(:part_number, :customer_price).to_h
+      rows.each_with_index.filter_map do |row, i|
+        next if row.order_type == "Forecast"
+
+        info = invoice_info(row, progress[own_keys[i]], deliveries.fetch(placement_key(row), {}))
+        ordered = info[:order_qty].to_d
+        shipped = info[:shipped_qty] ? info[:shipped_qty].to_d : (%w[dispatched inbound outbound].include?(info[:status]) ? ordered : 0.to_d)
+        delivered = info[:outbound_qty] ? info[:outbound_qty].to_d : (info[:status] == "outbound" ? ordered : 0.to_d)
+        text = row.source_data&.dig("Unit Price").to_s.delete(",").strip
+        price = text.match?(/\A\d+(\.\d+)?\z/) ? BigDecimal(text) : fallback[row.part_number]
+        { row: row, ordered: ordered, shipped: shipped, delivered: delivered, price: price }
+      end
+    end
+
+    # Totals of summary lines: Qty ordered, dispatched, in transit, delivered, still to dispatch, orders (open), and the
+    # revenue of the Qty ordered and delivered (Qty × price ÷ 100; lines without a price left out, counted in unpriced).
+    def summary_figures(lines)
+      ordered, shipped, delivered = %i[ordered shipped delivered].map { |k| lines.sum(0.to_d) { |l| l[k] } }
+      priced = lines.select { |l| l[:price] }
+      { ordered: Serializers.qty(ordered), dispatched: Serializers.qty(shipped), in_transit: Serializers.qty([ shipped - delivered, 0 ].max),
+        delivered: Serializers.qty(delivered), pending: Serializers.qty([ ordered - shipped, 0 ].max), orders: lines.size,
+        open_orders: lines.count { |l| l[:ordered] > l[:shipped] },
+        revenue_ordered: (priced.sum(0.to_d) { |l| l[:ordered] * l[:price] / 100 }).round(2).to_s("F"),
+        revenue_delivered: (priced.sum(0.to_d) { |l| l[:delivered] * l[:price] / 100 }).round(2).to_s("F"),
+        unpriced: lines.size - priced.size }
+    end
+
+    # The currency of the view's Deere prices (Settings), or nil when the businesses shown use different ones.
+    def summary_currency
+      currencies = businesses.map { |b| Business.currency(b) }.uniq
+      currencies.one? ? currencies.first : nil
+    end
+
     # Part Numbers ordered under one PO Number (the shown order data; see #dataset).
     def by_po
       render json: { data: related(:po_number, params.require(:po).to_s, :part_number) }
