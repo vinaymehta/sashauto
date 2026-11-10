@@ -50,7 +50,7 @@ function values(c: AnyChange) {
 }
 
 // Changes tab of the Orders page: every change of the upload in one table (Qty up / down, rows added / removed, Ship
-// Dates moved and Ship To Address changes), with a Change column saying which, as on the Comparison page.
+// Dates moved and Ship To Address changes): Change, Difference, Old and New first, then the order line.
 // `manual`: also the changes from manual order edits since this (latest) upload. `direction`: start filtered on one
 // type of change (e.g. from a summary card).
 export function AllChangesTable({ uploadId, manual = false, direction }: { uploadId: number; manual?: boolean; direction?: string }) {
@@ -102,13 +102,13 @@ export function AllChangesTable({ uploadId, manual = false, direction }: { uploa
               <tr>
                 <Th>Change</Th>
                 <Th align="right">Difference</Th>
+                <Th>Old</Th>
+                <Th>New</Th>
                 <Th>PO</Th>
                 <Th>Part Number</Th>
                 <Th>Part Description</Th>
                 <Th>Type</Th>
                 <Th>Ship Date</Th>
-                <Th>Old</Th>
-                <Th>New</Th>
               </tr>
             </thead>
             <tbody>
@@ -129,14 +129,6 @@ export function AllChangesTable({ uploadId, manual = false, direction }: { uploa
                         </span>
                       ) : dash}
                     </Td>
-                    <Td><RelatedLink kind="po" value={c.po_number} uploadId={link} /></Td>
-                    <Td><RelatedLink kind="part" value={c.part_number} uploadId={link} /></Td>
-                    <Td><span className="block w-64 whitespace-normal break-words py-1 leading-snug">{c.part_description || "—"}</span></Td>
-                    <Td>{c.order_type}</Td>
-                    <Td className="tabular">
-                      {/* A moved date is the field that changed: green here too. */}
-                      <span className={c.direction === "rescheduled" ? NEW_MARK : ""}>{formatDate(c.ship_date)}</span>
-                    </Td>
                     {/* A row added had no old value, a row removed has no new one: only the other side is marked. */}
                     <Td className={v.wide ? "" : "tabular"}>
                       <span className={`${v.wide ? "inline-block max-w-56 whitespace-normal break-words leading-snug" : "whitespace-nowrap"} ${
@@ -145,6 +137,14 @@ export function AllChangesTable({ uploadId, manual = false, direction }: { uploa
                     <Td className={v.wide ? "" : "tabular"}>
                       <span className={`${v.wide ? "inline-block max-w-56 whitespace-normal break-words leading-snug" : "whitespace-nowrap"} ${
                         c.direction === "removed" ? "text-ink-muted" : NEW_MARK}`}>{v.new ?? "—"}</span>
+                    </Td>
+                    <Td><RelatedLink kind="po" value={c.po_number} uploadId={link} /></Td>
+                    <Td><RelatedLink kind="part" value={c.part_number} uploadId={link} /></Td>
+                    <Td><span className="block w-64 whitespace-normal break-words py-1 leading-snug">{c.part_description || "—"}</span></Td>
+                    <Td>{c.order_type}</Td>
+                    <Td className="tabular">
+                      {/* A moved date is the field that changed: green here too. */}
+                      <span className={c.direction === "rescheduled" ? NEW_MARK : ""}>{formatDate(c.ship_date)}</span>
                     </Td>
                   </tr>
                 );

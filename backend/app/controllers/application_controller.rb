@@ -119,7 +119,7 @@ class ApplicationController < ActionController::Base
     [ scope.reorder(order).order(scope.arel_table[:id].public_send(direction)), key, direction ]
   end
 
-  AGE_GROUPS = %w[green yellow red].freeze
+  AGE_GROUPS = %w[green yellow red fresh].freeze
 
   # The business view of the request (Business::VIEWS): the X-Business header the app sends for the switch in the top
   # bar, or a `business` param (links); "all" when missing.

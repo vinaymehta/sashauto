@@ -26,6 +26,7 @@ export const AGE_FILTER: FilterGroup = {
     { value: "red", label: "90+ days since Effective Firm Date" },
     { value: "yellow", label: "60–89 days since Effective Firm Date" },
     { value: "green", label: "30–59 days since Effective Firm Date" },
+    { value: "fresh", label: "Under 30 days or no Effective Firm Date" },
   ],
 };
 
@@ -54,13 +55,13 @@ export function ageRowProps(firmDate: string | null | undefined, today: Date, ne
 }
 
 // The age colours. With `onChange`, each age group is a checkbox that filters the list (the same "age" filter as in the
-// Filter panel; `value` is its comma-separated groups); "Under 30 days" is only a colour key.
+// Filter panel; `value` is its comma-separated groups), "Under 30 days or no Effective Firm Date" too ("fresh").
 export function AgeLegend({ value, onChange }: { value?: string; onChange?: (value: string) => void } = {}) {
-  const items: [AgeGroup | null, string, string][] = [
+  const items: [Exclude<AgeGroup, null> | "fresh", string, string][] = [
     ["red", "bg-age-red border-age-red-ink/30", "90+ days since Effective Firm Date"],
     ["yellow", "bg-age-yellow border-age-yellow-ink/30", "60–89 days"],
     ["green", "bg-age-green border-age-green-ink/30", "30–59 days"],
-    [null, "bg-white border-neutral-300", "Under 30 days or no Effective Firm Date"],
+    ["fresh", "bg-white border-neutral-300", "Under 30 days or no Effective Firm Date"],
   ];
   const chosen = (value ?? "").split(",").filter(Boolean);
   const toggle = (group: string) => {
@@ -72,7 +73,7 @@ export function AgeLegend({ value, onChange }: { value?: string; onChange?: (val
     <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 border-b border-line bg-white px-6 py-2.5 text-xs text-ink-muted">
       <span className="font-medium text-ink">Age</span>
       {items.map(([group, swatch, label]) => {
-        if (!group || !onChange) {
+        if (!onChange) {
           return (
             <span key={label} className="inline-flex items-center gap-1.5">
               <span aria-hidden className={`h-3 w-3 rounded-sm border ${swatch}`} />

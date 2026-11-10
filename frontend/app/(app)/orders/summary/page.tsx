@@ -16,9 +16,9 @@ export default function OrderSummaryPage() {
       <Link href="/orders" className="mb-2 inline-flex items-center gap-1 text-sm font-medium text-ink-muted transition-colors hover:text-ink">
         <ChevronLeftIcon size={15} /> Orders
       </Link>
-      <PageHeader title="Order summary" description="Firm, Addition and Forecast of every part for each day with an upload, as in SASH's Excel." />
+      <PageHeader title="Order summary" description="Firm, Addition and Forecast of every part for each day with an upload, as in SASH's Excel. The last 30 days; clear From to see every day." />
       {can(me, "products") ? (
-        <OrderSummaryPanel />
+        <OrderSummaryPanel all recentDays={30} />
       ) : (
         <Panel><EmptyState title="Not available" description="The Order summary needs the Products view permission." /></Panel>
       )}

@@ -118,7 +118,7 @@ module Api
     # Changes tab: every change of this upload in one list, each with its `direction`: Qty up / down (increase,
     # decrease), row added / removed, date moved (rescheduled: same Qty, another Ship Date) or "address" (Ship To
     # Address changed). Filters: direction (multi), type (multi), age, q; sort as `changes`. Address changes have no
-    # PO line or Firm Date, so an age filter leaves them out. meta.counts: changes per direction (before the direction
+    # PO line or Firm Date, so an age filter other than "Under 30 days or none" leaves them out. meta.counts: changes per direction (before the direction
     # filter); meta.net: the Qty difference of the listed quantity changes.
     def all_changes
       batch = UploadBatch.find(params[:id])
@@ -133,7 +133,8 @@ module Api
       address = detections(batch, AddressChange)
       address = address.where(order_type: types) if types.any?
       address = address.where("po_number ILIKE :t OR part_number ILIKE :t OR old_address ILIKE :t OR new_address ILIKE :t", t: like) if like
-      address = address.none if params[:age].present?
+      # Address changes have no Firm Date: they count as "Under 30 days or no Firm Date" only.
+      address = address.none if (ages = multi_param(:age, AGE_GROUPS)).any? && ages.exclude?(Ageing::Rules::FRESH)
 
       counts = quantity.group(:direction).count.merge("address" => address.count)
       if directions.any?

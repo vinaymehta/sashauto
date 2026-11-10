@@ -17,7 +17,7 @@ import { TableSkeleton } from "../ui/skeleton";
 import { Pagination } from "../ui/table";
 
 
-// Laid out like SASH's "DTP - Order Summary" Excel: its colours (light orange part columns, light blue day columns),
+// Laid out like SASH's "DTP - Order Summary" Excel (in the app's font, which reads better than Excel's narrow one): its colours (light orange part columns, light blue day columns),
 // thin grid lines (a darker rule between days), centred plain numbers (no thousands separators, 0 shown as 0), dd.mm.yyyy dates and the
 // Addition cell filled green above 0 and red below 0. As the Excel's frozen panes, the two header rows stay on top and
 // the part columns on the left (S No and Part Number always, Description and MOQ from lg up).
@@ -37,7 +37,10 @@ const COLS = {
   description: { width: "w-[216px] min-w-[216px] max-w-[216px]", sticky: "lg:sticky lg:left-[172px]" },
   moq: { width: "w-[60px] min-w-[60px] max-w-[60px]", sticky: "lg:sticky lg:left-[388px]" },
 };
-const DAY_COLS = { firm: "min-w-[62px]", addition: "min-w-[72px]", forecast: "min-w-[68px]" };
+// The day columns share the width left of the part columns so about 3½ days show at a time (the half one hints at more
+// to scroll to): each a tenth and a half of what is left (window less sidebar, margins and part columns), at least 96px.
+const DAY_WIDTH = "min-w-[max(84px,calc((100vw_-_760px)_/_10.5))]";
+const DAY_COLS = { firm: DAY_WIDTH, addition: DAY_WIDTH, forecast: DAY_WIDTH };
 
 // A quantity as the Excel's "0" number format shows it: a whole number, no separators.
 const plain = (value: string | null | undefined) => (value === null || value === undefined || value === "" ? "" : String(Number(value)));
@@ -51,17 +54,23 @@ const zeroFade = (value: string) => (Number(value) === 0 ? "text-neutral-400" : 
 // Products page, "Order summary" tab, like SASH's "Order Summary" Excel: for the business shown (DTP or GMBH), one row per
 // part and, for every day with an upload (newest first; the day's last upload), the part's Firm (Firm and Order rows),
 // Addition (Firm less the previous day's Firm) and Forecast quantity. From / To limit the days; Export downloads the
-// same as an .xlsx file. In "All" it asks to choose a business.
-export function OrderSummaryPanel() {
+// same as an .xlsx file. In "All" it asks to choose a business. `all`: every part at once, no pages (Orders → Order summary).
+// `recentDays`: From starts that many days back (cleared, every day shows).
+export function OrderSummaryPanel({ all = false, recentDays }: { all?: boolean; recentDays?: number } = {}) {
   const { view: business } = useBusiness();
   const list = useListQuery({}, 50);
   const [search, setSearch] = useState("");
   const q = useDebounced(search.trim());
-  const [from, setFrom] = useState("");
+  const [from, setFrom] = useState(() => {
+    if (!recentDays) return "";
+    const day = new Date();
+    day.setDate(day.getDate() - recentDays);
+    return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
+  });
   const [to, setTo] = useState("");
   const query = { q, from: from || undefined, to: to || undefined };
   const { data, error, loading } = useApi<OrderSummaryPage>(business === "all" ? null : "/api/products/order_summary", {
-    ...query, page: list.page, per_page: list.perPage,
+    ...query, ...(all ? { all: 1 } : { page: list.page, per_page: list.perPage }),
   });
   // The export link carries the business itself (a download sends no X-Business header).
   const exportQuery = new URLSearchParams(Object.entries({ business, ...query }).filter((e): e is [string, string] => !!e[1]));
@@ -120,7 +129,7 @@ export function OrderSummaryPanel() {
         ) : data ? (
           <div className={`transition-opacity duration-200 ${loading ? "opacity-50" : ""}`}>
             <div className="max-h-[calc(100vh-14rem)] overflow-auto">
-              <table className="border-separate border-spacing-0 text-[15px] leading-tight text-black [font-family:'Aptos_Narrow','Arial_Narrow',Calibri,Arial,sans-serif]">
+              <table className="border-separate border-spacing-0 text-base leading-tight text-black">
                 <thead className="whitespace-nowrap">
                   <tr className="h-7">
                     {/* Above the part columns, empty as in the Excel. */}
@@ -147,7 +156,7 @@ export function OrderSummaryPanel() {
                 </thead>
                 <tbody>
                   {data.data.map((row) => (
-                    <tr key={row.part_number} className="group h-[26px]">
+                    <tr key={row.part_number} className="group h-7">
                       <td className={`${COLS.serial.sticky} ${COLS.serial.width} z-[5] border-l ${GRID} ${ORANGE} ${HOVER} px-2 text-center text-neutral-600`}>{row.serial}</td>
                       <td className={`${COLS.part.sticky} ${COLS.part.width} z-[5] ${GRID} ${ORANGE} ${HOVER} truncate px-2 font-semibold`} title={row.part_number}>{row.part_number}</td>
                       <td className={`${COLS.description.sticky} ${COLS.description.width} z-[5] ${GRID} ${ORANGE} ${HOVER} truncate px-2`}
@@ -161,7 +170,7 @@ export function OrderSummaryPanel() {
                 </tbody>
               </table>
             </div>
-            <Pagination meta={data.meta} onPage={list.setPage} onPerPage={list.setPerPage} noun="parts" />
+            {!all && <Pagination meta={data.meta} onPage={list.setPage} onPerPage={list.setPerPage} noun="parts" />}
           </div>
         ) : null}
       </>)}

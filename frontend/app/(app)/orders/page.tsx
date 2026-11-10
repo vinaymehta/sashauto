@@ -281,7 +281,10 @@ function OrdersView() {
   const uploads = useApi<{ data: UploadChoice[] }>(manager ? null : "/api/uploads/history");
 
   type TabKey = "orders" | "transit" | "fulfilled" | "changes" | "moq";
-  const [tab, setTab] = useState<TabKey>(params.get("tab") === "changes" ? "changes" : "orders");
+  // Opens on Changes (the first tab), or on All Orders when the link brings filters (e.g. from the Dashboard).
+  const [tab, setTab] = useState<TabKey>(() => (
+    params.get("tab") === "changes" || Object.keys(linkedFilters).length === 0 ? "changes" : "orders"
+  ));
   // On a delivery tab (current data only) the list has that tab's Status instead of the Status filter.
   const statusTab = uploadId === null ? STATUS_TABS[tab] : undefined;
   const business = getBusiness();
@@ -431,14 +434,15 @@ function OrdersView() {
   // The delivery tabs fix the Status, so its filter is not offered there.
   const listFilters = statusTab ? filters.filter((g) => g.key !== "status") : filters;
   const tabs = [
-    { key: "orders" as const, label: "Orders", icon: <TableIcon size={17} />, count: statusTab ? null : data?.meta.total ?? null },
+    // Changes first.
+    ...(!shown || (isFirst && allChanges === 0) ? [] : [
+      { key: "changes" as const, label: "Changes", icon: <ArrowUpDownIcon size={17} />, count: allChanges },
+    ]),
+    { key: "orders" as const, label: "All Orders", icon: <TableIcon size={17} />, count: statusTab ? null : data?.meta.total ?? null },
     ...(uploadId === null && summary.data ? [
       { key: "transit" as const, label: "In transit", icon: <TruckIcon size={17} />, count: summary.data.in_transit },
       { key: "fulfilled" as const, label: "Orders fulfilled", icon: <CheckIcon size={17} />, count: summary.data.fulfilled },
     ] : []),
-    ...(!shown || (isFirst && allChanges === 0) ? [] : [
-      { key: "changes" as const, label: "Changes", icon: <ArrowUpDownIcon size={17} />, count: allChanges },
-    ]),
     ...(!shown || (isFirst && moqAlerts === 0) ? [] : [
       { key: "moq" as const, label: "MOQ alerts", icon: <AlertIcon size={17} />, count: moqAlerts },
     ]),
@@ -446,7 +450,11 @@ function OrdersView() {
   // Change type the Quantity changes tab starts filtered on (set by clicking a summary card).
   const [changeFilter, setChangeFilter] = useState<string | undefined>(undefined);
   // Fall back to the order rows when the chosen tab no longer exists (e.g. a new first upload).
-  const activeTab: TabKey = tabs.some((t) => t.key === tab) ? tab : "orders";
+  // While the upload the Changes tab needs is loading, the page waits on Changes (a placeholder) instead of showing the
+  // order rows first.
+  const changesLoading = tab === "changes" && !manager && can(me, "dashboard")
+    && (current ? !dashboard.data && !dashboard.error : !previous.data && !previous.error);
+  const activeTab: TabKey = tabs.some((t) => t.key === tab) || changesLoading ? tab : "orders";
 
   // ?upload=1 (the dashboard's "Upload new file") opens the upload panel.
   // "india" / "inc": the invoice upload of that kind.
@@ -558,7 +566,9 @@ function OrdersView() {
       {/* Keyed so a tab fades in when opened; the order rows do not depend on the upload summary, so the
           table is not rebuilt when the dashboard data arrives. */}
       <section key={activeTab === "orders" ? "orders" : `${activeTab}-${shown?.id}`} className="animate-fade-in overflow-hidden rounded-lg border border-line border-t-0 bg-surface shadow-card">
-        {activeTab === "changes" && shown ? (
+        {changesLoading ? (
+          <TableSkeleton rows={8} columns={9} />
+        ) : activeTab === "changes" && shown ? (
           <AllChangesTable key={changeFilter ?? "all"} uploadId={shown.id} manual={current} direction={changeFilter} />
         ) : activeTab === "moq" && shown ? (
           <MoqAlertsTable uploadId={shown.id} manual={current} />

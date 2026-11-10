@@ -119,13 +119,20 @@ module Api
 
     # Products → Order summary of the business shown (Products::OrderSummary): each part's Firm, Addition and Forecast
     # in the file of each day with an upload, newest day first. Optional `from` / `to` (YYYY-MM-DD) limit the days; `q`
-    # searches Part Number and Description. Paged by part. One business only: "All" is refused.
+    # searches Part Number and Description. Paged by part, or every part at once with `all=1` (Orders → Order summary).
+    # One business only: "All" is refused.
     def order_summary
       summary = order_summary_for_request or return
-      all_entries = summary.entries(params[:q])
-      entries, meta = paginate_array(all_entries)
+      # Every matching part's row, built once: for the newest day's totals and for the page (or all of them).
+      all_rows = summary.rows(summary.entries(params[:q]))
+      rows, meta = if params[:all] == "1"
+        total = all_rows.size
+        [ all_rows, { page: 1, per_page: total, total: total, total_pages: 1, from: total.zero? ? 0 : 1, to: total } ]
+      else
+        paginate_array(all_rows)
+      end
       # The newest shown day over every matching part (not just this page): Firm, Qty added and taken off, parts changed.
-      latest = summary.days.any? ? summary.rows(all_entries).map { |row| row.values.first } : []
+      latest = summary.days.any? ? all_rows.map { |row| row.values.first } : []
       added = latest.sum { |(_, addition, _)| [ addition, 0 ].max }
       reduced = latest.sum { |(_, addition, _)| [ addition, 0 ].min }
       render json: {
@@ -135,7 +142,7 @@ module Api
         business: current_business,
         days: summary.days.map { |day| { date: day.date.iso8601, upload_id: day.upload.id, filename: day.upload.original_filename, version: day.upload.version_label } },
         first_date: summary.all_days.last&.date&.iso8601, last_date: summary.all_days.first&.date&.iso8601,
-        data: summary.rows(entries).map do |row|
+        data: rows.map do |row|
           { serial: row.serial, part_number: row.part_number, description: row.description, moq: Serializers.qty(row.moq),
             values: row.values.map { |values| values.map { |qty| Serializers.qty(qty) } } }
         end,

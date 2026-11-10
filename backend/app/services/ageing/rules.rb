@@ -7,6 +7,8 @@ module Ageing
   # Same rule in the browser (components/age.tsx), the age filters and the ageing email.
   module Rules
     BANDS = %w[red yellow green].freeze # most urgent first
+    # The age filter's group for rows in none of the bands: under 30 days, or no Firm Date (Forecast included).
+    FRESH = "fresh"
     GREEN_DAYS = 30
     YELLOW_DAYS = 60
     RED_DAYS = 90
@@ -42,8 +44,8 @@ module Ageing
     # `combined_ids`: order rows that start a combined order (Orders::Combiner); they use the combined order's own Firm
     # Date, as the Orders page shows it. `manual_column`: the scope has a `manual` column (the Orders list), whose
     # manual orders are never combined. `firm_key`: the Firm Date key in SQL, instead (the Orders list's own).
+    # `bands` may include FRESH: the rows in no band (under 30 days or no Firm Date), alone or with others.
     def in_bands(scope, bands, today, combined_ids: [], manual_column: false, firm_key: nil)
-      dates = bands.map { |band| OrderFirmDate.where(firm_on: firm_date_range(band, today)) }.reduce(:or)
       table = scope.quoted_table_name
       key = Orders::FirmDates.key_sql(table)
       firm_key ||= if combined_ids.any?
@@ -52,7 +54,17 @@ module Ageing
       else
         key
       end
-      scope.where.not(order_type: "Forecast").where("#{firm_key} IN (#{dates.select(:order_key).to_sql})")
+      aged = bands - [ FRESH ]
+      conditions = []
+      if aged.any?
+        dates = aged.map { |band| OrderFirmDate.where(firm_on: firm_date_range(band, today)) }.reduce(:or)
+        conditions << "(#{table}.order_type <> 'Forecast' AND #{firm_key} IN (#{dates.select(:order_key).to_sql}))"
+      end
+      if bands.include?(FRESH)
+        aged_dates = OrderFirmDate.where(firm_on: ..(today - GREEN_DAYS)).select(:order_key).to_sql
+        conditions << "(#{table}.order_type = 'Forecast' OR #{firm_key} NOT IN (#{aged_dates}))"
+      end
+      conditions.empty? ? scope : scope.where(conditions.join(" OR "))
     end
   end
 end
