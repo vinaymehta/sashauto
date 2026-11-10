@@ -116,6 +116,7 @@ export interface QuantityChange {
   difference: string;
   firm_date?: string | null; // the order's Effective Firm Date (age colour)
   part_description?: string | null; // the order file's Description, else the product's
+  previous_order_type?: OrderType | null; // Changes tab: the row's Type in the previous upload
 }
 
 // Comparison tab: one order line (PO + PO Line + Part + Ship Date) that differs between two versions (uploads).

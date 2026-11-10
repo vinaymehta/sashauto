@@ -74,7 +74,7 @@ export function AllChangesTable({ uploadId, manual = false, direction }: { uploa
           {Number(data.meta.net) !== 0 && <> · net {formatDifference(data.meta.net)}</>}
         </>
       ) : ""}>
-        <SearchInput label="Search changes" placeholder="Search PO, part number, commodity or address" value={search}
+        <SearchInput label="Search changes" placeholder="Search PO, part number, description, commodity or address" value={search}
                      onSearch={(v) => { setSearch(v); list.resetPage(); }} className="w-full sm:w-80" />
         <FilterMenu groups={FILTERS} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
       </ListToolbar>
@@ -141,7 +141,14 @@ export function AllChangesTable({ uploadId, manual = false, direction }: { uploa
                     <Td><RelatedLink kind="po" value={c.po_number} uploadId={link} /></Td>
                     <Td><RelatedLink kind="part" value={c.part_number} uploadId={link} /></Td>
                     <Td><span className="block w-64 whitespace-normal break-words py-1 leading-snug">{c.part_description || "—"}</span></Td>
-                    <Td>{c.order_type}</Td>
+                    <Td>
+                      {/* The row's Type changed between the two uploads (e.g. a Forecast date became Firm): show both. */}
+                      {"previous_order_type" in c && c.previous_order_type && c.previous_order_type !== c.order_type ? (
+                        <span className="whitespace-nowrap" title={`${c.previous_order_type} in the previous upload, ${c.order_type} in this one`}>
+                          <span className={OLD_MARK}>{c.previous_order_type}</span> → <span className={NEW_MARK}>{c.order_type}</span>
+                        </span>
+                      ) : c.order_type}
+                    </Td>
                     <Td className="tabular">
                       {/* A moved date is the field that changed: green here too. */}
                       <span className={c.direction === "rescheduled" ? NEW_MARK : ""}>{formatDate(c.ship_date)}</span>

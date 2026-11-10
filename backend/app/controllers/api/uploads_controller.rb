@@ -129,10 +129,13 @@ module Api
 
       quantity = filter_by_age(detections(batch, QuantityChange))
       quantity = quantity.where(order_type: types) if types.any?
-      quantity = quantity.where("po_number ILIKE :t OR part_number ILIKE :t OR commodity_type ILIKE :t", t: like) if like
+      if like
+        parts = described_parts(batch, like)
+        quantity = parts.reduce(quantity.where("po_number ILIKE :t OR part_number ILIKE :t OR commodity_type ILIKE :t", t: like)) { |s, p| s.or(quantity.where(part_number: p)) }
+      end
       address = detections(batch, AddressChange)
       address = address.where(order_type: types) if types.any?
-      address = address.where("po_number ILIKE :t OR part_number ILIKE :t OR old_address ILIKE :t OR new_address ILIKE :t", t: like) if like
+      address = parts.reduce(address.where("po_number ILIKE :t OR part_number ILIKE :t OR old_address ILIKE :t OR new_address ILIKE :t", t: like)) { |s, p| s.or(address.where(part_number: p)) } if like
       # Address changes have no Firm Date: they count as "Under 30 days or no Firm Date" only.
       address = address.none if (ages = multi_param(:age, AGE_GROUPS)).any? && ages.exclude?(Ageing::Rules::FRESH)
 
@@ -147,11 +150,13 @@ module Api
       page, meta = paginate_array(changes)
       quantities = page.grep(QuantityChange)
       firm_dates = Orders::FirmDates.for_rows(quantities)
+      # Type of the row in the previous upload: the change shows its new Type, so the Changes tab can show "Forecast → Firm".
+      old_types = OrderRow.where(id: quantities.filter_map(&:previous_order_row_id)).pluck(:id, :order_type).to_h
       descriptions = part_descriptions(quantities).transform_keys { |id| [ QuantityChange, id ] }
                        .merge(part_descriptions(page.grep(AddressChange)).transform_keys { |id| [ AddressChange, id ] })
       render json: {
         data: page.map do |c|
-          row = c.is_a?(QuantityChange) ? Serializers.quantity_change(c).merge(firm_date: firm_dates[c.id]) : Serializers.address_change(c).merge(direction: "address")
+          row = c.is_a?(QuantityChange) ? Serializers.quantity_change(c).merge(firm_date: firm_dates[c.id], previous_order_type: old_types[c.previous_order_row_id]) : Serializers.address_change(c).merge(direction: "address")
           row.merge(part_description: descriptions[[ c.class, c.id ]])
         end,
         meta: meta.merge(counts: counts, net: Serializers.qty(net))
@@ -280,6 +285,14 @@ module Api
       from_file = OrderRow.where(id: row_of.values.compact).pluck(:id, Arel.sql("order_rows.source_data ->> 'Description'")).to_h
       products = Product.where(part_number: records.map(&:part_number).uniq).pluck(:part_number, :description).to_h
       records.to_h { |r| [ r.id, from_file[row_of[r.id]].to_s.squish.presence || products[r.part_number] ] }
+    end
+
+    # Part Numbers whose Part Description matches `like`, as the Changes tab shows it (two subqueries): the product's
+    # (Products), or the order file's Description column in this upload or the one it was compared with.
+    def described_parts(batch, like)
+      uploads = [ batch.id, *QuantityChange.where(upload_batch_id: batch.id).distinct.pluck(:previous_upload_batch_id) ].compact
+      [ Product.where("description ILIKE ?", like).select(:part_number),
+        OrderRow.where(upload_batch_id: uploads).where("order_rows.source_data ->> 'Description' ILIKE ?", like).select(:part_number) ]
     end
 
     # Sort key of a change in the Changes tab's one list (quantity and address changes together), as CHANGE_SORTS.
