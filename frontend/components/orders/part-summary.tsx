@@ -11,7 +11,7 @@ import { RelatedLink } from "./related-popover";
 
 // Product summary of a Part Number (opened from a Part Number link): the product (description, MOQ), then for its Firm /
 // Order orders in the shown order data (`uploadId`; undefined = the current data) what was ordered, dispatched from India
-// (in transit included: not shown on its own here), was delivered to Deere and is still to dispatch, the revenue of what
+// (delivered included), was delivered to Deere and is still to dispatch, the revenue of what
 // was ordered, dispatched and delivered (Deere prices), in total and per PO, and each vendor's price.
 export function PartSummaryPanel({ part, uploadId }: { part: string; uploadId?: number }) {
   const { data, error, loading } = useApi<{ data: PartSummary }>("/api/orders/part_summary", { part, upload_id: uploadId });
@@ -25,9 +25,9 @@ export function PartSummaryPanel({ part, uploadId }: { part: string; uploadId?: 
   const money = (v: string) => (s.currency ? formatCustomer(v, s.currency, 2) : Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 }));
   const tiles: { label: string; value: string; tone: string; dot: string }[] = [
     { label: "Total ordered", value: t.ordered, tone: "text-ink", dot: "bg-neutral-400" },
+    { label: "Pending to dispatch", value: t.pending, tone: Number(t.pending) > 0 ? "text-amber-700" : "text-ink-faint", dot: "bg-neutral-300" },
     { label: "Dispatched", value: t.dispatched, tone: "text-violet-700", dot: "bg-violet-500" },
     { label: "Delivered to Deere", value: t.delivered, tone: "text-green-700", dot: "bg-green-600" },
-    { label: "Pending to dispatch", value: t.pending, tone: Number(t.pending) > 0 ? "text-amber-700" : "text-ink-faint", dot: "bg-neutral-300" },
   ];
 
   return (
@@ -140,9 +140,9 @@ export function PartSummaryPanel({ part, uploadId }: { part: string; uploadId?: 
                   <th className="px-5 py-2 font-semibold">PO Number</th>
                   <th className="px-3 py-2 font-semibold">Orders</th>
                   <th className="px-3 py-2 text-right font-semibold">Ordered</th>
+                  <th className="px-3 py-2 text-right font-semibold">Pending</th>
                   <th className="px-3 py-2 text-right font-semibold">Dispatched</th>
                   <th className="px-3 py-2 text-right font-semibold">Delivered</th>
-                  <th className="px-3 py-2 text-right font-semibold">Pending</th>
                   <th className="px-3 py-2 text-right font-semibold">Revenue</th>
                   <th className="px-5 py-2 font-semibold">Next ship date</th>
                 </tr>
@@ -153,9 +153,9 @@ export function PartSummaryPanel({ part, uploadId }: { part: string; uploadId?: 
                     <td className="px-5 py-2 font-semibold text-ink"><RelatedLink kind="po" value={p.po_number} uploadId={uploadId} /><span className="ml-2 text-xs font-normal text-ink-muted">{p.types.join(", ")}</span></td>
                     <td className="px-3 py-2 text-ink-muted">{formatCount(p.orders)}{p.open_orders > 0 ? ` (${formatCount(p.open_orders)} open)` : ""}</td>
                     <td className="px-3 py-2 text-right tabular text-ink">{formatQty(p.ordered)}</td>
+                    <td className={`px-3 py-2 text-right tabular font-semibold ${Number(p.pending) > 0 ? "text-amber-700" : "text-ink-faint"}`}>{formatQty(p.pending)}</td>
                     <td className="px-3 py-2 text-right tabular text-violet-700">{formatQty(p.dispatched)}</td>
                     <td className="px-3 py-2 text-right tabular text-green-700">{formatQty(p.delivered)}</td>
-                    <td className={`px-3 py-2 text-right tabular font-semibold ${Number(p.pending) > 0 ? "text-amber-700" : "text-ink-faint"}`}>{formatQty(p.pending)}</td>
                     <td className="px-3 py-2 text-right tabular text-ink">{money(p.revenue_ordered)}</td>
                     <td className="px-5 py-2 text-ink">{p.next_ship_date ? formatDate(p.next_ship_date) : <span className="text-ink-faint">All dispatched</span>}</td>
                   </tr>

@@ -19,4 +19,9 @@ class ImportIssue < ApplicationRecord
   def close!(status, user:, resolution: nil)
     update!(status: status, resolution: resolution, resolved_by: user, resolved_at: Time.current)
   end
+
+  # A dismissed issue back to open (dismissed by mistake): its actions are offered again.
+  def reopen!
+    update!(status: "open", resolution: nil, resolved_by: nil, resolved_at: nil)
+  end
 end

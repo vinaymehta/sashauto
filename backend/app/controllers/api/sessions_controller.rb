@@ -60,9 +60,14 @@ module Api
     end
 
     # The signed-in user's own choice of Orders table columns: the keys of the columns they show (`shown`, at least one).
+    # `default=1`: back to the default columns (the choice is cleared, so later changes to the defaults apply too).
     def orders_columns
-      shown = Array(params.permit(shown: [])[:shown]).map(&:to_s).uniq
-      if current_user.update(configurable: current_user.configurable.merge("orders_columns" => shown))
+      configurable = if ActiveModel::Type::Boolean.new.cast(params[:default])
+        current_user.configurable.except("orders_columns")
+      else
+        current_user.configurable.merge("orders_columns" => Array(params.permit(shown: [])[:shown]).map(&:to_s).uniq)
+      end
+      if current_user.update(configurable: configurable)
         render json: { user: Serializers.user(current_user) }
       else
         render_error current_user.errors.full_messages.to_sentence, :unprocessable_content

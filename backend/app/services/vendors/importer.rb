@@ -32,7 +32,9 @@ module Vendors
     end
 
     # What importing one row did: the product and vendor part it wrote (nil when skipped), whether they were new,
-    # and the problems found ({ kind:, field:, message: }); a row with a "skipped" problem wrote nothing.
+    # and the problems found ({ kind:, field:, reason:, message: }); a row with a "skipped" problem wrote nothing.
+    # `reason`: what is wrong with the value (shown when a row is fixed on the Import issues tab); `message`: the reason
+    # and what the import did about it (the issue's text).
     RowResult = Data.define(:product, :vendor_product, :product_created, :vendor_created, :added, :problems) do
       def skipped? = problems.any? { |p| p[:kind] == "skipped" }
     end
@@ -83,7 +85,7 @@ module Vendors
           if result.problems.any?
             problems = result.problems.sort_by { |problem| problem[:field] == "vendor_name" ? 0 : 1 }
             ImportIssue.create!(filename: @filename, excel_row: number, kind: result.skipped? ? "skipped" : problems.first[:kind],
-                                field: problems.first[:field], message: problems.map { |problem| problem[:message] }.join(" "),
+                                field: problems.first[:field], message: problems.map { |problem| problem[:message] }.join("\n"),
                                 row_data: row_data(row), product: result.product, vendor_product: result.vendor_product, imported_by: @user)
             issues += 1
           end
@@ -99,13 +101,13 @@ module Vendors
     def import_row(row, vendors)
       name = row[:vendor_name].to_s.squish
       part = OrderRows::Normalizer.part_number(row[:part_number].to_s)
-      return skip(:part_number, "Part Number is blank.") if part.blank?
-      return skip(:vendor_name, "Vendor Name is blank.") if name.empty?
+      return skip(:part_number, "Part Number is missing.") if part.blank?
+      return skip(:vendor_name, "Vendor Name is missing.") if name.empty?
       # No vendor (a dash, a discontinued part, …): the part is added without one, with a warning. Otherwise one vendor,
       # or several (the part is then made by each of them, at its own price): VendorCell.
       no_vendor = not_a_vendor(name)
       entries = no_vendor ? [] : VendorCell.new(vendors.values).parse(name)
-      return skip(:vendor_name, "Vendor Name \"#{name.first(60)}\" could not be read as vendors, so the row was not imported.") if !no_vendor && entries.empty?
+      return skip(:vendor_name, "Vendor Name \"#{name.first(60)}\" could not be read as one or more vendors.") if !no_vendor && entries.empty?
 
       problems = unreadable_values(row)
       # The price is each vendor's in the cell, or there is no vendor to price.
@@ -113,9 +115,10 @@ module Vendors
       # "Discontinue Part": no more vendor POs for the part; it is marked Discontinued.
       discontinued = name.match?(DISCONTINUED)
       if discontinued
-        problems << { kind: "unreadable", field: "vendor_name", message: "Discontinued part (\"#{name}\"): marked Discontinued, no vendor POs will be placed for it." }
+        problems << problem(:vendor_name, "Vendor Name \"#{name.first(60)}\" marks the part as discontinued.",
+                            "It was marked Discontinued; no vendor POs will be raised for it.")
       elsif no_vendor
-        problems << { kind: "unreadable", field: "vendor_name", message: "#{no_vendor} The part was added without a vendor." }
+        problems << problem(:vendor_name, no_vendor, "The part was added without a vendor.")
       end
       pack = PackParser.pack_size(description: row[:description], moq: row[:moq], price: row[:price])
       moq = PackParser.moq(row[:moq], pack)
@@ -156,7 +159,7 @@ module Vendors
                     vendor_created: vendor_created, added: added, problems: problems)
     rescue ActiveRecord::RecordInvalid => e
       field = e.record.is_a?(Product) && e.record.errors.include?(:part_number) ? :part_number : nil
-      skip(field, e.record.errors.full_messages.to_sentence)
+      skip(field, "#{e.record.errors.full_messages.to_sentence}.")
     end
 
     private
@@ -193,14 +196,19 @@ module Vendors
     # nil: a dash or "N/A" (no vendor), a discontinued or cancelled part, no quote yet, or a charge (e.g. air freight).
     # Several vendors in one cell are read by VendorCell.
     def not_a_vendor(name)
-      return "Vendor Name is \"#{name}\" (no vendor)." if NO_VENDOR.match?(name)
-      return "Vendor Name says \"#{name.first(60)}\", which is not a vendor." if name.match?(/\Adiscontinu|\bno quote\b|\bcancel|\bfreight\b|\bcharges?\z/i)
+      return "No vendor given (Vendor Name is \"#{name}\")." if NO_VENDOR.match?(name)
+      return "Vendor Name \"#{name.first(60)}\" is not a vendor name." if name.match?(/\Adiscontinu|\bno quote\b|\bcancel|\bfreight\b|\bcharges?\z/i)
       nil
     end
 
-    def skip(field, message)
+    def skip(field, reason)
       RowResult.new(product: nil, vendor_product: nil, product_created: false, vendor_created: false, added: false,
-                    problems: [ { kind: "skipped", field: field&.to_s, message: message } ])
+                    problems: [ problem(field, reason, "The row was not imported.", kind: "skipped") ])
+    end
+
+    # One problem of a row: `reason` (what is wrong) and `outcome` (what the import did about it).
+    def problem(field, reason, outcome, kind: "unreadable")
+      { kind: kind, field: field&.to_s, reason: reason, message: "#{reason} #{outcome}" }
     end
 
     # Values present in the row that the import cannot use (they are left blank): MOQ and weight must be numbers,
@@ -210,19 +218,20 @@ module Vendors
       { moq: "MOQ", weight_kg: "Per Pc Weight in Kg" }.each do |field, label|
         value = row[field]
         next if value.nil? || value.to_s.strip.empty? || (field == :moq ? PackParser.moq(value, 1) : number_or_nil(value))
-        problems << { kind: "unreadable", field: field.to_s, message: "#{label} \"#{value.to_s.strip.first(80)}\" is not a number, so it was left blank." }
+        problems << problem(field, "#{label} \"#{value.to_s.strip.first(80)}\" is not a valid #{field == :moq ? 'quantity' : 'number'}.",
+                            "The field was left blank.")
       end
       price = row[:price]
       if price.present? && PackParser.price(price, 1, currencies: CURRENCY_SYMBOLS).set.nil?
         text = price.to_s.gsub(/[[:space:]]+/, " ").strip.first(80)
         currency = text[/\A([A-Z]{3}|£)\s*\d/, 1]
-        message = if currency
-          "Vendor Price \"#{text}\" is in #{currency == '£' ? 'GBP' : currency}, " \
-            "which is not a supported currency (#{VendorProduct::CURRENCIES.join(', ')}), so it was kept as a note."
+        reason = if currency
+          "Vendor Price \"#{text}\" is in #{currency == '£' ? 'GBP' : currency}, which is not supported " \
+            "(supported: #{VendorProduct::CURRENCIES.join(', ')})."
         else
-          "Vendor Price \"#{text}\" has no amount, so it was kept as a note."
+          "Vendor Price \"#{text}\" has no amount."
         end
-        problems << { kind: "unreadable", field: "price", message: message }
+        problems << problem(:price, reason, "It was saved as a note, without a price.")
       end
       problems
     end

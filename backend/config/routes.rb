@@ -99,6 +99,7 @@ Rails.application.routes.draw do
       member do
         post :resolve
         post :dismiss
+        post :reopen
         post :delete_part
         post :link_vendor
         post :create_vendor

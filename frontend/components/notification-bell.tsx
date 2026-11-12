@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
-import type { ActivityFeed, ActivityKind } from "@/lib/types";
+import type { ActivityFeed, ActivityItem, ActivityKind } from "@/lib/types";
 import { formatRelative } from "@/lib/format";
 import { AlertIcon, BellIcon, BoxIcon, CheckIcon, FileIcon, TruckIcon } from "./icons";
 import { Spinner } from "./ui/feedback";
@@ -56,7 +56,17 @@ export function NotificationBell() {
     setOpen(!open);
   }
 
-  // Notifications stay unread until "Mark as read" is clicked.
+  // Opening a notification marks it as read (remembered on the server for this user).
+  function openItem(item: ActivityItem) {
+    close();
+    if (item.unread && feed) {
+      setFeed({ ...feed, unread_count: Math.max(0, feed.unread_count - 1), items: feed.items.map((i) => (i.id === item.id ? { ...i, unread: false } : i)) });
+      api.post("/api/activity/read", { id: item.id }).catch(() => undefined);
+    }
+    router.push(item.href);
+  }
+
+  // "Mark as read": every notification at once.
   function markRead() {
     if (!feed || feed.unread_count === 0) return;
     setFeed({ ...feed, unread_count: 0, items: feed.items.map((item) => ({ ...item, unread: false })) });
@@ -107,7 +117,7 @@ export function NotificationBell() {
                   return (
                     <li key={item.id}>
                       <button
-                        onClick={() => { close(); router.push(item.href); }}
+                        onClick={() => openItem(item)}
                         className={`relative flex w-full items-start gap-3 px-4 py-3 text-left transition-colors ${
                           item.unread ? "bg-accent/5 hover:bg-accent/10" : "hover:bg-canvas"}`}
                       >
@@ -118,7 +128,7 @@ export function NotificationBell() {
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className={`block text-sm text-ink ${item.unread ? "font-semibold" : "font-normal"}`}>{item.title}</span>
-                          <span className="block truncate text-xs text-ink-muted">{item.description}</span>
+                          <span className="block text-xs leading-snug text-ink-muted">{item.description}</span>
                         </span>
                         <span className="flex shrink-0 flex-col items-end gap-1.5">
                           <span className={`text-2xs ${item.unread ? "font-medium text-accent" : "text-ink-faint"}`}>{formatRelative(item.at)}</span>

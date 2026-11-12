@@ -4,11 +4,10 @@ import { useEffect, useState, type ReactNode } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { EmailInfo, EmailKind, Paginated, UploadDetail, ValidationError } from "@/lib/types";
 import { formatDateTime } from "@/lib/format";
-import { ChangesTable } from "./changes-table";
-import { AddressChangesTable } from "./address-changes-table";
+import { AllChangesTable } from "./all-changes-table";
 import { MoqAlertsTable } from "./moq-alerts-table";
 import { RowsTable } from "./rows-table";
-import { AlertIcon, ArrowUpDownIcon, FileIcon, MapPinIcon } from "./icons";
+import { AlertIcon, ArrowUpDownIcon, FileIcon } from "./icons";
 import { Tabs } from "./ui/tabs";
 import { useApi } from "./use-api";
 import { useListQuery } from "./use-list-query";
@@ -112,9 +111,12 @@ function FailedUpload({ upload }: { upload: UploadDetail }) {
 
 function VersionData({ upload, status }: { upload: UploadDetail; status?: ReactNode }) {
   const isFirst = upload.previous_version === null;
-  const changes = (upload.stats.increase_count ?? 0) + (upload.stats.decrease_count ?? 0) + (upload.stats.new_row_count ?? 0) + (upload.stats.missing_row_count ?? 0);
-  const moqAlerts = upload.stats.moq_alert_count ?? 0;
-  const [tab, setTab] = useState<"changes" | "addresses" | "moq" | "rows">(isFirst ? (moqAlerts > 0 ? "moq" : "rows") : "changes");
+  // Every change of the upload, as the Changes tab of Orders (and the bell) counts them.
+  const stats = upload.stats;
+  const changes = [stats.increase_count, stats.decrease_count, stats.new_row_count, stats.missing_row_count, stats.rescheduled_count, stats.address_change_count]
+    .reduce<number>((sum, n) => sum + (n ?? 0), 0);
+  const moqAlerts = stats.moq_alert_count ?? 0;
+  const [tab, setTab] = useState<"changes" | "moq" | "rows">(isFirst ? (moqAlerts > 0 ? "moq" : "rows") : "changes");
 
   return (
     <>
@@ -129,8 +131,7 @@ function VersionData({ upload, status }: { upload: UploadDetail; status?: ReactN
             onChange={setTab}
             tabs={[
               ...(isFirst ? [] : [
-                { key: "changes" as const, label: "Quantity changes", icon: <ArrowUpDownIcon size={14} />, count: changes },
-                { key: "addresses" as const, label: "Address changes", icon: <MapPinIcon size={14} />, count: upload.stats.address_change_count ?? 0 },
+                { key: "changes" as const, label: "Changes", icon: <ArrowUpDownIcon size={14} />, count: changes },
               ]),
               ...(isFirst && moqAlerts === 0 ? [] : [
                 { key: "moq" as const, label: "MOQ alerts", icon: <AlertIcon size={14} />, count: moqAlerts },
@@ -142,12 +143,7 @@ function VersionData({ upload, status }: { upload: UploadDetail; status?: ReactN
         </div>
         <section key={tab} className="animate-fade-in overflow-hidden rounded-lg border border-line bg-surface shadow-card border-t-0">
           {tab === "changes" ? (
-            <ChangesTable
-              uploadId={upload.id}
-              emptyDescription="Every order row present in both the previous and the latest upload has the same quantity."
-            />
-          ) : tab === "addresses" ? (
-            <AddressChangesTable uploadId={upload.id} />
+            <AllChangesTable uploadId={upload.id} />
           ) : tab === "moq" ? (
             <MoqAlertsTable uploadId={upload.id} />
           ) : (

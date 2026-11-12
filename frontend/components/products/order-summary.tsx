@@ -5,7 +5,6 @@ import type { OrderSummaryPage } from "@/lib/types";
 import { formatCount, formatDate, formatDifference, formatQty } from "@/lib/format";
 import { useApi, useDebounced } from "../use-api";
 import { useBusiness, BusinessPicker } from "../business-switch";
-import { useListQuery } from "../use-list-query";
 import { DownloadIcon } from "../icons";
 import { Button } from "../ui/button";
 import { DatePicker } from "../ui/date-picker";
@@ -14,7 +13,6 @@ import { ListToolbar } from "../ui/list-toolbar";
 import { Panel } from "../ui/panel";
 import { SearchInput } from "../ui/search-input";
 import { TableSkeleton } from "../ui/skeleton";
-import { Pagination } from "../ui/table";
 
 
 // Laid out like SASH's "DTP - Order Summary" Excel (in the app's font, which reads better than Excel's narrow one): its colours (light orange part columns, light blue day columns),
@@ -51,32 +49,32 @@ const additionFill = (value: string) => (Number(value) > 0 ? "bg-[#92D050] font-
 // 0 is shown, as in the Excel, but faded so the quantities that matter stand out.
 const zeroFade = (value: string) => (Number(value) === 0 ? "text-neutral-400" : "");
 
+// The days shown at first: the last 30.
+const RECENT_DAYS = 30;
+
 // Products page, "Order summary" tab, like SASH's "Order Summary" Excel: for the business shown (DTP or GMBH), one row per
 // part and, for every day with an upload (newest first; the day's last upload), the part's Firm (Firm and Order rows),
 // Addition (Firm less the previous day's Firm) and Forecast quantity. From / To limit the days; Export downloads the
-// same as an .xlsx file. In "All" it asks to choose a business. `all`: every part at once, no pages (Orders → Order summary).
-// `recentDays`: From starts that many days back (cleared, every day shows).
-export function OrderSummaryPanel({ all = false, recentDays }: { all?: boolean; recentDays?: number } = {}) {
+// same as an .xlsx file. In "All" it asks to choose a business. Every part at once (no pages); From starts RECENT_DAYS
+// back (cleared, every day shows). The same on Products → Order summary and Orders → Order summary.
+export function OrderSummaryPanel() {
   const { view: business } = useBusiness();
-  const list = useListQuery({}, 50);
   const [search, setSearch] = useState("");
   const q = useDebounced(search.trim());
   const [from, setFrom] = useState(() => {
-    if (!recentDays) return "";
     const day = new Date();
-    day.setDate(day.getDate() - recentDays);
+    day.setDate(day.getDate() - RECENT_DAYS);
     return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
   });
   const [to, setTo] = useState("");
   const query = { q, from: from || undefined, to: to || undefined };
   const { data, error, loading } = useApi<OrderSummaryPage>(business === "all" ? null : "/api/products/order_summary", {
-    ...query, ...(all ? { all: 1 } : { page: list.page, per_page: list.perPage }),
+    ...query, all: 1,
   });
   // The export link carries the business itself (a download sends no X-Business header).
   const exportQuery = new URLSearchParams(Object.entries({ business, ...query }).filter((e): e is [string, string] => !!e[1]));
   const ranged = from !== "" || to !== "";
-  const clearAll = () => { setSearch(""); setFrom(""); setTo(""); list.resetPage(); };
-  const pickDate = (set: (value: string) => void) => (value: string) => { set(value); list.resetPage(); };
+  const clearAll = () => { setSearch(""); setFrom(""); setTo(""); };
 
   return (
     <Panel flush>
@@ -88,12 +86,12 @@ export function OrderSummaryPanel({ all = false, recentDays }: { all?: boolean; 
         {business !== "all" && (<>
           <div className="space-y-1.5">
             <label htmlFor="order-summary-from" className="block text-sm font-medium text-ink">From</label>
-            <DatePicker id="order-summary-from" value={from} onChange={pickDate(setFrom)} min={data?.first_date ?? undefined}
+            <DatePicker id="order-summary-from" value={from} onChange={setFrom} min={data?.first_date ?? undefined}
                         max={to || (data?.last_date ?? undefined)} placeholder="Oldest day" clearable className="w-44" />
           </div>
           <div className="space-y-1.5">
             <label htmlFor="order-summary-to" className="block text-sm font-medium text-ink">To</label>
-            <DatePicker id="order-summary-to" value={to} onChange={pickDate(setTo)} min={from || (data?.first_date ?? undefined)}
+            <DatePicker id="order-summary-to" value={to} onChange={setTo} min={from || (data?.first_date ?? undefined)}
                         max={data?.last_date ?? undefined} placeholder="Newest day" clearable className="w-44" />
           </div>
         </>)}
@@ -105,7 +103,7 @@ export function OrderSummaryPanel({ all = false, recentDays }: { all?: boolean; 
       ) : (<>
         <ListToolbar summary={data ? `${formatCount(data.meta.total)} part${data.meta.total === 1 ? "" : "s"} · ${formatCount(data.days.length)} day${data.days.length === 1 ? "" : "s"}` : ""}>
           <SearchInput label="Search order summary" placeholder="Search part number or description" value={search}
-                       onSearch={(v) => { setSearch(v); list.resetPage(); }} className="w-full sm:w-72" />
+                       onSearch={setSearch} className="w-full sm:w-72" />
           {/* The same days and search as shown, every part, laid out like SASH's Excel. */}
           {data && data.meta.total > 0 && (
             <a href={`/api/products/order_summary/export?${exportQuery}`} download
@@ -170,7 +168,6 @@ export function OrderSummaryPanel({ all = false, recentDays }: { all?: boolean; 
                 </tbody>
               </table>
             </div>
-            {!all && <Pagination meta={data.meta} onPage={list.setPage} onPerPage={list.setPerPage} noun="parts" />}
           </div>
         ) : null}
       </>)}

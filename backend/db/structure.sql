@@ -1196,6 +1196,7 @@ CREATE TABLE public.users (
     deleted_at timestamp(6) without time zone,
     permissions jsonb DEFAULT '{}'::jsonb NOT NULL,
     configurable jsonb DEFAULT '{}'::jsonb NOT NULL,
+    read_notification_ids jsonb DEFAULT '[]'::jsonb NOT NULL,
     CONSTRAINT users_role_valid CHECK (((role)::text = ANY ((ARRAY['admin'::character varying, 'warehouse_manager'::character varying, 'employee'::character varying])::text[])))
 );
 
@@ -3242,6 +3243,7 @@ ALTER TABLE ONLY public.address_changes
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261112000001'),
 ('20261106100001'),
 ('20261106000001'),
 ('20261105000002'),

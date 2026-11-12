@@ -33,7 +33,8 @@ export function cell(value: string | number | null | undefined) {
 
 // Order details panel (75% of the screen), opened by clicking a PO Number in the Orders table: the ORDER DETAILS
 // view (header fields + every row of the same PO Number + Part Number + Type), its dispatches and deliveries on uploaded
-// invoices and the delivery marks. An Admin can edit (`onEdit`) or delete a manual order here. Vendor orders are placed from the row (see PlaceOrderPanel).
+// invoices and the delivery marks. An Admin can edit (`onEdit`) or delete a manual order here. Place order (Orders edit
+// permission, as the Unit link) opens the Place order panel in its place; closing that comes back here.
 export function OrderDetailPanel({ row, onClose, onEdit, onDeleted, onPlaced }: {
   row: OrderRow; onClose: () => void; onEdit?: () => void; onDeleted?: () => void; onPlaced?: () => void;
 }) {
@@ -43,6 +44,7 @@ export function OrderDetailPanel({ row, onClose, onEdit, onDeleted, onPlaced }: 
   const [deleting, setDeleting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [placing, setPlacing] = useState(false);
 
   async function remove() {
     setBusy(true);
@@ -58,6 +60,8 @@ export function OrderDetailPanel({ row, onClose, onEdit, onDeleted, onPlaced }: 
     }
   }
 
+  if (placing) return <PlaceOrderPanel row={row} onClose={() => setPlacing(false)} onPlaced={() => { reload(); onPlaced?.(); }} />;
+
   return (
     <Sheet
       open
@@ -67,10 +71,15 @@ export function OrderDetailPanel({ row, onClose, onEdit, onDeleted, onPlaced }: 
       description={<>PO <span className="font-medium text-ink">{row.po_number}</span> · {row.part_number} · {row.order_type}{row.manual && <> · <Badge>Manual</Badge></>}</>}
       icon={<FileIcon size={18} />}
     >
-      {row.manual && admin && (
+      {admin && (
         <div className="mb-4 flex justify-end gap-2">
-          <Button size="sm" onClick={onEdit}><PencilIcon size={14} className="text-ink-muted" />Edit</Button>
-          <Button size="sm" onClick={() => setDeleting(true)}><TrashIcon size={14} className="text-ink-muted" />Delete</Button>
+          <Button size="sm" variant="primary" onClick={() => setPlacing(true)} title="Generate vendor POs for this order">
+            <TruckIcon size={14} />Place order
+          </Button>
+          {row.manual && <>
+            <Button size="sm" onClick={onEdit}><PencilIcon size={14} className="text-ink-muted" />Edit</Button>
+            <Button size="sm" onClick={() => setDeleting(true)}><TrashIcon size={14} className="text-ink-muted" />Delete</Button>
+          </>}
         </div>
       )}
       {error ? (

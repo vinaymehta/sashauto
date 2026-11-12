@@ -22,13 +22,18 @@ const Grip = () => (
 // the hidden ones follow in file order, and a ticked one goes last. Changes are made to a draft and saved for the
 // signed-in user with Save (session saveOrdersColumns), so they see the same columns on every tab and next time; closing
 // the panel otherwise drops them. At least one column stays shown. `saved` is the list the change is made to: it also
-// keeps the columns other files have.
-export function ColumnsMenu({ columns, shown, saved }: { columns: { key: string; label: string }[]; shown: string[]; saved: string[] }) {
+// keeps the columns other files have. Default puts the default columns (`defaults`) in the draft; saved, the user's own
+// choice is cleared, so they follow the default columns again.
+export function ColumnsMenu({ columns, shown, saved, defaults }: {
+  columns: { key: string; label: string }[]; shown: string[]; saved: string[]; defaults: string[];
+}) {
   const { saveOrdersColumns } = useSession();
   const notify = useToast();
   const [open, setOpen] = useState(false);
   // The list being edited in the panel (null: nothing changed yet), saved with Save.
   const [draft, setDraft] = useState<string[] | null>(null);
+  // The draft is the default columns (Default clicked, nothing changed after).
+  const [toDefault, setToDefault] = useState(false);
   // Shown column being dragged, and where it would be dropped (an index in `shown`: it goes before that column).
   const [dragging, setDragging] = useState<string | null>(null);
   const [dropAt, setDropAt] = useState<number | null>(null);
@@ -39,13 +44,19 @@ export function ColumnsMenu({ columns, shown, saved }: { columns: { key: string;
   const shownCount = current.length;
   const listed = [...current.flatMap((key) => byKey.get(key) ?? []), ...columns.filter((c) => !current.includes(c.key))];
 
-  const edit = (next: string[]) => setDraft(next);
-  const openPanel = () => { setDraft(null); setOpen(true); };
-  const closePanel = () => { setOpen(false); setDraft(null); };
+  const edit = (next: string[]) => { setDraft(next); setToDefault(false); };
+  const openPanel = () => { setDraft(null); setToDefault(false); setOpen(true); };
+  const closePanel = () => { setOpen(false); setDraft(null); setToDefault(false); };
+  const isDefault = current.join("\u0000") === defaults.filter((k) => byKey.has(k)).join("\u0000");
 
   function save() {
-    if (draft) saveOrdersColumns(draft).catch(() => notify("The columns could not be saved. Try again.", "error"));
+    if (draft) saveOrdersColumns(toDefault ? null : draft).catch(() => notify("The columns could not be saved. Try again.", "error"));
     closePanel();
+  }
+
+  function applyDefaults() {
+    setDraft([...defaults]);
+    setToDefault(true);
   }
 
   function toggle(key: string) {
@@ -103,6 +114,8 @@ export function ColumnsMenu({ columns, shown, saved }: { columns: { key: string;
         icon={<TableIcon size={18} />}
         footer={
           <>
+            <Button onClick={applyDefaults} disabled={isDefault} className="mr-auto"
+                    title="Show the default columns in their default order (then Save)">Default</Button>
             <Button variant="ghost" onClick={closePanel}>Cancel</Button>
             <Button variant="primary" onClick={save} disabled={!draft}>Save</Button>
           </>

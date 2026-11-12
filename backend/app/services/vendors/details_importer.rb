@@ -95,8 +95,12 @@ module Vendors
             if vendor.nil? && @kind == :details && similar.empty?
               vendor = Vendor.new(name: e[:name].squish.first(200))
             elsif vendor.nil?
-              reason = similar.any? && @kind == :details ? "Possible duplicate of #{similar.map(&:name).join(' or ')}" :
-                                                           "No vendor with this name or GSTIN (import the vendor details file first)"
+              reason = if similar.any? && @kind == :details
+                "May be the same company as the existing vendor #{similar.map(&:name).to_sentence(two_words_connector: ' or ', last_word_connector: ' or ')}. " \
+                  "It was not added."
+              else
+                "No existing vendor matches this name or GSTIN. The tax officer address was not saved."
+              end
             end
           end
           attributes = @kind == :details ? details(e[:cell], e[:code], e[:name], e[:gst]) : { tax_officer_address: e[:cell].("administrative office") }

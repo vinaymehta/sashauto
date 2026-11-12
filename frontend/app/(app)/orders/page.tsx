@@ -37,7 +37,7 @@ import { SortTh } from "@/components/ui/sort-header";
 import { Pagination, Table, Td, Th } from "@/components/ui/table";
 import { Tabs } from "@/components/ui/tabs";
 
-type Align = "left" | "right";
+type Align = "left" | "center" | "right";
 interface Column {
   key: string; // sort key accepted by GET /api/orders
   label: string;
@@ -77,16 +77,21 @@ function OrderedBadge({ row }: { row: OrderRow }) {
 }
 
 // Opens the Place order panel for a row (provided by the Orders page; null for the Warehouse Manager).
+// A text cell shown in full: it wraps onto more lines (up to 18rem wide) instead of ending in "…".
+const WRAP = "block min-w-40 max-w-72 whitespace-normal break-words leading-snug";
+
 const PlaceOrderContext = createContext<((row: OrderRow) => void) | null>(null);
 
-// Unit, clickable like the PO and Part Numbers: opens Place order. Plain text when placing is not available.
+// Unit, clickable like the PO and Part Numbers: opens Place order. Plain text when placing is not available. Shown in
+// full on one line (a unit is a short place name, e.g. "Parts Distribution Center / PDC - Milan (US)"): the column is
+// as wide as it, so rows keep one line.
 function UnitLink({ row }: { row: OrderRow }) {
   const place = useContext(PlaceOrderContext);
-  const label = <span className="block max-w-64 truncate" title={row.unit ?? undefined}>{text(row.unit)}</span>;
+  const label = <span className="block whitespace-nowrap" title={row.unit ?? undefined}>{text(row.unit)}</span>;
   if (!place || !row.unit?.trim()) return label;
   return (
     <button type="button" onClick={(e) => { e.stopPropagation(); place(combinedOrder(row)); }}
-            className="max-w-full text-left font-medium text-ink underline decoration-neutral-300 underline-offset-2 transition-colors hover:text-accent hover:decoration-accent">
+            className="max-w-full text-center font-medium text-ink underline decoration-neutral-300 underline-offset-2 transition-colors hover:text-accent hover:decoration-accent">
       {label}
     </button>
   );
@@ -100,7 +105,7 @@ const typedColumns = (uploadId?: number): Record<string, Omit<Column, "key" | "l
   type: { render: (r) => <span className="inline-flex items-center gap-1.5">{r.order_type}{getBusiness() === "all" && r.business && <Badge tone="dark">{BUSINESS_LABEL[r.business]}</Badge>}{r.manual && <Badge>Manual</Badge>}{r.placed && <OrderedBadge row={r} />}</span> },
   due_date: { render: (r) => date(r.due_date) },
   ship_date: { render: (r) => formatDate(r.ship_date) },
-  unit: { render: (r) => <UnitLink row={r} /> },
+  unit: { align: "center", render: (r) => <UnitLink row={r} /> },
   // PO Number (opens Order details), with tags for a combined order and an order still below the MOQ.
   po_number: {
     render: (r) => (
@@ -123,7 +128,7 @@ const typedColumns = (uploadId?: number): Record<string, Omit<Column, "key" | "l
   ship_to_address: {
     render: (r) => (
       <span className="inline-flex max-w-80 items-center gap-1.5">
-        <span className="truncate" title={String(r.source_data?.["Ship To Address"] ?? "")}>{cell(r.source_data?.["Ship To Address"])}</span>
+        <span className={WRAP} title={String(r.source_data?.["Ship To Address"] ?? "")}>{cell(r.source_data?.["Ship To Address"])}</span>
         {r.other_ship_to && <span title="Not the default Ship To address"><Badge tone="warn">Other Ship To</Badge></span>}
       </span>
     ),
@@ -175,7 +180,7 @@ function buildColumns(columns: { key: string; label: string }[], uploadId?: numb
     const numeric = numericKeys?.has(key) ?? false;
     const column: Column = typed ? { key, label, ...typed } : {
       key, label, align: numeric ? "right" : "left",
-      render: (r) => <span className="block max-w-72 truncate" title={String(r.source_data?.[label] ?? "")}>{cell(r.source_data?.[label])}</span>,
+      render: (r) => <span className={numeric ? "block max-w-72 truncate" : WRAP} title={String(r.source_data?.[label] ?? "")}>{cell(r.source_data?.[label])}</span>,
     };
     // "Price per piece" (Unit Price ÷ 100) just before the file's Unit Price.
     if (label === "Unit Price") {
@@ -202,11 +207,12 @@ function buildColumns(columns: { key: string; label: string }[], uploadId?: numb
   });
 }
 
-// The Orders table columns a user sees until they choose their own (Columns).
-const DEFAULT_COLUMNS = ["status", "sash_india_invoice", "type", "firm_date", "ship_date", "po_number", "part_number", "part_description", "qty",
-                         "order_qty", "shipped_qty", "balance_qty", "ship_to_location"];
+// The Orders table columns a user sees until they choose their own (Columns; its Default button goes back to them): ten
+// at most, with every clickable column: Status (marks), PO Number (Order details), Part Number (Product summary) and
+// Unit (Place order: Generate PO).
+const DEFAULT_COLUMNS = ["status", "type", "firm_date", "ship_date", "po_number", "part_number", "part_description", "unit", "qty", "balance_qty"];
 
-// Delivery tabs: the order rows with a fixed Status. In transit = part (Dispatch) or all (Dispatched) dispatched from
+// Delivery tabs: the order rows with a fixed Status. Dispatched = part (Dispatch) or all (Dispatched) dispatched from
 // SASH Faridabad (SASH India invoices) but not yet at SASH US, Orders fulfilled = delivered to Deere.
 const STATUS_TABS: Record<string, string> = { transit: "dispatch,dispatched", fulfilled: "outbound" };
 
@@ -240,7 +246,7 @@ const OrderTr = memo(function OrderTr({ row, columns, open, today, role, onChang
             : <span className="text-neutral-300">—</span>}
         </Td>
       ) : (
-        <Td key={c.key} align={c.align === "right" ? "right" : "left"}>{c.render(row)}</Td>
+        <Td key={c.key} align={c.align ?? "left"}>{c.render(row)}</Td>
       )))}
     </tr>
   );
@@ -440,7 +446,7 @@ function OrdersView() {
     ]),
     { key: "orders" as const, label: "All Orders", icon: <TableIcon size={17} />, count: statusTab ? null : data?.meta.total ?? null },
     ...(uploadId === null && summary.data ? [
-      { key: "transit" as const, label: "In transit", icon: <TruckIcon size={17} />, count: summary.data.in_transit },
+      { key: "transit" as const, label: "Dispatched", icon: <TruckIcon size={17} />, count: summary.data.in_transit },
       { key: "fulfilled" as const, label: "Orders fulfilled", icon: <CheckIcon size={17} />, count: summary.data.fulfilled },
     ] : []),
     ...(!shown || (isFirst && moqAlerts === 0) ? [] : [
@@ -589,7 +595,7 @@ function OrdersView() {
               {arranging ? "Save" : "Arrange"}
             </button>
           )}
-          {chooserColumns.length > 2 && <ColumnsMenu columns={chooserColumns} shown={shownKeys} saved={savedColumns} />}
+          {chooserColumns.length > 2 && <ColumnsMenu columns={chooserColumns} shown={shownKeys} saved={savedColumns} defaults={DEFAULT_COLUMNS} />}
         </ListToolbar>
         <FilterChips groups={listFilters} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
         <AgeLegend value={list.filters.age} onChange={(v) => list.setFilter("age", v)} />

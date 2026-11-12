@@ -36,6 +36,8 @@ const moneyIn = (currency: string | null) => (v: string | number, compact = fals
 const useMoney = () => moneyIn(useContext(CurrencyContext));
 // The Orders page filtered to open orders (Firm and Order; delivered ones are hidden there by default).
 const OPEN_ORDERS = "/orders?type=Firm,Order";
+// Past ship date: late open orders not dispatched yet (no status, or received at SASH Faridabad), as the card counts them.
+const LATE_ORDERS = `${OPEN_ORDERS}&timing=overdue&status=none,received`;
 const plural = (n: number, word: string) => `${formatCount(n)} ${word}${n === 1 ? "" : "s"}`;
 const ordersText = (n: number, missing: number) => `${plural(n, "order")}${missing ? ` · ${formatCount(missing)} without a price` : ""}`;
 
@@ -129,7 +131,7 @@ export default function DashboardPage() {
   }
 
   const attention = [
-    overview.kpis.overdue.count > 0 && { text: `${plural(overview.kpis.overdue.count, "open order")} past the ship date`, href: `${OPEN_ORDERS}&timing=overdue` },
+    overview.kpis.overdue.count > 0 && { text: `${plural(overview.kpis.overdue.count, "order")} past the ship date and not dispatched yet`, href: LATE_ORDERS },
     totals.open_conflicts > 0 && { text: `${totals.open_conflicts} Commodity Type conflict${totals.open_conflicts === 1 ? "" : "s"} to review`, href: "/products?conflicts=open" },
     totals.in_progress > 0 && { text: `${totals.in_progress} upload${totals.in_progress === 1 ? " is" : "s are"} processing`, href: "/orders" },
   ].filter(Boolean) as { text: string; href: string }[];
@@ -180,8 +182,8 @@ export default function DashboardPage() {
                     value={formatCount(kpis.open.count)} detail={`${usd(kpis.open.value, true)} · Firm and Order`} />
           <StatCard label="Shipping in 30 days" href={`${OPEN_ORDERS}&timing=next30`} info={<>Open orders with a <b>ship date from today to 30 days ahead</b>, and their value. They are listed in Next shipments.</>} icon={<CalendarIcon size={16} />} tint="violet"
                     value={formatCount(kpis.due_30.count)} detail={`${usd(kpis.due_30.value, true)} due by ${formatDate(addDays(30))}`} />
-          <StatCard label="Past ship date" href={`${OPEN_ORDERS}&timing=overdue`} info={<>Open orders whose <b>ship date has passed</b> and that are not yet marked delivered to Deere, and their value.</>} icon={<AlertIcon size={16} />} tint="dec" tone={kpis.overdue.count ? "bad" : undefined}
-                    value={formatCount(kpis.overdue.count)} detail={`${usd(kpis.overdue.value, true)} not yet delivered`} />
+          <StatCard label="Past ship date" href={LATE_ORDERS} info={<>Orders whose <b>ship date has passed</b> and that are <b>not dispatched yet</b> (still with SASH India or the vendor): the late orders that still need action, and their value. Dispatched orders are on Orders → Dispatched. A combined order counts by its last ship date.</>} icon={<AlertIcon size={16} />} tint="dec" tone={kpis.overdue.count ? "bad" : undefined}
+                    value={formatCount(kpis.overdue.count)} detail={`${usd(kpis.overdue.value, true)} not dispatched yet`} />
           <StatCard label="PO coverage" href={`${OPEN_ORDERS}&po=none`} info={<>Share of the <b>open order value that already has a vendor PO</b> (Generate PO). Below: open orders with a Qty and no PO yet.</>} icon={<CheckIcon size={16} />} tint="aqua"
                     value={`${kpis.po_coverage.percent.toLocaleString("en-US", { maximumFractionDigits: 1 })}%`}
                     detail={`${plural(kpis.po_coverage.without_po.count, "open order")} without a vendor PO`}>

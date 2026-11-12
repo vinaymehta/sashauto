@@ -10,7 +10,7 @@ import { StatusPill } from "./delivery-cell";
 import { RelatedLink } from "./related-popover";
 
 // PO summary (opened from a PO Number link): for the PO's Firm / Order lines in the shown order data (`uploadId`;
-// undefined = the current data) what was ordered, dispatched from India, is in transit, was delivered to Deere and is
+// undefined = the current data) what was ordered, dispatched from India, was delivered to Deere and is
 // still to dispatch, with the revenue (Deere prices), then each line with its status. A Part Number opens its Product
 // summary in the same panel.
 export function PoSummaryPanel({ po, uploadId }: { po: string; uploadId?: number }) {
@@ -24,10 +24,9 @@ export function PoSummaryPanel({ po, uploadId }: { po: string; uploadId?: number
   const money = (v: string) => (s.currency ? formatCustomer(v, s.currency, 2) : Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 }));
   const tiles: { label: string; value: string; tone: string; dot: string }[] = [
     { label: "Total ordered", value: t.ordered, tone: "text-ink", dot: "bg-neutral-400" },
-    { label: "Dispatched", value: t.dispatched, tone: "text-violet-700", dot: "bg-violet-500" },
-    { label: "In transit", value: t.in_transit, tone: "text-blue-700", dot: "bg-blue-500" },
-    { label: "Delivered to Deere", value: t.delivered, tone: "text-green-700", dot: "bg-green-600" },
     { label: "Pending to dispatch", value: t.pending, tone: Number(t.pending) > 0 ? "text-amber-700" : "text-ink-faint", dot: "bg-neutral-300" },
+    { label: "Dispatched", value: t.dispatched, tone: "text-violet-700", dot: "bg-violet-500" },
+    { label: "Delivered to Deere", value: t.delivered, tone: "text-green-700", dot: "bg-green-600" },
   ];
 
   return (
@@ -47,7 +46,7 @@ export function PoSummaryPanel({ po, uploadId }: { po: string; uploadId?: number
       </section>
 
       <section className="space-y-3 rounded-lg border border-line bg-white px-5 py-4 shadow-card">
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {tiles.map((tile) => (
             <div key={tile.label} className="rounded-md bg-neutral-50 px-3 py-2 ring-1 ring-line">
               <span className="flex items-center gap-1.5 text-xs text-ink-muted"><span className={`h-2 w-2 rounded-full ${tile.dot}`} />{tile.label}</span>
@@ -56,9 +55,10 @@ export function PoSummaryPanel({ po, uploadId }: { po: string; uploadId?: number
           ))}
         </div>
         <div className="flex h-2.5 overflow-hidden rounded-full bg-neutral-200" role="img"
-             aria-label={`${t.delivered} delivered, ${t.in_transit} in transit, ${t.pending} still to dispatch of ${t.ordered}`}>
+             aria-label={`${t.dispatched} dispatched (${t.delivered} delivered to Deere), ${t.pending} still to dispatch of ${t.ordered}`}>
           <span className="bg-green-600" style={{ width: `${pct(t.delivered)}%` }} />
-          <span className="bg-blue-500" style={{ width: `${pct(t.in_transit)}%` }} />
+          {/* Dispatched: the part delivered to Deere in green, the rest in the Dispatched colour. */}
+          <span className="bg-violet-500" style={{ width: `${pct(t.in_transit)}%` }} />
         </div>
         {t.unpriced > 0 && <p className="text-xs text-amber-700">{formatCount(t.unpriced)} order{t.unpriced === 1 ? "" : "s"} without a Deere price, left out of the revenue.</p>}
       </section>
@@ -81,9 +81,9 @@ export function PoSummaryPanel({ po, uploadId }: { po: string; uploadId?: number
                   <th className="px-3 py-2 font-semibold">Ship date</th>
                   <th className="px-3 py-2 font-semibold">Status</th>
                   <th className="px-2 py-2 text-right font-semibold">Ordered</th>
+                  <th className="px-2 py-2 text-right font-semibold">Pending</th>
                   <th className="px-2 py-2 text-right font-semibold">Dispatched</th>
                   <th className="px-2 py-2 text-right font-semibold">Delivered</th>
-                  <th className="px-2 py-2 text-right font-semibold">Pending</th>
                   <th className="px-5 py-2 text-right font-semibold">Revenue</th>
                 </tr>
               </thead>
@@ -99,9 +99,9 @@ export function PoSummaryPanel({ po, uploadId }: { po: string; uploadId?: number
                     <td className="whitespace-nowrap px-3 py-2 text-ink">{formatDate(l.ship_date)}</td>
                     <td className="px-3 py-2"><StatusPill kind={l.status} /></td>
                     <td className="px-2 py-2 text-right tabular text-ink">{formatQty(l.ordered)}</td>
+                    <td className={`px-2 py-2 text-right tabular font-semibold ${Number(l.pending) > 0 ? "text-amber-700" : "text-ink-faint"}`}>{formatQty(l.pending)}</td>
                     <td className="px-2 py-2 text-right tabular text-violet-700">{formatQty(l.dispatched)}</td>
                     <td className="px-2 py-2 text-right tabular text-green-700">{formatQty(l.delivered)}</td>
-                    <td className={`px-3 py-2 text-right tabular font-semibold ${Number(l.pending) > 0 ? "text-amber-700" : "text-ink-faint"}`}>{formatQty(l.pending)}</td>
                     <td className="px-5 py-2 text-right tabular text-ink">{l.unpriced ? <span className="text-ink-faint">—</span> : money(l.revenue_ordered)}</td>
                   </tr>
                 ))}

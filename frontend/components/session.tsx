@@ -15,7 +15,7 @@ interface SessionState {
   // Reloads the signed-in user (e.g. after an admin changed their own name, email or role).
   refresh: () => Promise<void>;
   // Saves the Orders table columns the signed-in user shows (shown at once; restored if saving fails).
-  saveOrdersColumns: (shown: string[]) => Promise<void>;
+  saveOrdersColumns: (shown: string[] | null) => Promise<void>; // null: back to the default columns
 }
 
 const SessionContext = createContext<SessionState | null>(null);
@@ -81,12 +81,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setUser(res.user);
   }, []);
 
-  const saveOrdersColumns = useCallback(async (shown: string[]) => {
+  const saveOrdersColumns = useCallback(async (shown: string[] | null) => {
     let before: string[] | null = null;
     setUser((u) => { before = u?.orders_columns ?? null; return u && { ...u, orders_columns: shown }; });
     // The reply is not applied: with quick clicks an earlier reply could arrive last and undo a later click.
     try {
-      await api.patch<{ user: User }>("/api/session/orders_columns", { shown });
+      await api.patch<{ user: User }>("/api/session/orders_columns", shown ? { shown } : { default: true });
     } catch (err) {
       setUser((u) => u && { ...u, orders_columns: before });
       throw err;

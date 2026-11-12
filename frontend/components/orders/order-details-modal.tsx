@@ -418,7 +418,7 @@ export function InvoiceMoves({ row, moves, onChanged }: { row: OrderRow; moves: 
     }
   }
 
-  // This row's journey: Order Qty → dispatched from India → delivered to Deere; in transit = dispatched less delivered.
+  // This row's journey: Order Qty → dispatched from India → delivered to Deere (the bar: delivered, then the rest dispatched).
   const order = Number(row.order_qty ?? row.qty ?? 0);
   const shipped = Number(row.shipped_qty ?? 0);
   const delivered = Number(row.outbound_qty ?? 0);
@@ -427,10 +427,9 @@ export function InvoiceMoves({ row, moves, onChanged }: { row: OrderRow; moves: 
   const pct = (n: number) => (order > 0 ? Math.min((n / order) * 100, 100) : 0);
   const tiles: { label: string; value: number; tone: string; dot: string }[] = [
     { label: "Order Qty", value: order, tone: "text-ink", dot: "bg-neutral-400" },
+    { label: "Pending to dispatch", value: balance, tone: balance > 0 ? "text-amber-700" : "text-ink-faint", dot: "bg-neutral-300" },
     { label: "Dispatched", value: shipped, tone: "text-violet-700", dot: "bg-violet-500" },
-    { label: "In transit", value: inTransit, tone: "text-blue-700", dot: "bg-blue-500" },
     { label: "Delivered to Deere", value: delivered, tone: "text-green-700", dot: "bg-green-600" },
-    { label: "Balance to dispatch", value: balance, tone: balance > 0 ? "text-amber-700" : "text-ink-faint", dot: "bg-neutral-300" },
   ];
   const groups: { kind: "india" | "inc"; title: string; hint: string; Icon: typeof TruckIcon; tint: string }[] = [
     { kind: "india", title: "Dispatched from India", hint: "SASH India invoices", Icon: TruckIcon, tint: "bg-violet-50 text-violet-700 ring-violet-200" },
@@ -452,10 +451,10 @@ export function InvoiceMoves({ row, moves, onChanged }: { row: OrderRow; moves: 
         )}
       </div>
 
-      {/* This row at a glance: the five figures and one bar (delivered | in transit | still to dispatch). */}
+      {/* This row at a glance: the four figures and one bar (delivered | dispatched, not delivered yet | still to dispatch). */}
       {(shipped > 0 || delivered > 0) && (
         <div className="space-y-3 border-b border-neutral-100 bg-neutral-50/60 px-5 py-4">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {tiles.map((t) => (
               <div key={t.label} className="rounded-md bg-white px-3 py-2 ring-1 ring-line">
                 <span className="flex items-center gap-1.5 text-xs text-ink-muted"><span className={`h-2 w-2 rounded-full ${t.dot}`} />{t.label}</span>
@@ -464,9 +463,9 @@ export function InvoiceMoves({ row, moves, onChanged }: { row: OrderRow; moves: 
             ))}
           </div>
           <div className="flex h-2.5 overflow-hidden rounded-full bg-neutral-200" role="img"
-               aria-label={`${delivered} delivered, ${inTransit} in transit, ${balance} still to dispatch of ${order}`}>
+               aria-label={`${shipped} dispatched (${delivered} delivered to Deere), ${balance} still to dispatch of ${order}`}>
             <span className="bg-green-600" style={{ width: `${pct(delivered)}%` }} />
-            <span className="bg-blue-500" style={{ width: `${pct(inTransit)}%` }} />
+            <span className="bg-violet-500" style={{ width: `${pct(inTransit)}%` }} />
           </div>
         </div>
       )}

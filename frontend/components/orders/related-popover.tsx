@@ -23,7 +23,7 @@ const TITLES: Record<Kind, (value: string) => string> = {
 const ICONS: Record<Kind, ReactNode> = { po: <FileIcon size={18} />, part: <BoxIcon size={18} />, vendor: <TruckIcon size={18} /> };
 
 // Clickable PO Number, Part Number or vendor name. Opens the wide right-hand side panel with its summary: a PO's lines
-// (ordered, dispatched, delivered, pending, status, revenue), a part's Product summary (ordered, dispatched, in transit,
+// (ordered, dispatched, delivered, pending, status, revenue), a part's Product summary (ordered, dispatched,
 // delivered, pending; per PO; vendors and prices) or a vendor's parts and details; from the server for the shown upload
 // (`uploadId`; undefined = the current order data). Links inside the panel open in the same panel, with a Back button.
 // A vendor link needs the vendor's `id`.

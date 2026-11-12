@@ -354,13 +354,16 @@ module Api
     def load_combined_orders(combined)
       @anchor_of = {}
       @combined_keys = {}
+      @combined_ship = {}
       combined.groups.each_value do |g|
         next unless g.combined?
 
         key = VendorOrderPlacement.order_key(g.members.find { |m| m.id == g.anchor_id })
+        ships = g.members.map(&:ship_date).max # a combined order ships with its last order (as on the Dashboard)
         g.members.each do |m|
           @anchor_of[m.id] = g.anchor_id
           @combined_keys[m.id] = key
+          @combined_ship[m.id] = ships
         end
       end
     end
@@ -744,17 +747,25 @@ module Api
     end
 
     # Ship timing filter (timing=overdue,next30): ship date before today, or from today to 30 days ahead (today = the
-    # browser's IST date, as the age colours).
+    # browser's IST date, as the age colours). As the Dashboard counts them: the rows of a combined order by its last
+    # ship date (it ships with its last order), and without the kept rows (no longer in the latest upload).
     def filter_by_timing(scope)
       values = multi_param(:timing, %w[overdue next30])
       return scope if values.empty?
 
       today = request_today
+      in_window = ->(date) { values.any? { |v| v == "overdue" ? date < today : date.between?(today, today + 30) } }
+      combined = @combined_ship.keys
       ship = "order_rows.ship_date"
-      conditions = values.map do |v|
+      own = values.map do |v|
         v == "overdue" ? ActiveRecord::Base.sanitize_sql([ "#{ship} < ?", today ]) : ActiveRecord::Base.sanitize_sql([ "#{ship} BETWEEN ? AND ?", today, today + 30 ])
-      end
-      scope.where(conditions.map { |c| "(#{c})" }.join(" OR "))
+      end.map { |c| "(#{c})" }.join(" OR ")
+      scope = scope.where(kept: false)
+      return scope.where(own) if combined.empty?
+
+      member = scope.sanitize_sql_array([ "(NOT order_rows.manual AND order_rows.id IN (?))", combined ])
+      due = @combined_ship.select { |_, date| in_window.(date) }.keys.presence || [ 0 ]
+      scope.where("(NOT #{member} AND (#{own})) OR (#{member} AND order_rows.id IN (?))", due)
     end
 
     # Source filter (source=upload,manual): rows of the uploaded file, or manual orders.

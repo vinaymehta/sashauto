@@ -32,7 +32,8 @@ export function useOpenImportIssues() {
 }
 
 // Problems from vendor workbook imports (skipped rows and values that could not be read), shown as a tab on
-// Products and Vendors. Admins can fix and add a row, dismiss an issue, or delete the part a row created. Rows of the
+// Products and Vendors. Admins can fix and add a row, dismiss an issue (and reopen a dismissed one), or delete the part
+// a row created. Rows of the
 // vendor details / tax officer file that were not saved are linked to an existing vendor ("Same as…") or added as a
 // new vendor.
 export function ImportIssuesPanel({ canEdit, onChanged }: { canEdit: boolean; onChanged: () => void }) {
@@ -48,6 +49,7 @@ export function ImportIssuesPanel({ canEdit, onChanged }: { canEdit: boolean; on
   const [viewing, setViewing] = useState<ImportIssue | null>(null);
   const [adding, setAdding] = useState<number | null>(null);
   const [dismissing, setDismissing] = useState<number | null>(null);
+  const [reopening, setReopening] = useState<number | null>(null);
   const [deleting, setDeleting] = useState<ImportIssue | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -69,6 +71,22 @@ export function ImportIssuesPanel({ canEdit, onChanged }: { canEdit: boolean; on
       return false;
     } finally {
       setDismissing(null);
+    }
+  }
+
+  // A dismissed issue back to open (dismissed by mistake). Returns whether it worked (the panel then closes).
+  async function reopen(issue: ImportIssue) {
+    setReopening(issue.id);
+    try {
+      await api.post(`/api/import_issues/${issue.id}/reopen`);
+      notify(`Issue on Excel row ${issue.excel_row} is open again.`);
+      changed();
+      return true;
+    } catch (err) {
+      notify(err instanceof ApiError ? err.message : "Could not reopen the issue.", "error");
+      return false;
+    } finally {
+      setReopening(null);
     }
   }
 
@@ -100,11 +118,11 @@ export function ImportIssuesPanel({ canEdit, onChanged }: { canEdit: boolean; on
         <Button size="sm" onClick={run(() => setLinking(issue))} disabled={working} title="It is a vendor already in the app: put these details on it">
           <TruckIcon size={14} className="text-ink-muted" />Same as…
         </Button>
-        {issue.source === "details" && (
-          <Button size="sm" onClick={thenClose(() => addVendor(issue))} disabled={working} title="Add it as a new vendor">
-            <PlusIcon size={14} className="text-ink-muted" />{adding === issue.id ? "Adding…" : "Add as vendor"}
-          </Button>
-        )}
+        {/* A tax officer file row has only the name and the Jurisdictional Tax Officer: the vendor is added with those. */}
+        <Button size="sm" onClick={thenClose(() => addVendor(issue))} disabled={working}
+                title={issue.source === "details" ? "Add it as a new vendor" : "Add it as a new vendor with this name and tax officer address (fill in the rest on Vendors)"}>
+          <PlusIcon size={14} className="text-ink-muted" />{adding === issue.id ? "Adding…" : "Add as vendor"}
+        </Button>
         <Button size="sm" variant="ghost" onClick={thenClose(() => dismiss(issue))} disabled={working}>{dismissing === issue.id ? "Dismissing…" : "Dismiss"}</Button>
       </>
     ) : (
@@ -210,17 +228,17 @@ export function ImportIssuesPanel({ canEdit, onChanged }: { canEdit: boolean; on
                       {issue.kind === "skipped" ? "Skipped" : issue.kind === "vendor_details" ? "Vendor" : "Unreadable"}
                     </Badge>
                   </Td>
-                  <Td className="whitespace-normal! py-3 align-top text-ink">{issue.message}</Td>
+                  <Td className="whitespace-pre-line! py-3 align-top text-ink">{issue.message}</Td>
                   {status !== "open" && (
                     <Td className="py-3 align-top text-ink-muted">
                       <span className="block">{formatDateTime(issue.resolved_at)}</span>
                       <span className="block text-xs">{issue.resolved_by ?? "—"}{issue.resolution ? ` · ${{ fixed: "fixed", deleted: "part deleted", reimported: "file imported again", linked: "linked to a vendor", created: "added as a vendor" }[issue.resolution]}` : ""}</span>
                     </Td>
                   )}
-                  {/* One icon: opens the issue's panel (the data from the file, and the actions on an open issue). */}
+                  {/* One icon: opens the issue's panel (the data from the file, the actions on an open issue, Reopen on a dismissed one). */}
                   <Td align="right" className="py-3 align-top" onClick={(e) => e.stopPropagation()}>
                     <button type="button" onClick={() => setViewing(issue)} aria-label={`Edit the issue on Excel row ${issue.excel_row}`}
-                            title={canEdit && issue.status === "open" ? "Edit: data from the file and actions" : "Data from the file"}
+                            title={canEdit && issue.status !== "resolved" ? "Edit: data from the file and actions" : "Data from the file"}
                             className="-my-1.5 inline-flex h-8 w-8 items-center justify-center rounded-md text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-ink">
                       <PencilIcon size={16} />
                     </button>
@@ -236,7 +254,12 @@ export function ImportIssuesPanel({ canEdit, onChanged }: { canEdit: boolean; on
       {fixing && <FixRowPanel issue={fixing} onClose={() => setFixing(null)} onFixed={() => { setFixing(null); changed(); }} />}
       {viewing && (
         <RowDataPanel issue={viewing} onClose={() => setViewing(null)}
-                      actions={canEdit && viewing.status === "open" ? actionButtons(viewing) : undefined} />
+                      actions={!canEdit ? undefined : viewing.status === "open" ? actionButtons(viewing) : viewing.status === "dismissed" ? (
+                        <Button size="sm" onClick={async () => { if (await reopen(viewing)) setViewing(null); }} disabled={reopening === viewing.id}
+                                title="Move it back to Open: its actions (Fix & add, Same as…, …) are offered again">
+                          {reopening === viewing.id ? "Reopening…" : "Reopen"}
+                        </Button>
+                      ) : undefined} />
       )}
       {linking && <LinkVendorPanel issue={linking} onClose={() => setLinking(null)} onLinked={() => { setLinking(null); changed(); }} />}
       {deleting && (
@@ -261,7 +284,8 @@ const FIELDS: { key: keyof ImportRowData; label: string; required?: boolean; hin
   { key: "price", label: "Vendor Price", hint: "e.g. ₹ 4.25, $1.5, GBP 4.04, 25. Currencies: INR, USD, EUR, CNY, GBP." },
 ];
 
-// Side panel with the Excel row: correct it and add it, as the import would have.
+// Side panel with the Excel row: correct it and add it, as the import would have. A save the server refuses (a value
+// still unreadable, e.g. Vendor Price "-") shows what to change at the top, under the field, and scrolls to the field.
 function FixRowPanel({ issue, onClose, onFixed }: { issue: ImportIssue; onClose: () => void; onFixed: () => void }) {
   const notify = useToast();
   const [row, setRow] = useState<ImportRowData>(issue.row_data);
@@ -280,8 +304,20 @@ function FixRowPanel({ issue, onClose, onFixed }: { issue: ImportIssue; onClose:
       onFixed();
     } catch (err) {
       const details = err instanceof ApiError ? (err.details as Record<string, string[]> | undefined) : undefined;
-      if (details) setErrors(Object.fromEntries(Object.entries(details).map(([k, v]) => [k, v.join(" ")])));
+      // What to do, after the reason: an optional field may also be left blank.
+      const optional = (key: string) => FIELDS.some((f) => f.key === key && !f.required);
+      const fieldErrors = details ? Object.fromEntries(Object.entries(details).map(([k, v]) => [
+        k, `${v.join(" ")} ${optional(k) ? "Enter a valid value or leave the field blank." : "Enter a valid value."}`,
+      ])) : {};
+      setErrors(fieldErrors);
       setError(err instanceof ApiError ? err.message : "Could not add the row.");
+      // The field may be below the fold: bring it into view and put the cursor in it.
+      const first = FIELDS.find((f) => fieldErrors[f.key]);
+      requestAnimationFrame(() => {
+        const input = first && document.getElementById(`fix-${first.key}`);
+        input?.scrollIntoView({ block: "center", behavior: "smooth" });
+        input?.focus({ preventScroll: true });
+      });
     } finally {
       setSaving(false);
     }
@@ -302,8 +338,18 @@ function FixRowPanel({ issue, onClose, onFixed }: { issue: ImportIssue; onClose:
       }
     >
       <form onSubmit={save} className="space-y-4" noValidate>
-        <Alert tone="warning" title="Problem">{issue.message}</Alert>
-        {error && !Object.keys(errors).length && <Alert>{error}</Alert>}
+        <Alert tone="warning" title="Problem"><span className="whitespace-pre-line">{issue.message}</span></Alert>
+        {error && (
+          <Alert title={FIELDS.some((f) => errors[f.key]) ? "Not saved: please correct the fields below" : "Not saved"}>
+            {FIELDS.some((f) => errors[f.key]) ? (
+              <ul className="space-y-1">
+                {FIELDS.filter((f) => errors[f.key]).map((f) => (
+                  <li key={f.key}><b>{f.label}:</b> {errors[f.key]}</li>
+                ))}
+              </ul>
+            ) : errors.base ?? error}
+          </Alert>
+        )}
         <div className="space-y-4 rounded-lg border border-line bg-white px-5 py-5 shadow-card">
           {FIELDS.map((f) => {
             const id = `fix-${f.key}`;
@@ -320,7 +366,6 @@ function FixRowPanel({ issue, onClose, onFixed }: { issue: ImportIssue; onClose:
             );
           })}
         </div>
-        {errors.base && <Alert>{errors.base}</Alert>}
         <button type="submit" hidden />
       </form>
     </Sheet>
@@ -364,7 +409,7 @@ function LinkVendorPanel({ issue, onClose, onLinked }: { issue: ImportIssue; onC
     <Sheet open onClose={onClose} title={`Same as… · ${issue.vendor_name ?? ""}`} description={`Excel row ${issue.excel_row} · ${issue.filename}`}
            icon={<TruckIcon size={18} />}>
       <div className="space-y-4">
-        <Alert tone="warning" title="Problem">{issue.message}</Alert>
+        <Alert tone="warning" title="Problem"><span className="whitespace-pre-line">{issue.message}</span></Alert>
         {error && <Alert>{error}</Alert>}
         {issue.candidates.length > 0 && (
           <section className="overflow-hidden rounded-lg border border-line bg-white shadow-card">
@@ -427,7 +472,7 @@ function RowDataPanel({ issue, onClose, actions }: { issue: ImportIssue; onClose
     <Sheet open onClose={onClose} title={`Excel row ${issue.excel_row}`} description={issue.filename} icon={<AlertIcon size={18} />}
            footer={actions && <span className="flex flex-wrap justify-end gap-2">{actions}</span>}>
       <div className="space-y-4">
-        <Alert tone="warning" title="Problem">{issue.message}</Alert>
+        <Alert tone="warning" title="Problem"><span className="whitespace-pre-line">{issue.message}</span></Alert>
         {issue.kind === "vendor_details" && issue.candidates.length > 0 && (
           <p className="rounded-lg border border-line bg-white px-5 py-3 text-sm text-ink shadow-card">
             <span className="text-ink-muted">Possibly the same as </span>

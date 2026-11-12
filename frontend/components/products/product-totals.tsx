@@ -14,15 +14,15 @@ import { SearchInput } from "../ui/search-input";
 import { TableSkeleton } from "../ui/skeleton";
 import { Table, Td, Th } from "../ui/table";
 
-type SortKey = "part_number" | "ordered" | "dispatched" | "in_transit" | "delivered" | "pending" | "forecast" | "revenue_ordered" | "revenue_delivered";
+type SortKey = "part_number" | "ordered" | "dispatched" | "delivered" | "pending" | "forecast" | "revenue_ordered" | "revenue_delivered";
 const COLUMNS: { key: SortKey; label: string; tone?: string }[] = [
-  { key: "ordered", label: "Ordered" }, { key: "dispatched", label: "Dispatched", tone: "text-violet-700" },
-  { key: "in_transit", label: "In transit", tone: "text-blue-700" }, { key: "delivered", label: "Delivered", tone: "text-green-700" },
-  { key: "pending", label: "Pending" }, { key: "forecast", label: "Forecast", tone: "text-ink-muted" },
+  { key: "ordered", label: "Ordered" }, { key: "pending", label: "Pending" },
+  { key: "dispatched", label: "Dispatched", tone: "text-violet-700" }, { key: "delivered", label: "Delivered", tone: "text-green-700" },
+  { key: "forecast", label: "Forecast", tone: "text-ink-muted" },
 ];
 
 // Products page, "Product summary" tab: every part of the shown order data (the Business menu) with what was ordered,
-// dispatched from India, is in transit, was delivered to Deere and is still to dispatch, its Forecast and the revenue
+// dispatched from India, was delivered to Deere and is still to dispatch, its Forecast and the revenue
 // (Deere prices) of what was ordered and delivered; largest revenue first, any column sorts. A part opens its Product
 // summary.
 export function ProductTotalsPanel() {

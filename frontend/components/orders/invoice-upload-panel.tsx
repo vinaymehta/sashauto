@@ -15,7 +15,7 @@ import { Table, Td, Th } from "../ui/table";
 
 // What each kind of invoice does, for the panel's texts once the file is read.
 const KIND_TEXT: Record<InvoiceKind, { from: string; moves: string; before: string; after: string }> = {
-  india: { from: "SASH Autotech Pvt. Ltd. (India) to Lotus Automotive", moves: "dispatched (in transit)",
+  india: { from: "SASH Autotech Pvt. Ltd. (India) to Lotus Automotive", moves: "dispatched",
            before: "Shipped before", after: "Shipped after" },
   inc: { from: "SASH Autotech, Inc. (US) to John Deere", moves: "outbound (delivered to Deere)",
          before: "Outbound before", after: "Outbound after" },
@@ -134,7 +134,7 @@ export function InvoiceUploadPanel({ onClose, onSaved }: { onClose: () => void; 
             <Table dense minWidth="min-w-[860px]">
               <thead>
                 <tr><Th>PO Number</Th><Th>Part Number</Th><Th>PO Line · Ship Date</Th><Th align="right">Order Qty</Th><Th align="right">{text?.before}</Th>
-                  <Th align="right">Qty</Th><Th align="right">{text?.after}</Th><Th align="right">{kind === "india" ? "Balance" : "In transit"}</Th></tr>
+                  <Th align="right">Qty</Th><Th align="right">{text?.after}</Th><Th align="right">{kind === "india" ? "Balance" : "Not delivered yet"}</Th></tr>
               </thead>
               <tbody>
                 {preview.lines.map((line) => (

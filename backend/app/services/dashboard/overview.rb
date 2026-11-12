@@ -7,7 +7,8 @@ module Dashboard
   # Open = a Firm or Order order not yet delivered to Deere (no active outbound mark, nor delivered in full on SASH Inc
   # invoices). Values are Qty × Unit Price ÷ 100 (in the business's currency, Settings), as in Dashboard::Money.
   #
-  #   kpis       open orders, due in the next 30 days, overdue (ship date passed), PO coverage (share of the open value
+  #   kpis       open orders, due in the next 30 days, overdue (ship date passed and not dispatched yet: still with SASH
+  #              India or the vendor; dispatched ones are in transit), PO coverage (share of the open value
   #              with a vendor PO generated)
   #   pipeline   open orders by their furthest status: none, received, dispatched (a mark, or on SASH India invoices), inbound
   #   ageing     open orders by age group (days since the Firm Date, Ageing::Rules)
@@ -18,11 +19,14 @@ module Dashboard
   class Overview
     TYPES = %w[Firm Order].freeze
     STATUSES = %w[none received dispatched inbound].freeze
+    # Statuses of an order not dispatched from SASH Faridabad yet (nil: no mark and not on SASH India invoices).
+    NOT_DISPATCHED = [ nil, "received" ].freeze
     # One listed order: its anchor row (or manual order), every row's value summed, and the keys of its marks.
     # unpriced: a row of it has no Unit Price (nor a customer price), so its value leaves that row out. rows: its rows of the
     # order file (1 unless combined).
+    # members: [row key, value] of each row (a combined order's in it; a manual order's own).
     Order = Data.define(:id, :manual, :key, :firm_key, :po_number, :po_line_number, :part_number, :order_type, :ship_date, :qty, :value, :unpriced,
-                        :rows)
+                        :rows, :members)
 
     def self.call(today: Time.find_zone!(AppConfig.ageing_time_zone).today, view: "all")
       new(today, view).call
@@ -100,7 +104,8 @@ module Dashboard
                   po_number: row[2], po_line_number: row[3], part_number: row[4], order_type: row[5],
                   ship_date: members.map { |m| m[6] }.max, # a combined order ships with its last order
                   qty: members.sum { |m| m[7].to_d }, value: members.filter_map { |m| values[m[0]] }.sum(BigDecimal("0")),
-                  unpriced: members.any? { |m| values[m[0]].nil? }, rows: members.size)
+                  unpriced: members.any? { |m| values[m[0]].nil? }, rows: members.size,
+                  members: members.map { |m| [ row_key.(m), values[m[0]] || BigDecimal("0") ] })
       end + manual_orders
     end
 
@@ -111,7 +116,8 @@ module Dashboard
         key = VendorOrderPlacement.order_key(ManualOrder.new(id: id))
         amount = value(qty, price, prices[part])
         Order.new(id: id, manual: true, key: key, firm_key: key, po_number: po, po_line_number: line, part_number: part, order_type: type,
-                  ship_date: ship, qty: qty.to_d, value: amount || BigDecimal("0"), unpriced: amount.nil?, rows: 1)
+                  ship_date: ship, qty: qty.to_d, value: amount || BigDecimal("0"), unpriced: amount.nil?, rows: 1,
+                  members: [ [ key, amount || BigDecimal("0") ] ])
       end
     end
 
@@ -121,9 +127,32 @@ module Dashboard
       @statuses ||= begin
         kinds = OrderDelivery::KINDS
         keys = listed_orders.select { |o| TYPES.include?(o.order_type) }.map(&:key)
-        marks = OrderDelivery.active.where(order_key: keys).pluck(:order_key, :kind).group_by(&:first)
-                             .transform_values { |list| list.map(&:last).max_by { |k| kinds.index(k) } }
         marks.merge(invoice_statuses(keys)) { |_, mark, invoice| [ mark, invoice ].max_by { |k| kinds.index(k) } }
+      end
+    end
+
+    # order key => furthest active status mark, for the Firm / Order orders listed (a combined order's on its first row).
+    def marks
+      @marks ||= begin
+        kinds = OrderDelivery::KINDS
+        keys = listed_orders.select { |o| TYPES.include?(o.order_type) }.map(&:key)
+        OrderDelivery.active.where(order_key: keys).pluck(:order_key, :kind).group_by(&:first)
+                     .transform_values { |list| list.map(&:last).max_by { |k| kinds.index(k) } }
+      end
+    end
+
+    # [row key, value] of the rows of the open orders past their ship date (a combined order's by its last ship date)
+    # that are not dispatched yet, each row by its own status: its order's mark, or its own SASH India invoices (a
+    # combined order may be dispatched in part). As the Orders list shows them (Past ship date, status none / received).
+    def late_rows(open)
+      late = open.select { |o| o.ship_date < @today }
+      progress = Invoices::Progress.for_keys(late.flat_map { |o| o.members.map(&:first) })
+      kinds = OrderDelivery::KINDS
+      late.flat_map do |o|
+        o.members.select do |key, _|
+          invoice = "dispatched" if progress[key]&.shipped&.positive?
+          NOT_DISPATCHED.include?([ marks[o.key], invoice ].compact.max_by { |k| kinds.index(k) })
+        end
       end
     end
 
@@ -148,7 +177,7 @@ module Dashboard
       {
         open: bucket(open),
         due_30: bucket(open.select { |o| o.ship_date >= @today && o.ship_date <= @today + 30 }),
-        overdue: bucket(open.select { |o| o.ship_date < @today }),
+        overdue: late_rows(open).then { |rows| { count: rows.size, value: money(rows.sum(BigDecimal("0"), &:last)) } },
         po_coverage: { percent: total.positive? ? (covered.sum(BigDecimal("0"), &:value) / total * 100).round(1).to_f : 0.0,
                        covered: bucket(covered), without_po: bucket(open.reject { |o| placed.include?(o.key) || o.qty.zero? }) }
       }
