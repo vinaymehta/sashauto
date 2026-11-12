@@ -21,8 +21,9 @@ export default function CompareVersionsPage() {
       </Link>
       <PageHeader title="Compare versions" description="What changed between two order files: the old one on the left, the new one on the right."
                   actions={<BusinessPicker />} />
-      {!can(me, "orders", "edit") ? (
-        <Panel><EmptyState title="Not available" description="Comparing order files needs the Orders edit permission." /></Panel>
+      {!can(me, "orders", "edit") || me?.role === "warehouse_manager" ? (
+        <Panel><EmptyState title="Not available" description={me?.role === "warehouse_manager" ? "Compare versions is not available for the Warehouse Manager."
+          : "Comparing order files needs the Orders edit permission."} /></Panel>
       ) : business === "all" ? (
         <Panel><EmptyState title="Choose DTP or GMBH" description="Versions are compared within one business. Pick DTP or GMBH in the Business menu above." /></Panel>
       ) : (

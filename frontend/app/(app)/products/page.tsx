@@ -83,7 +83,9 @@ function ProductsView() {
   // dispatched, delivered, pending and revenue), the Order summary tab (Firm / Addition / Forecast per part and day) or
   // the Import issues tab (problems from vendor file imports).
   const tabParam = params.get("tab");
-  const [view, setView] = useState<ProductsTab>(PRODUCTS_TABS.find((t) => t === tabParam) ?? "list");
+  // The Warehouse Manager does not see the Product summary tab.
+  const noTotals = useSession().user?.role === "warehouse_manager";
+  const [view, setView] = useState<ProductsTab>(PRODUCTS_TABS.find((t) => t === tabParam && !(noTotals && t === "totals")) ?? "list");
   // Every tab but the list is kept in the address (?tab=totals …), so it stays open when DTP / GMBH is switched (the
   // page is shown anew).
   const router = useRouter();
@@ -109,7 +111,7 @@ function ProductsView() {
         <Tabs active={view} onChange={openView} tabs={[
           { key: "list" as const, label: "Products", count: data?.meta.total ?? null },
           { key: "available" as const, label: "Current inventory" },
-          { key: "totals" as const, label: "Product summary" },
+          ...(noTotals ? [] : [{ key: "totals" as const, label: "Product summary" }]),
           { key: "summary" as const, label: "Order summary" },
           { key: "issues" as const, label: "Import issues", count: issues.count },
         ]} />

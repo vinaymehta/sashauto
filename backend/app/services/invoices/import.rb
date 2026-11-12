@@ -3,7 +3,8 @@ module Invoices
   # the file is): read (Invoices::Reader),
   # checked (the invoice is of that kind, its number not uploaded before) and allocated (Invoices::Allocator). `preview`
   # saves nothing; `save` reads and allocates again (the orders may have changed since the preview) and records the
-  # invoice with its file, lines, unmatched lines and allocations, in one transaction.
+  # invoice with its file, lines, unmatched lines and allocations, in one transaction; an invoice no order takes any
+  # Qty of is not saved.
   #
   #   import = Invoices::Import.new(path:, filename:, kind: "india", view: "dtp", user:)
   #   import.preview   # => Hash (the invoice, each line with the order rows it goes to, the unmatched Qty)
@@ -30,6 +31,11 @@ module Invoices
         Invoice.connection.execute("SELECT pg_advisory_xact_lock(#{Zlib.crc32('invoices')})")
         invoice = read
         plan = Allocator.call(invoice, view: @view)
+        # As the upload panel (its Save is off then): an invoice no order takes any Qty of would only block its number.
+        if plan.allocations.empty?
+          raise Rejected, "No order takes any Qty of #{Invoice::LABELS.fetch(@kind)} #{invoice.invoice_number}, so it was not saved: " \
+                          "#{plan.unmatched.map(&:reason).uniq.first(2).join('; ')}."
+        end
         record = create(invoice, plan)
         [ record, summary(invoice, plan).merge(id: record.id) ]
       end
@@ -44,7 +50,7 @@ module Invoices
       @kind ||= invoice.kind # no kind given: the one the file is (SASH India or SASH Inc, by its Exporter)
       if invoice.kind != @kind
         raise Rejected, "This is a #{Invoice::LABELS.fetch(invoice.kind)} (exporter #{invoice.exporter || 'unknown'}), not a " \
-                        "#{Invoice::LABELS.fetch(@kind)}. Upload it with \"Upload #{Invoice::LABELS.fetch(invoice.kind)}\"."
+                        "#{Invoice::LABELS.fetch(@kind)}."
       end
       if (earlier = Invoice.active.find_by(kind: @kind, invoice_number: invoice.invoice_number))
         raise Rejected, "#{Invoice::LABELS.fetch(@kind)} #{invoice.invoice_number} was already uploaded on " \

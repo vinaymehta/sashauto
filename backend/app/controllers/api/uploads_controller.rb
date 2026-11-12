@@ -1,5 +1,6 @@
 module Api
   class UploadsController < ApplicationController
+    before_action :refuse_warehouse_manager, only: %i[create download compare]
     rate_limit to: 30, within: 1.hour, only: :create, store: RATE_LIMIT_STORE, by: -> { current_user&.id || request.remote_ip },
                with: -> { render_error "Too many uploads in a short time. Try again later.", :too_many_requests }
 

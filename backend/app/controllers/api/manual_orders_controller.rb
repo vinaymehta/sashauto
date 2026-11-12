@@ -2,6 +2,7 @@ module Api
   # Orders created by hand (Admin only), with the 47 Excel columns. They are listed on the Orders page next
   # to the latest upload's rows; see ManualOrders::Save for validation and detection.
   class ManualOrdersController < ApplicationController
+    before_action :refuse_warehouse_manager, only: %i[create update destroy]
     rate_limit to: 120, within: 1.hour, only: %i[create update destroy], store: RATE_LIMIT_STORE,
                by: -> { current_user&.id || request.remote_ip },
                with: -> { render_error "Too many changes in a short time. Try again later.", :too_many_requests }

@@ -4,6 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import type { UploadDetail } from "@/lib/types";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { useApi } from "@/components/use-api";
+import { useSession } from "@/components/session";
 import { useUploadPolling } from "@/components/use-upload-polling";
 import { UploadResult } from "@/components/upload-result";
 import { UploadStatusBadge } from "@/components/upload-status";
@@ -16,6 +17,8 @@ import { PageHeader } from "@/components/ui/panel";
 export default function UploadDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  // The Warehouse Manager does not download order files.
+  const canDownload = useSession().user?.role !== "warehouse_manager";
   const { data, error, loading, reload } = useApi<{ data: UploadDetail }>(`/api/uploads/${encodeURIComponent(id)}`);
   const { upload } = useUploadPolling(data?.data ?? null);
 
@@ -46,9 +49,11 @@ export default function UploadDetailPage() {
           <ChevronLeftIcon size={16} className="text-ink-muted" />
           Back
         </Button>
-        <a href={`/api/uploads/${upload.id}/download`} download>
-          <Button size="sm"><DownloadIcon size={15} className="text-ink-muted" />Download original .xlsx</Button>
-        </a>
+        {canDownload && (
+          <a href={`/api/uploads/${upload.id}/download`} download>
+            <Button size="sm"><DownloadIcon size={15} className="text-ink-muted" />Download original .xlsx</Button>
+          </a>
+        )}
       </div>
       <PageHeader
         title={`Upload · ${formatDateTime(upload.completed_at ?? upload.uploaded_at)}`}

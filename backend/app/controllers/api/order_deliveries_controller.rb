@@ -4,6 +4,7 @@ module Api
   # marks email the admins (the India team); every mark shows in the admins' notification bell. An order dispatched on
   # an uploaded SASH India invoice (InvoicesController) gets no Dispatched mark: its invoices stand for it.
   class OrderDeliveriesController < ApplicationController
+    before_action :refuse_warehouse_manager, only: :destroy
     def create
       row = params[:manual] == "1" ? ManualOrder.active.find(params[:order_id]) : OrderRow.find(params[:order_id])
       kind = params.require(:kind).to_s

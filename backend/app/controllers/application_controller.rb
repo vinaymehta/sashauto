@@ -101,6 +101,12 @@ class ApplicationController < ActionController::Base
     render_error "You do not have permission to do this.", :forbidden unless roles.map(&:to_s).include?(current_user.role)
   end
 
+  # Not for the Warehouse Manager (SASH US), whatever their section permissions: uploading order files, creating orders,
+  # downloading the order file, Compare versions, Product summaries and removing marks or invoices.
+  def refuse_warehouse_manager
+    render_error "The Warehouse Manager cannot do this.", :forbidden if current_user&.role == "warehouse_manager"
+  end
+
   def render_error(message, status, code: nil, details: nil)
     render json: { error: { message: message, code: code, details: details }.compact }, status: status
   end

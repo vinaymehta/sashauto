@@ -281,6 +281,9 @@ function OrdersView() {
   const admin = can(me, "orders", "edit");
   // The Warehouse Manager sees only the order rows (no uploads, versions or detections) and marks deliveries.
   const manager = !admin;
+  // The Warehouse Manager (SASH US), with or without Orders edit: their Actions are Upload invoice only (SASH Inc; no
+  // Upload file, Create order or Download .xlsx), and Compare versions is not shown.
+  const usManager = role === "warehouse_manager";
 
   // Which upload's order data is shown: null = the current data (latest upload + manual orders).
   const [uploadId, setUploadId] = useState<number | null>(null);
@@ -505,14 +508,14 @@ function OrdersView() {
             <BusinessPicker />
             {!manager && <>
             <UploadPicker uploads={uploads.data?.data ?? []} latestId={latest?.id} selectedId={uploadId} onSelect={chooseUpload} />
-            <OrderActions downloadId={source?.upload_id} onUpload={() => setPanel("upload")} onCreate={admin ? () => setPanel("create") : undefined}
+            <OrderActions downloadId={usManager ? undefined : source?.upload_id} onUpload={usManager ? undefined : () => setPanel("upload")}
+                          onCreate={admin && !usManager ? () => setPanel("create") : undefined}
                           onUploadInvoice={role === "admin" || role === "warehouse_manager" ? () => setPanel("invoice") : undefined}
-                          invoiceLabel={role === "warehouse_manager" ? "Upload SASH Inc invoice" : undefined}
                           onImportDispatched={role === "admin" ? () => setPanel("dispatched") : undefined} />
             </>}
-            {/* One Actions menu: a Warehouse Manager without Orders edit gets one with only Upload SASH Inc invoice (the
+            {/* One Actions menu: a Warehouse Manager without Orders edit gets one with only Upload invoice (SASH Inc, the
                 US invoices: delivered to Deere). */}
-            {manager && role === "warehouse_manager" && <OrderActions onUploadInvoice={() => setPanel("invoice")} invoiceLabel="Upload SASH Inc invoice" />}
+            {manager && role === "warehouse_manager" && <OrderActions onUploadInvoice={() => setPanel("invoice")} />}
           </div>
         )}
       />
@@ -565,7 +568,7 @@ function OrdersView() {
           </Link>
         )}
         {/* Two versions of one business compared, on their own page (not in "All"). */}
-        {!manager && business !== "all" && (
+        {!manager && !usManager && business !== "all" && (
           <Link href="/orders/compare"
                 className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-3 text-sm font-medium text-ink transition-colors hover:border-neutral-400 hover:bg-subtle">
             <HistoryIcon size={15} className="text-ink-muted" />

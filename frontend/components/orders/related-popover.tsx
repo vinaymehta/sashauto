@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { BoxIcon, FileIcon, TruckIcon } from "../icons";
+import { useSession } from "../session";
 import { Sheet } from "../ui/sheet";
 import { VendorSummaryPanel } from "../vendors/vendor-summary";
 import { PartSummaryPanel } from "./part-summary";
@@ -26,7 +27,7 @@ const ICONS: Record<Kind, ReactNode> = { po: <FileIcon size={18} />, part: <BoxI
 // (ordered, dispatched, delivered, pending, status, revenue), a part's Product summary (ordered, dispatched,
 // delivered, pending; per PO; vendors and prices) or a vendor's parts and details; from the server for the shown upload
 // (`uploadId`; undefined = the current order data). Links inside the panel open in the same panel, with a Back button.
-// A vendor link needs the vendor's `id`.
+// A vendor link needs the vendor's `id`. The Warehouse Manager does not see Product summaries: a part is plain text.
 export function RelatedLink({ kind, value, uploadId, id, children }: { kind: Kind; value: string; uploadId?: number; id?: number; children?: ReactNode }) {
   const inPanel = useContext(OpenInPanel);
   const [stack, setStack] = useState<Target[]>([]);
@@ -44,6 +45,8 @@ export function RelatedLink({ kind, value, uploadId, id, children }: { kind: Kin
     return last && last.kind === target.kind && last.value === target.value ? s : [...s, target];
   });
   const back = stack[stack.length - 2];
+  const role = useSession().user?.role;
+  if (kind === "part" && role === "warehouse_manager") return <span className="font-medium text-ink">{children ?? value}</span>;
 
   return (
     <>

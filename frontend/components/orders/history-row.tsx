@@ -39,7 +39,8 @@ export function OrderDetailPanel({ row, onClose, onEdit, onDeleted, onPlaced }: 
   row: OrderRow; onClose: () => void; onEdit?: () => void; onDeleted?: () => void; onPlaced?: () => void;
 }) {
   const { data, error, loading, reload } = useApi<OrderHistory>(`/api/orders/${row.id}/history`, { manual: row.manual ? 1 : undefined });
-  const admin = can(useSession().user, "orders", "edit"); // Orders edit permission
+  const me = useSession().user;
+  const admin = can(me, "orders", "edit"); // Orders edit permission
   const notify = useToast();
   const [deleting, setDeleting] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -91,7 +92,8 @@ export function OrderDetailPanel({ row, onClose, onEdit, onDeleted, onPlaced }: 
                           group={data?.group}
                           onChanged={() => { reload(); onPlaced?.(); }} />
       )}
-      <DeliveryMarks row={row} admin={admin} onChanged={onPlaced} />
+      {/* Removing a wrong mark: not for the Warehouse Manager. */}
+      <DeliveryMarks row={row} admin={admin && me?.role !== "warehouse_manager"} onChanged={onPlaced} />
       {/* Last: every dispatch and delivery of the order on uploaded invoices. */}
       {data && <InvoiceMoves row={row} moves={data.invoices ?? []} onChanged={() => { reload(); onPlaced?.(); }} />}
       {deleting && (

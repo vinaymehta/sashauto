@@ -3,6 +3,7 @@ module Api
   # upload plus its manual orders, or (`upload_id`) any earlier upload's rows exactly as imported. Search, sorting and
   # pagination all run in PostgreSQL.
   class OrdersController < ApplicationController
+    before_action :refuse_warehouse_manager, only: %i[part_summary parts_summary]
     SEARCH_COLUMNS = %w[po_number po_line_number part_number commodity_type order_type ship_to_location
                         supplier_part_number plant_code].freeze
 
