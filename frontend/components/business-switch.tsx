@@ -26,10 +26,11 @@ export function useBusiness() {
 
 // "Business" dropdown in the page header (Dashboard, Orders): which business's data the app shows, All (both), DTP or
 // GMBH. It applies to every page.
-export function BusinessPicker() {
+// `alignLeft`: the menu opens to the right of the button (a picker at the left edge of the page).
+export function BusinessPicker({ alignLeft = false }: { alignLeft?: boolean } = {}) {
   const { view, setView } = useBusiness();
   return (
-    <Dropdown width="w-56" label={<><span className="text-ink-muted">Business</span><span className="font-semibold text-ink">{BUSINESS_LABEL[view]}</span></>}>
+    <Dropdown width="w-56" alignLeft={alignLeft} label={<><span className="text-ink-muted">Business</span><span className="font-semibold text-ink">{BUSINESS_LABEL[view]}</span></>}>
       {(close) => (
         <div className="py-1">
           {BUSINESS_VIEWS.map((b) => (

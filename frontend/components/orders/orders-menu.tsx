@@ -7,9 +7,10 @@ import { CheckIcon, ChevronDownIcon, DownloadIcon, PlusIcon, TruckIcon, UploadIc
 import { useDismiss } from "../use-dismiss";
 import { BUSINESS_LABEL } from "@/lib/business";
 
-// Button with a dropdown panel below it, right-aligned; `children` gets a function that closes the panel.
-export function Dropdown({ label, className = "", width, children }: {
-  label: ReactNode; className?: string; width: string; children: (close: () => void) => ReactNode;
+// Button with a dropdown panel below it, right-aligned (`alignLeft`: left-aligned, for a button at the left edge);
+// `children` gets a function that closes the panel.
+export function Dropdown({ label, className = "", width, alignLeft = false, children }: {
+  label: ReactNode; className?: string; width: string; alignLeft?: boolean; children: (close: () => void) => ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -24,7 +25,7 @@ export function Dropdown({ label, className = "", width, children }: {
         <ChevronDownIcon size={14} className={`shrink-0 text-ink-muted transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
-        <div role="menu" className={`absolute right-0 top-11 z-40 max-w-[90vw] origin-top-right animate-pop-in overflow-hidden rounded-lg border border-line bg-surface shadow-pop ${width}`}>
+        <div role="menu" className={`absolute top-11 z-40 max-w-[90vw] animate-pop-in ${alignLeft ? "left-0 origin-top-left" : "right-0 origin-top-right"} overflow-hidden rounded-lg border border-line bg-surface shadow-pop ${width}`}>
           {children(close)}
         </div>
       )}

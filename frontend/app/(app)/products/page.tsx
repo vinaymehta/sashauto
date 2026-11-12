@@ -46,6 +46,10 @@ function productFilters(commodityTypes: string[]): FilterGroup[] {
   ];
 }
 
+// The tabs of the Products page.
+const PRODUCTS_TABS = ["list", "available", "totals", "summary", "issues"] as const;
+type ProductsTab = (typeof PRODUCTS_TABS)[number];
+
 export default function ProductsPage() {
   return (
     <Suspense fallback={<PanelSkeleton rows={10} columns={6} />}>
@@ -78,13 +82,14 @@ function ProductsView() {
   // The list, the Current inventory tab (vendor-wise check list), the Product summary tab (each part's ordered,
   // dispatched, delivered, pending and revenue), the Order summary tab (Firm / Addition / Forecast per part and day) or
   // the Import issues tab (problems from vendor file imports).
-  const [view, setView] = useState<"list" | "available" | "totals" | "summary" | "issues">(params.get("tab") === "summary" ? "summary" : "list");
-  // The Order summary is kept in the address (?tab=summary), so it stays open when DTP / GMBH is switched (the page is
-  // shown anew).
+  const tabParam = params.get("tab");
+  const [view, setView] = useState<ProductsTab>(PRODUCTS_TABS.find((t) => t === tabParam) ?? "list");
+  // Every tab but the list is kept in the address (?tab=totals …), so it stays open when DTP / GMBH is switched (the
+  // page is shown anew).
   const router = useRouter();
-  const openView = (next: typeof view) => {
+  const openView = (next: ProductsTab) => {
     setView(next);
-    if ((next === "summary") !== (params.get("tab") === "summary")) router.replace(next === "summary" ? "/products?tab=summary" : "/products", { scroll: false });
+    if (next !== (tabParam ?? "list")) router.replace(next === "list" ? "/products" : `/products?tab=${next}`, { scroll: false });
   };
   const issues = useOpenImportIssues();
   const onImported = (r: VendorImportResult) => { reload(); issues.reload(); if (r.issues) openView("issues"); };

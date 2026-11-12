@@ -57,7 +57,7 @@ export function ProductTotalsPanel() {
       <div className="flex flex-wrap items-end gap-3 border-b border-line px-4 py-4 sm:px-6">
         <div className="space-y-1.5">
           <span className="block text-sm font-medium text-ink">Business</span>
-          <BusinessPicker />
+          <BusinessPicker alignLeft />
         </div>
       </div>
       <ListToolbar summary={data ? `${formatCount(rows.length)} part${rows.length === 1 ? "" : "s"} · revenue on ordered ${money(String(total("revenue_ordered")))} · on delivered ${money(String(total("revenue_delivered")))}` : ""}>

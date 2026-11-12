@@ -83,7 +83,7 @@ export function OrderSummaryPanel({ all = false, recentDays }: { all?: boolean; 
       <div className="flex flex-wrap items-end gap-3 border-b border-line px-4 py-4 sm:px-6">
         <div className="space-y-1.5">
           <span className="block text-sm font-medium text-ink">Business</span>
-          <BusinessPicker />
+          <BusinessPicker alignLeft />
         </div>
         {business !== "all" && (<>
           <div className="space-y-1.5">
