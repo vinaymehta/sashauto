@@ -261,7 +261,7 @@ module Api
 
         info = invoice_info(row, progress[own_keys[i]], deliveries.fetch(placement_key(row), {}))
         ordered = info[:order_qty].to_d
-        shipped = info[:shipped_qty] ? info[:shipped_qty].to_d : (%w[dispatched inbound outbound].include?(info[:status]) ? ordered : 0.to_d)
+        shipped = info[:shipped_qty] ? info[:shipped_qty].to_d : (%w[dispatched inbound delivery outbound].include?(info[:status]) ? ordered : 0.to_d)
         delivered = info[:outbound_qty] ? info[:outbound_qty].to_d : (info[:status] == "outbound" ? ordered : 0.to_d)
         text = row.source_data&.dig("Unit Price").to_s.delete(",").strip
         price = text.match?(/\A\d+(\.\d+)?\z/) ? BigDecimal(text) : fallback[row.part_number]
@@ -303,22 +303,24 @@ module Api
     private
 
     # Statuses in route order: dispatch (part of the Qty dispatched on SASH India invoices) and dispatched (all of it, or a
-    # Dispatched mark) come from Faridabad.
-    STATUSES = %w[none received dispatch dispatched inbound outbound].freeze
+    # Dispatched mark) come from Faridabad; delivery (part of the Qty delivered to Deere on SASH Inc invoices) and
+    # outbound (all of it, or an Outbound mark) from SASH US.
+    STATUSES = %w[none received dispatch dispatched inbound delivery outbound].freeze
     STATUS_ARRAY_SQL = "(ARRAY[#{STATUSES.map { |s| "'#{s}'" }.join(', ')}]::text[])".freeze
 
     # Allocations of the active uploaded invoices (Invoices::Progress).
     ALLOCATIONS_SQL = "invoice_allocations a JOIN invoices i ON i.id = a.invoice_id AND i.removed_at IS NULL".freeze
 
     # Position in STATUSES (1 = none) of a listed row's status from the uploaded invoices (Invoices::Progress, by the row's
-    # own Qty: dispatch, dispatched or outbound). As in CURRENT_STATUS_SQL an uncorrelated IN finds the rows with
+    # own Qty: dispatch, dispatched, delivery or outbound). As in CURRENT_STATUS_SQL an uncorrelated IN finds the rows with
     # allocations; only those sum their own.
     INVOICE_STATUS_SQL = begin
       order = "(order_rows.po_number, order_rows.part_number, order_rows.order_type, order_rows.po_line_number, order_rows.ship_date)"
       shipped = "COALESCE(SUM(a.qty) FILTER (WHERE i.kind = 'india'), 0)"
       outbound = "COALESCE(SUM(a.qty) FILTER (WHERE i.kind = 'inc'), 0)"
       total = "GREATEST(COALESCE(MAX(a.order_qty), 0), COALESCE(order_rows.qty, 0))"
-      position = "CASE WHEN #{outbound} > 0 AND #{outbound} >= #{total} THEN 6 WHEN #{shipped} <= 0 THEN 1 WHEN #{shipped} >= #{total} THEN 4 ELSE 3 END"
+      position = "CASE WHEN #{outbound} > 0 AND #{outbound} >= #{total} THEN 7 WHEN #{outbound} > 0 THEN 6 " \
+                 "WHEN #{shipped} <= 0 THEN 1 WHEN #{shipped} >= #{total} THEN 4 ELSE 3 END"
       imported = "a.manual_order_id IS NULL AND a.po_number = order_rows.po_number AND a.part_number = order_rows.part_number " \
                  "AND a.order_type = order_rows.order_type AND a.po_line_number = order_rows.po_line_number AND a.ship_date = order_rows.ship_date"
       "(CASE WHEN order_rows.manual AND order_rows.id IN (SELECT a.manual_order_id FROM #{ALLOCATIONS_SQL} WHERE a.manual_order_id IS NOT NULL) " \

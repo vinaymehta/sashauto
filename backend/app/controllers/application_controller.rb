@@ -80,8 +80,10 @@ class ApplicationController < ActionController::Base
   }.freeze
   # Actions that only need view although they are not a GET: a delivery mark is set by the role it belongs to (the
   # Warehouse Manager's inbound / outbound with view of the Orders; OrderDeliveriesController checks the kind); the
-  # purchase order preview of Admin Settings saves nothing.
-  VIEW_ACTIONS = { "api/order_deliveries" => %w[create], "api/settings" => %w[po_preview] }.freeze
+  # purchase order preview of Admin Settings saves nothing; invoices are uploaded by role (InvoicesController: the
+  # Warehouse Manager's SASH Inc invoices).
+  VIEW_ACTIONS = { "api/order_deliveries" => %w[create], "api/settings" => %w[po_preview],
+                   "api/invoices" => %w[preview create destroy] }.freeze
 
   def check_section_access
     return unless current_user

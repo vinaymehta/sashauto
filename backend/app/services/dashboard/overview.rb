@@ -150,7 +150,7 @@ module Dashboard
       kinds = OrderDelivery::KINDS
       late.flat_map do |o|
         o.members.select do |key, _|
-          invoice = "dispatched" if progress[key]&.shipped&.positive?
+          invoice = "dispatched" if progress[key] && (progress[key].shipped.positive? || progress[key].outbound.positive?)
           NOT_DISPATCHED.include?([ marks[o.key], invoice ].compact.max_by { |k| kinds.index(k) })
         end
       end
@@ -165,7 +165,7 @@ module Dashboard
       progress = Invoices::Progress.for_keys(members.values.flatten)
       members.filter_map do |key, list|
         entries = list.map { |k| progress[k] }
-        next unless entries.compact.any? { |entry| entry.shipped.positive? }
+        next unless entries.compact.any? { |entry| entry.shipped.positive? || entry.outbound.positive? }
 
         [ key, entries.all? { |entry| entry&.status(nil) == "outbound" } ? "outbound" : "dispatched" ]
       end.to_h

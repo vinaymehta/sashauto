@@ -12,6 +12,7 @@ module Invoices
   #
   # Status from the invoices (the Orders page's SQL does the same, Api::OrdersController::INVOICE_STATUS_SQL):
   #   outbound    outbound >= Order Qty (fulfilled)
+  #   delivery    0 < outbound < Order Qty (part delivered to Deere, the rest still to deliver)
   #   dispatched  shipped >= Order Qty (all sent from India)
   #   dispatch    0 < shipped < Order Qty (part sent, Balance still to send)
   #
@@ -34,6 +35,7 @@ module Invoices
         total = order_qty(qty)
         # Delivered in full first: an order dispatched by the dispatched orders list has no SASH India invoice Qty.
         return "outbound" if outbound.positive? && outbound >= total
+        return "delivery" if outbound.positive?
         return nil unless shipped.positive?
         return "dispatched" if shipped >= total
 

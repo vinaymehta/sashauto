@@ -70,17 +70,19 @@ export function UploadPicker({ uploads, latestId, selectedId, onSelect }: {
 
 // Orders page actions: upload a file, create an order (admin; `onCreate`), download the shown upload.
 // `onUploadInvoice`: Upload invoice (a SASH India invoice → dispatched, a SASH Inc invoice → outbound; the file says
-// which), and `onImportDispatched`: Import dispatched list; for admins (who set Dispatched).
-export function OrderActions({ downloadId, onUpload, onCreate, onUploadInvoice, onImportDispatched }: {
-  downloadId?: number; onUpload: () => void; onCreate?: () => void; onUploadInvoice?: () => void; onImportDispatched?: () => void;
+// which), and `onImportDispatched`: Import dispatched list; for admins (who set Dispatched). The Warehouse Manager's
+// menu has no Upload file (`onUpload` not given) and its invoice item is for SASH Inc invoices (`invoiceLabel`).
+export function OrderActions({ downloadId, onUpload, onCreate, onUploadInvoice, onImportDispatched, invoiceLabel = "Upload invoice" }: {
+  downloadId?: number; onUpload?: () => void; onCreate?: () => void; onUploadInvoice?: () => void; onImportDispatched?: () => void;
+  invoiceLabel?: string;
 }) {
   return (
     <Dropdown label="Actions" width="w-64">
       {(close) => (
         <div className="py-1">
-          <Item icon={<UploadIcon size={16} />} onClick={() => { close(); onUpload(); }}>Upload file</Item>
+          {onUpload && <Item icon={<UploadIcon size={16} />} onClick={() => { close(); onUpload(); }}>Upload file</Item>}
           {onCreate && <Item icon={<PlusIcon size={16} />} onClick={() => { close(); onCreate(); }}>Create order</Item>}
-          {onUploadInvoice && <Item icon={<TruckIcon size={16} />} onClick={() => { close(); onUploadInvoice(); }}>Upload invoice</Item>}
+          {onUploadInvoice && <Item icon={<TruckIcon size={16} />} onClick={() => { close(); onUploadInvoice(); }}>{invoiceLabel}</Item>}
           {onImportDispatched && <Item icon={<CheckIcon size={16} />} onClick={() => { close(); onImportDispatched(); }}>Import dispatched list</Item>}
           {downloadId !== undefined && (
             <a role="menuitem" href={`/api/uploads/${downloadId}/download`} download onClick={close}

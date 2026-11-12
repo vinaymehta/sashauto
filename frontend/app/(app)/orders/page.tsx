@@ -315,7 +315,8 @@ function OrdersView() {
     { section: "Order", key: "status", label: "Status", options: [
       { value: "none", label: "No status" }, { value: "received", label: "Received" }, { value: "dispatch", label: "Dispatch (part dispatched)" },
       { value: "dispatched", label: "Dispatched" },
-      { value: "inbound", label: "Inbound" }, { value: "outbound", label: "Outbound (fulfilled)" },
+      { value: "inbound", label: "Inbound" }, { value: "delivery", label: "Part outbound (part delivered to Deere)" },
+      { value: "outbound", label: "Outbound (fulfilled)" },
     ] },
     { section: "Order", key: "source", label: "Source", options: [{ value: "upload", label: "Uploaded file" }, { value: "manual", label: "Manual orders" }] },
     { section: "Dates", key: "timing", label: "Ship timing", options: [{ value: "overdue", label: "Past ship date" }, { value: "next30", label: "Shipping in next 30 days" }] },
@@ -505,9 +506,13 @@ function OrdersView() {
             {!manager && <>
             <UploadPicker uploads={uploads.data?.data ?? []} latestId={latest?.id} selectedId={uploadId} onSelect={chooseUpload} />
             <OrderActions downloadId={source?.upload_id} onUpload={() => setPanel("upload")} onCreate={admin ? () => setPanel("create") : undefined}
-                          onUploadInvoice={role === "admin" ? () => setPanel("invoice") : undefined}
+                          onUploadInvoice={role === "admin" || role === "warehouse_manager" ? () => setPanel("invoice") : undefined}
+                          invoiceLabel={role === "warehouse_manager" ? "Upload SASH Inc invoice" : undefined}
                           onImportDispatched={role === "admin" ? () => setPanel("dispatched") : undefined} />
             </>}
+            {/* One Actions menu: a Warehouse Manager without Orders edit gets one with only Upload SASH Inc invoice (the
+                US invoices: delivered to Deere). */}
+            {manager && role === "warehouse_manager" && <OrderActions onUploadInvoice={() => setPanel("invoice")} invoiceLabel="Upload SASH Inc invoice" />}
           </div>
         )}
       />

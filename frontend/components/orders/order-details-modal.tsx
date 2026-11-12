@@ -446,7 +446,8 @@ export function InvoiceMoves({ row, moves, onChanged }: { row: OrderRow; moves: 
         {order > 0 && shipped > 0 && (
           <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${delivered >= order ? "bg-green-50 text-green-700 ring-green-200"
             : shipped >= order ? "bg-violet-50 text-violet-700 ring-violet-200" : "bg-amber-50 text-amber-800 ring-amber-200"}`}>
-            {delivered >= order ? "Delivered in full" : shipped >= order ? "Dispatched in full" : `${Math.round(pct(shipped))}% dispatched`}
+            {delivered >= order ? "Delivered in full" : delivered > 0 ? `${Math.round(pct(delivered))}% delivered to Deere`
+              : shipped >= order ? "Dispatched in full" : `${Math.round(pct(shipped))}% dispatched`}
           </span>
         )}
       </div>

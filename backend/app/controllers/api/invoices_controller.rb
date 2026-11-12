@@ -1,8 +1,9 @@
 module Api
   # SASH invoices uploaded on the Orders page (Actions → Upload SASH India invoice / Upload SASH Inc invoice, .pdf or
   # .xlsx, Invoices::Import): `preview` reads the file and shows which order rows its lines go to, `create` saves it
-  # (SASH India: dispatched Qty; SASH Inc: outbound Qty). An admin uploads and removes invoices (as the Dispatched status
-  # was theirs); anyone with view of the Orders downloads an invoice's file.
+  # (SASH India: dispatched Qty; SASH Inc: outbound Qty). An admin uploads and removes both; the Warehouse Manager only
+  # SASH Inc invoices (delivered to Deere, as the Outbound mark is theirs). Anyone with view of the Orders downloads an
+  # invoice's file.
   class InvoicesController < ApplicationController
     EXTENSIONS = %w[.pdf .xlsx].freeze
 
@@ -30,6 +31,7 @@ module Api
     # was delivered on a SASH Inc invoice is removed after that one.
     def destroy
       invoice = Invoice.active.find(params[:id])
+      return render_error("Only an admin can remove a SASH India invoice.", :forbidden) if inc_only? && invoice.kind != "inc"
       if invoice.kind == "india" && (blocking = later_inc_invoices(invoice)).any?
         return render_error("Remove SASH Inc invoice #{blocking.join(', ')} first: it delivered Qty this invoice dispatched.", :unprocessable_content)
       end
@@ -51,7 +53,12 @@ module Api
     private
 
     def require_uploader
-      render_error "Only an admin can upload or remove invoices.", :forbidden unless current_user.admin?
+      render_error "Only an admin or the Warehouse Manager can upload or remove invoices.", :forbidden unless current_user.admin? || inc_only?
+    end
+
+    # The Warehouse Manager uploads and removes SASH Inc invoices only.
+    def inc_only?
+      current_user.role == "warehouse_manager"
     end
 
     # The uploaded file (.pdf / .xlsx, within the upload size), or nil after rendering the error.
@@ -72,6 +79,10 @@ module Api
       # One upload for both invoices: without `kind` the file says which it is (its Exporter).
       kind = params[:kind].presence
       raise Invoices::Import::Rejected, "Unknown invoice kind." if kind && !Invoice::KINDS.include?(kind.to_s)
+      if inc_only?
+        raise Invoices::Import::Rejected, "Only an admin can upload a SASH India invoice." if kind && kind != "inc"
+        kind = "inc" # a SASH India file is then refused by the import (it is not a SASH Inc invoice)
+      end
       Invoices::Import.new(path: file.path, filename: file.original_filename, kind: kind, view: current_business, user: current_user)
     end
 

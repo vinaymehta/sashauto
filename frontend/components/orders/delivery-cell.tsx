@@ -35,9 +35,10 @@ type Step = (typeof STATUS_STEPS)[number];
 // How far each status goes, and the status each step stands for: an order whose status is at or past a step has
 // reached it (Received is reached once the order is on its way, even without a Received mark). The dispatch step is
 // reached (Dispatched) by a Dispatched mark (dispatched orders list or by hand) or SASH India invoices for all of the Qty;
-// part of it on invoices leaves it at Dispatch.
-const STATUS_RANK: Record<OrderStatus, number> = { none: 0, received: 1, dispatch: 2, dispatched: 3, inbound: 4, outbound: 5 };
-const STEP_RANK: Record<DeliveryKind, number> = { received: 1, dispatched: 3, inbound: 4, outbound: 5 };
+// part of it on invoices leaves it at Dispatch. Likewise SASH Inc invoices for part of the Qty: Part outbound (Inbound
+// reached), for all of it: Outbound.
+const STATUS_RANK: Record<OrderStatus, number> = { none: 0, received: 1, dispatch: 2, dispatched: 3, inbound: 4, delivery: 5, outbound: 6 };
+const STEP_RANK: Record<DeliveryKind, number> = { received: 1, dispatched: 3, inbound: 4, outbound: 6 };
 const reachedStep = (row: OrderRow, s: Step) => STATUS_RANK[row.status ?? "none"] >= STEP_RANK[s.kind];
 // A step's name as shown: the dispatch step reads "Dispatch" until the order is Dispatched, then "Dispatched".
 const stepName = (s: Step, reached: boolean) => (s.kind === "dispatched" && !reached ? "Dispatch" : s.title);
@@ -49,6 +50,7 @@ const PILL: Record<OrderStatus, { label: string; cls: string; Icon: typeof Check
   dispatch: { label: "Dispatch", cls: "border-dashed border-violet-300 bg-violet-50/60 text-violet-800", Icon: TruckIcon },
   dispatched: { label: "Dispatched", cls: "border-violet-300 bg-violet-50 text-violet-800", Icon: TruckIcon },
   inbound: { label: "Inbound", cls: "border-blue-300 bg-blue-50 text-blue-800", Icon: MapPinIcon },
+  delivery: { label: "Part outbound", cls: "border-dashed border-green-300 bg-green-50/60 text-green-800", Icon: CheckIcon },
   outbound: { label: "Outbound", cls: "border-green-300 bg-green-50 text-green-800", Icon: CheckIcon },
 };
 
@@ -77,6 +79,11 @@ function currentStep(row: OrderRow) {
 
 // Dispatched on uploaded SASH India invoices (part or all): no Dispatched mark is set by hand then.
 const invoiced = (row: OrderRow) => Number(row.shipped_qty ?? 0) > 0;
+// A step done without its own mark: the order's status (marks and invoices) is at or past it, e.g. Inbound and Outbound
+// once SASH Inc invoices delivered all of its Qty, Received once it is on its way; or SASH India invoices dispatched any
+// of it (Dispatch).
+const doneByStatus = (row: OrderRow, kind: DeliveryKind) =>
+  (kind === "dispatched" && invoiced(row)) || STATUS_RANK[row.status ?? "none"] >= STEP_RANK[kind];
 
 // "192 of 600 on EX/26-27/235 (29 Oct 2026)": the row's Qty on its invoices of one kind.
 function invoiceSummary(row: OrderRow, kind: InvoiceKind) {
@@ -146,9 +153,9 @@ export function DeliveryCell({ row, role, onChanged }: { row: OrderRow; role: Ro
         <span role="menu" data-floating style={{ top: menuAt.top, left: menuAt.left }} onClick={(e) => e.stopPropagation()}
               className="fixed z-[70] block w-56 overflow-hidden rounded-lg border border-line bg-white py-1.5 shadow-pop">
           {mine.map((s) => {
-            const set = !!row.deliveries?.[s.kind] || (s.kind === "dispatched" && invoiced(row));
+            const set = !!row.deliveries?.[s.kind] || doneByStatus(row, s.kind);
             const before = previousStep(s.kind);
-            const waiting = !set && before && !row.deliveries?.[before.kind] && !(before.kind === "dispatched" && invoiced(row));
+            const waiting = !set && before && !row.deliveries?.[before.kind] && !doneByStatus(row, before.kind);
             return (
               <button key={s.kind} type="button" role="menuitem" disabled={set || !!waiting} onClick={() => choose(s)}
                       title={waiting ? `Waiting for ${before!.name}` : undefined}
@@ -190,7 +197,7 @@ function StatusPanel({ row, role, initial, onClose, onChanged }: {
   const [marks, setMarks] = useState<Partial<Record<DeliveryKind, OrderDeliveryInfo>>>(row.deliveries ?? {});
   const mine = STATUS_STEPS.filter((s) => s.role === role);
   // A step reached by the uploaded invoices (Dispatched by SASH India invoices: no mark by hand then).
-  const byInvoice = (kind: DeliveryKind) => kind === "dispatched" && invoiced(row);
+  const byInvoice = (kind: DeliveryKind) => doneByStatus(row, kind);
   const ready = (s: Step) => { const before = previousStep(s.kind); return !before || !!marks[before.kind] || byInvoice(before.kind); };
   // Steps still to record: not marked, not reached by the order's status (e.g. Received once it is on its way).
   const pending = mine.filter((s) => !marks[s.kind] && !byInvoice(s.kind) && !reachedStep(row, s));
