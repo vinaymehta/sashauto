@@ -167,6 +167,7 @@ namespace :dispatch do
     dry = ENV["DRY"].present?
     marks = 0
     dropped = 0
+    fixed = 0
     OrderDelivery.transaction do
       OrderDelivery.active.where(kind: "dispatched").where("jsonb_array_length(invoice_lines) > 1").find_each do |d|
         kept = d.invoice_lines.uniq { |l| l.values_at("invoice", "qty", "order_key") }
@@ -179,8 +180,29 @@ namespace :dispatch do
         dropped += dups
         d.update!(invoice_lines: kept) unless dry
       end
+      # A SASH Inc invoice uploaded while the shipments were doubled took the doubled Qty as the order's Order Qty
+      # (Invoices::Allocator: at least what was sent): set it again from the shipments as they are now.
+      lines = OrderDelivery.active.where(kind: "dispatched").pluck(:invoice_lines).flatten.group_by { |l| l["order_key"] }
+      InvoiceAllocation.active.where(invoices: { kind: "inc" }).includes(:order_row, :manual_order).find_each do |a|
+        order = a.manual_order || a.order_row
+        next unless order
+
+        latest = order.is_a?(OrderRow) &&
+                 OrderRow.where(upload_batch_id: UploadBatch.latest_completed(order.upload_batch.business)&.id, group_key: order.group_key,
+                                po_line_number: order.po_line_number, ship_date: order.ship_date).where.not(qty: nil).first
+        qty = (latest || order).qty.to_d
+        listed = (lines[a.order_key] || []).sum(0.to_d) { |l| l["qty"].present? ? BigDecimal(l["qty"].to_s) : qty }
+        india = InvoiceAllocation.active.where(invoices: { kind: "india" }, order_key: a.order_key)
+        expected = [ qty, india.maximum(:order_qty) || 0.to_d, listed + india.sum(:qty) ].max
+        next unless a.order_qty > expected
+
+        puts "#{dry ? 'WOULD FIX' : 'FIXED'}  #{a.invoice.label} #{a.invoice.invoice_number} on #{a.part_number} PO #{a.po_number} ship #{a.ship_date}: " \
+             "Order Qty #{a.order_qty.to_i} → #{expected.to_i}"
+        a.update_columns(order_qty: expected) unless dry
+        fixed += 1
+      end
       raise ActiveRecord::Rollback if dry
     end
-    puts "#{dry ? 'Would fix' : 'Fixed'} #{marks} orders, #{dropped} duplicate lines dropped."
+    puts "#{dry ? 'Would fix' : 'Fixed'} #{marks} orders, #{dropped} duplicate lines dropped; #{fixed} SASH Inc invoice line(s) given the right Order Qty."
   end
 end

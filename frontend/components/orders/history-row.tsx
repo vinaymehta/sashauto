@@ -3,7 +3,7 @@
 import { can } from "@/lib/permissions";
 import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import type { OrderHistory, OrderRow } from "@/lib/types";
+import { canPlaceOrder, type OrderHistory, type OrderRow } from "@/lib/types";
 import { formatDate, formatQty } from "@/lib/format";
 import { useSession } from "../session";
 import { useToast } from "../toast";
@@ -74,9 +74,12 @@ export function OrderDetailPanel({ row, onClose, onEdit, onDeleted, onPlaced }: 
     >
       {admin && (
         <div className="mb-4 flex justify-end gap-2">
-          <Button size="sm" variant="primary" onClick={() => setPlacing(true)} title="Generate vendor POs for this order">
-            <TruckIcon size={14} />Place order
-          </Button>
+          {/* Not for an order SASH India has dispatched in full: nothing is left to make. */}
+          {canPlaceOrder(row) && (
+            <Button size="sm" variant="primary" onClick={() => setPlacing(true)} title="Generate vendor POs for this order">
+              <TruckIcon size={14} />Place order
+            </Button>
+          )}
           {row.manual && <>
             <Button size="sm" onClick={onEdit}><PencilIcon size={14} className="text-ink-muted" />Edit</Button>
             <Button size="sm" onClick={() => setDeleting(true)}><TrashIcon size={14} className="text-ink-muted" />Delete</Button>

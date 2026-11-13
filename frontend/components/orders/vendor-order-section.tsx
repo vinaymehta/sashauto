@@ -54,6 +54,8 @@ export function VendorOrderSection({ orderId, manual = false, onPlaced }: { orde
             <span className="text-xs text-ink-muted">
               Order Qty <span className="tabular font-semibold text-ink">{state.order.qty !== null ? formatQty(state.order.qty) : "—"}</span>
               {state.order.combined ? <> (combined from {state.order.combined} orders)</> : null}
+              {Number(state.order.dispatched) > 0 && <>{" · "}Dispatched <span className="tabular font-semibold text-ink">{formatQty(state.order.dispatched)}</span>
+                {" · "}To order <span className="tabular font-semibold text-ink">{formatQty(state.order.to_order)}</span></>}
               {state.placements.length > 0 && <>{" · "}Ordered <span className="tabular font-semibold text-ink">{formatQty(state.order.ordered)}</span>
                 {" · "}Open <span className={`tabular font-semibold ${Number(state.order.remaining) > 0 ? "text-dec" : "text-inc"}`}>{formatQty(state.order.remaining)}</span></>}
               {" · "}MOQ <span className="tabular font-semibold text-ink">{state.moq !== null ? formatQty(state.moq) : "—"}</span>
@@ -77,7 +79,9 @@ export function VendorOrderSection({ orderId, manual = false, onPlaced }: { orde
               <p className="px-5 py-6 text-sm text-ink-muted">
                 {state.order.qty === null || Number(state.order.qty) <= 0
                   ? "This order has no Qty to place with vendors."
-                  : state.vendors.length === 0 ? "No vendor is linked to this part." : "No PO generated yet."}
+                  : Number(state.order.to_order) <= 0
+                    ? "SASH India has already dispatched this order, so there is nothing to place with vendors."
+                    : state.vendors.length === 0 ? "No vendor is linked to this part." : "No PO generated yet."}
               </p>
             ) : Number(state.order.remaining) <= 0 ? (
               <p className="border-t border-neutral-100 px-5 py-3 text-sm font-medium text-inc">Fully ordered.</p>

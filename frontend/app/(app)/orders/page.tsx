@@ -4,7 +4,7 @@ import { can } from "@/lib/permissions";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createContext, memo, Suspense, useCallback, useContext, useEffect, useMemo, useState, type DragEvent, type ReactNode } from "react";
-import type { Dashboard, InvoiceKind, OrderRow, OrdersPage, OrdersSummary, Role, UploadChoice, UploadDetail } from "@/lib/types";
+import { canPlaceOrder, type Dashboard, type InvoiceKind, type OrderRow, type OrdersPage, type OrdersSummary, type Role, type UploadChoice, type UploadDetail } from "@/lib/types";
 import { formatCount, formatDate, formatQty } from "@/lib/format";
 import { AlertIcon, ArrowUpDownIcon, CalendarIcon, CheckIcon, FileIcon, HistoryIcon, TableIcon, TruckIcon } from "@/components/icons";
 import { AllChangesTable } from "@/components/all-changes-table";
@@ -88,7 +88,7 @@ const PlaceOrderContext = createContext<((row: OrderRow) => void) | null>(null);
 function UnitLink({ row }: { row: OrderRow }) {
   const place = useContext(PlaceOrderContext);
   const label = <span className="block whitespace-nowrap" title={row.unit ?? undefined}>{text(row.unit)}</span>;
-  if (!place || !row.unit?.trim()) return label;
+  if (!place || !row.unit?.trim() || !canPlaceOrder(row)) return label;
   return (
     <button type="button" onClick={(e) => { e.stopPropagation(); place(combinedOrder(row)); }}
             className="max-w-full text-center font-medium text-ink underline decoration-neutral-300 underline-offset-2 transition-colors hover:text-accent hover:decoration-accent">
@@ -326,7 +326,7 @@ function OrdersView() {
     { section: "Dates", key: "ship_date", label: "Ship date", type: "date-range", options: [] },
     { section: "Dates", key: "firm_date", label: "Effective firm date", type: "date-range", options: [] },
     { ...AGE_FILTER, section: "Dates" },
-    { section: "Purchasing", key: "po", label: "Vendor PO", options: [{ value: "none", label: "No PO yet" }, { value: "generated", label: "PO generated" }, { value: "no_qty", label: "No Qty (nothing to order)" }] },
+    { section: "Purchasing", key: "po", label: "Vendor PO", options: [{ value: "none", label: "No PO yet" }, { value: "generated", label: "PO generated" }, { value: "no_qty", label: "Nothing to order (no Qty, or dispatched)" }] },
     { section: "Purchasing", key: "vendor", label: "Vendor", options: (facets?.vendors ?? []).map((v) => ({ value: String(v.id), label: v.name })) },
     { section: "Purchasing", key: "moq", label: "MOQ", options: [{ value: "below", label: "Below MOQ" }, { value: "reached", label: "Reached MOQ" }] },
     { section: "Purchasing", key: "combined", label: "Combined", options: [{ value: "yes", label: "Combined orders" }, { value: "no", label: "Not combined" }] },
@@ -543,7 +543,7 @@ function OrdersView() {
           <Kpi label="Open orders" value={formatCount(summary.data.open)} hint="Firm and Order, not yet delivered to Deere" icon={<TableIcon size={16} />}
                tint="violet" onClick={() => { setTab("orders"); list.clearFilters(); list.setFilter("type", "Firm,Order"); }} />
           <Kpi label="PO to generate" value={formatCount(summary.data.po_pending)}
-               hint={`Open orders with a Qty and no vendor PO yet · ${formatCount(summary.data.po_generated)} with a PO · ${formatCount(summary.data.no_qty)} without a Qty`}
+               hint={`Open orders with a Qty and no vendor PO yet · ${formatCount(summary.data.po_generated)} with a PO · ${formatCount(summary.data.no_qty)} with nothing to order`}
                icon={<FileIcon size={16} />} tint="amber"
                onClick={() => { setTab("orders"); list.clearFilters(); list.setFilter("type", "Firm,Order"); list.setFilter("po", "none"); }} />
           <Kpi label="Below MOQ" value={formatCount(summary.data.below_moq)} hint="Parts whose balance to order (Firm less PO issued) is below the MOQ" icon={<AlertIcon size={16} />}

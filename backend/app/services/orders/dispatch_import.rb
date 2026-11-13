@@ -111,21 +111,22 @@ module Orders
       return found unless found.nil?
 
       if lines.exists?
-        "no order of this PO + Part is on #{row[:date].strftime('%d %b %Y')} or has its Qty, and no other PO of the Part is on that date " \
-          "(the delivery is no longer in Deere's file)"
+        on = row[:date].strftime("%d %b %Y")
+        forecast = lines.where(order_type: "Forecast").where(ship_date: row[:date]).or(lines.where(order_type: "Forecast").where(due_date: row[:date])).exists?
+        "no Firm / Order of this PO + Part is on #{on} or has its Qty, and no other PO of the Part is on that date " \
+          "(#{forecast ? 'only a Forecast line is on that date, and a Forecast is not an order' : "the delivery is no longer in Deere's file"})"
       else
         "PO #{row[:po_number]} + Part #{row[:part_number]} is not in the current order data, and no order of the Part is on " \
           "#{row[:date].strftime('%d %b %Y')}"
       end
     end
 
-    # The one order of `lines` on the row's date (Ship Date or Due Date), a message when there are several, nil when none.
+    # The one Firm / Order order of `lines` on the row's date (Ship Date or Due Date), a message when there are several,
+    # nil when none. A Forecast line is not an order: nothing is dispatched for it, so it is never marked.
     def on_date(lines, row, what)
-      found = lines.where(ship_date: row[:date]).or(lines.where(due_date: row[:date])).to_a
+      found = lines.where.not(order_type: "Forecast").where(ship_date: row[:date]).or(lines.where.not(order_type: "Forecast").where(due_date: row[:date])).to_a
       return nil if found.empty?
 
-      firm = found.reject { |line| line.order_type == "Forecast" }
-      found = firm if firm.any?
       # Deere's file can list the same order line twice, once without a Qty (nothing required): the one with a Qty.
       with_qty = found.select { |line| line.qty.to_d.positive? }
       found = with_qty if with_qty.any?

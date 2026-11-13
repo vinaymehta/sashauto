@@ -109,7 +109,7 @@ module Api
     # Cards above the Orders table, for the current order data (latest upload + manual orders), counting rows of the
     # order file (a combined order counts each of its rows, which share its PO and status). open: Firm / Order rows not
     # yet delivered to Deere (an Outbound mark, or all of the row on SASH Inc invoices); po_pending: open ones with a Qty
-    # and no PO generated yet; below_moq: parts that need MOQ (Orders::MoqBalance: Firm Qty less PO issued, still to
+    # and no PO generated yet that SASH India has not dispatched (MADE_STATUSES: nothing is left to make); below_moq: parts that need MOQ (Orders::MoqBalance: Firm Qty less PO issued, still to
     # order, below the MOQ); aged: open ones 90+ days since their order's Firm Date (age group red, on the browser's
     # `today`).
     def summary
@@ -134,13 +134,16 @@ module Api
                                     combined_ids: combined.groups.values.select(&:combined?).map(&:anchor_id)).pluck(:id).to_set
       # Delivery tabs, counted on the same rows (as the Status column): in transit (Dispatch or Dispatched from
       # Faridabad, not yet at the US warehouse) and fulfilled (delivered to Deere).
-      statuses = dataset(UploadBatch.latest_for(current_business)).group(Arel.sql(status_sql)).count
+      current = dataset(UploadBatch.latest_for(current_business))
+      statuses = current.group(Arel.sql(status_sql)).count
+      made = current.where("#{status_sql} IN (?)", MADE_STATUSES).pluck(:id, :manual).to_set
+      pending = open.select { |id, key, qty, manual| qty.to_d.positive? && !placed.include?(key) && !made.include?([ id, manual ]) }
       render json: {
         open: open.size,
-        po_pending: open.count { |_, key, qty, _| qty.to_d.positive? && !placed.include?(key) },
-        # The rest of the open orders: with a vendor PO, or without a Qty (nothing to order).
+        po_pending: pending.size,
+        # The rest of the open orders: with a vendor PO, or nothing to order (no Qty, or dispatched already).
         po_generated: open.count { |_, key, *| placed.include?(key) },
-        no_qty: open.count { |_, key, qty, _| !qty.to_d.positive? && !placed.include?(key) },
+        no_qty: open.count { |_, key, *| !placed.include?(key) } - pending.size,
         below_moq: Orders::MoqBalance.needs(batch_ids).values.sum(&:size),
         aged: open_orders.count { |id| aged.include?(id) },
         in_transit: statuses["dispatch"].to_i + statuses["dispatched"].to_i,
@@ -307,6 +310,8 @@ module Api
     # Dispatched mark) come from Faridabad; delivery (part of the Qty delivered to Deere on SASH Inc invoices) and
     # outbound (all of it, or an Outbound mark) from SASH US.
     STATUSES = %w[none received dispatch dispatched inbound delivery outbound].freeze
+    # Statuses of an order SASH India has dispatched in full: nothing of it is left to make, so no vendor PO to generate.
+    MADE_STATUSES = %w[dispatched inbound delivery outbound].freeze
     STATUS_ARRAY_SQL = "(ARRAY[#{STATUSES.map { |s| "'#{s}'" }.join(', ')}]::text[])".freeze
 
     # Allocations of the active uploaded invoices (Invoices::Progress).
@@ -812,17 +817,18 @@ module Api
       values == [ "yes" ] ? scope.where(condition) : scope.where.not(condition)
     end
 
-    # Vendor PO filter (po=none,generated): orders with a Qty and no PO generated yet, or with at least one PO.
-    # Vendor PO: "none" (a Qty and no PO yet: PO to generate), "generated" (has a PO), "no_qty" (no Qty and no PO:
-    # nothing to order). Every order is in exactly one of them.
+    # Vendor PO filter (po=none,generated,no_qty): "none" (a Qty, not dispatched by SASH India, and no PO yet: PO to
+    # generate, as the card), "generated" (has a PO), "no_qty" (no PO and nothing to order: no Qty, or dispatched
+    # already). Every order is in exactly one of them.
     def filter_by_po(scope)
       values = multi_param(:po, %w[none generated no_qty])
       return scope if values.empty? || values.size == 3
 
       key = order_key_sql
       placed = "EXISTS (SELECT 1 FROM vendor_order_placements p WHERE p.order_key = #{key})"
-      conditions = { "none" => "NOT #{placed} AND order_rows.qty > 0", "generated" => placed,
-                     "no_qty" => "NOT #{placed} AND (order_rows.qty IS NULL OR order_rows.qty <= 0)" }
+      made = "#{status_sql} IN (#{MADE_STATUSES.map { |s| "'#{s}'" }.join(', ')})"
+      conditions = { "none" => "NOT #{placed} AND order_rows.qty > 0 AND NOT #{made}", "generated" => placed,
+                     "no_qty" => "NOT #{placed} AND (order_rows.qty IS NULL OR order_rows.qty <= 0 OR #{made})" }
       scope.where(values.map { |value| "(#{conditions.fetch(value)})" }.join(" OR "))
     end
 

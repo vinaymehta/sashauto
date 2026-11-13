@@ -246,6 +246,12 @@ export interface OrderDeliveryInfo {
 // Status of an order row: its furthest mark, or further its uploaded invoices' (dispatch: part of the Qty dispatched on
 // SASH India invoices, dispatched: all of it; outbound: all delivered on SASH Inc invoices).
 export type OrderStatus = "none" | "received" | "dispatch" | "dispatched" | "inbound" | "delivery" | "outbound"; // delivery: Partial outbound (part of the Qty on SASH Inc invoices)
+// Statuses of an order SASH India has dispatched in full: nothing of it is left to make, so no vendor PO to place.
+export const MADE_STATUSES: readonly OrderStatus[] = ["dispatched", "inbound", "delivery", "outbound"];
+// Place order is offered for an order with a Qty that is not dispatched in full. A combined order is judged by the
+// server (its rows may be dispatched one by one), so it is always offered.
+export const canPlaceOrder = (row: Pick<OrderRow, "qty" | "status" | "combined" | "member_of">) =>
+  !!row.combined || !!row.member_of || (row.qty !== null && Number(row.qty) > 0 && !MADE_STATUSES.includes(row.status ?? "none"));
 
 // An uploaded SASH invoice: "india" (SASH Autotech Pvt. Ltd. → Lotus Automotive: dispatched) or "inc" (SASH Autotech,
 // Inc. → John Deere: outbound).
@@ -528,7 +534,7 @@ export interface OrdersSummary {
   open: number;
   po_pending: number;
   po_generated: number; // open orders with a vendor PO
-  no_qty: number; // open orders without a Qty (nothing to order) and no PO
+  no_qty: number; // open orders with no PO and nothing to order: no Qty, or dispatched by SASH India already
   below_moq: number; // parts that need MOQ (balance to order below the MOQ)
   aged: number;
   in_transit: number; // Dispatch or Dispatched (part or all sent from India), not yet delivered to SASH US
@@ -699,10 +705,11 @@ export interface EmailDraft {
 export interface VendorOrderWarning { vendor_order_id?: number; vendor_id: number; vendor_name: string; message: string }
 
 export interface VendorOrderState {
-  // qty: a combined order's total; combined: how many orders it combines (null when not combined); ordered / remaining:
-  // sets ordered by the POs so far, and still to order.
+  // qty: a combined order's total; combined: how many orders it combines (null when not combined); dispatched: the part
+  // of it SASH India has dispatched already (not to order), to_order: the rest, still to make; ordered / remaining:
+  // sets ordered by the POs so far, and still to order (to_order less ordered).
   order: { id: number; po_number: string; po_line_number: string; part_number: string; order_type: OrderType; ship_date: string; qty: string | null;
-           ordered: string; remaining: string; combined?: number | null };
+           dispatched: string; to_order: string; ordered: string; remaining: string; combined?: number | null };
   moq: string | null; // the part's MOQ in sets (order Qty counts sets)
   moq_pcs: string | null;
   pack_size: number;

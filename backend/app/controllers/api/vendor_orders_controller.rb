@@ -5,19 +5,23 @@ module Api
     rate_limit to: 60, within: 1.hour, only: :create, store: RATE_LIMIT_STORE, by: -> { current_user&.id || request.remote_ip },
                with: -> { render_error "Too many placements in a short time. Try again later.", :too_many_requests }
 
-    # The placements of this row (also from earlier uploads), the Qty ordered and still to order, and the vendors it
-    # can be ordered from.
+    DISPATCHED = "SASH India has already dispatched this order, so no vendor PO can be placed for it.".freeze
+
+    # The placements of this row (also from earlier uploads), the Qty ordered and still to order (the Qty still to make,
+    # VendorOrders::ToOrder, less what is on POs), and the vendors it can be ordered from.
     def show
       row = order
+      to_order = to_order(row)
       placements = placements_for(row)
       ordered = placements.sum(&:ordered)
-      remaining = [ order_qty(row).to_d - ordered, 0 ].max
+      remaining = [ to_order.to_order - ordered, 0 ].max
       product = Product.find_by(part_number: row.part_number)
       vendors = product ? product.vendor_products.includes(:vendor).joins(:vendor).order("vendors.name") : []
       render json: {
         data: {
           order: { id: row.id, po_number: row.po_number, po_line_number: row.po_line_number, part_number: row.part_number,
                    order_type: row.order_type, ship_date: ship_date(row), qty: Serializers.qty(order_qty(row)),
+                   dispatched: Serializers.qty(to_order.dispatched), to_order: Serializers.qty(to_order.to_order),
                    ordered: Serializers.qty(ordered), remaining: Serializers.qty(remaining),
                    combined: combined_group(row)&.members&.size },
           # Order Qty counts sets; the part's MOQ in sets and pieces, and how many pieces make a set.
@@ -33,8 +37,11 @@ module Api
 
     def create
       row = order
+      to_order = to_order(row)
+      return render_error(DISPATCHED, :unprocessable_content) if dispatched?(to_order)
+
       allocations = params.permit(allocations: %i[vendor_id qty unit ship_date]).fetch(:allocations, [])
-      result = VendorOrders::Placer.call(row: row, allocations: allocations, user: current_user, order_qty: order_qty(row),
+      result = VendorOrders::Placer.call(row: row, allocations: allocations, user: current_user, order_qty: to_order.to_order,
                                          ship_date: ship_date(row))
       placement = result.placement
       audit("vendor_order.placed", subject: placement, po_number: placement.po_number, part_number: placement.part_number,
@@ -47,8 +54,11 @@ module Api
     # The PDF a placement would create for one vendor (DRAFT, not saved): POST with the allocations and vendor_id.
     def preview
       row = order
+      to_order = to_order(row)
+      return render_error(DISPATCHED, :unprocessable_content) if dispatched?(to_order)
+
       pdf = VendorOrders::Placer.preview(row: row, allocations: params.permit(allocations: %i[vendor_id qty unit ship_date]).fetch(:allocations, []),
-                                         user: current_user, vendor_id: params.require(:vendor_id), order_qty: order_qty(row),
+                                         user: current_user, vendor_id: params.require(:vendor_id), order_qty: to_order.to_order,
                                          ship_date: ship_date(row))
       send_data pdf, filename: "purchase-order-draft.pdf", type: "application/pdf", disposition: "inline"
     rescue VendorOrders::Placer::Invalid => e
@@ -122,9 +132,20 @@ module Api
       group if group&.combined?
     end
 
-    # Qty to place: a combined order's total, else the row's Qty.
+    # Order Qty: a combined order's total, else the row's Qty.
     def order_qty(row)
       combined_group(row)&.total || row.qty
+    end
+
+    # The Qty of the order still to make (VendorOrders::ToOrder): of its rows (a combined order's members), less what
+    # SASH India has dispatched. The order's status marks are on this row's key (the combined order's first row).
+    def to_order(row)
+      VendorOrders::ToOrder.call(combined_group(row)&.members || [ row ], mark_key: VendorOrderPlacement.order_key(row))
+    end
+
+    # The order had a Qty and all of it is dispatched: nothing left to place.
+    def dispatched?(to_order)
+      to_order.qty.positive? && !to_order.to_order.positive?
     end
 
     # Ship Date of the order: a combined order's last Ship Date, else the row's.
