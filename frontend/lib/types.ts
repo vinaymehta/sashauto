@@ -245,7 +245,7 @@ export interface OrderDeliveryInfo {
 
 // Status of an order row: its furthest mark, or further its uploaded invoices' (dispatch: part of the Qty dispatched on
 // SASH India invoices, dispatched: all of it; outbound: all delivered on SASH Inc invoices).
-export type OrderStatus = "none" | "received" | "dispatch" | "dispatched" | "inbound" | "delivery" | "outbound"; // delivery: Part outbound (part of the Qty on SASH Inc invoices)
+export type OrderStatus = "none" | "received" | "dispatch" | "dispatched" | "inbound" | "delivery" | "outbound"; // delivery: Partial outbound (part of the Qty on SASH Inc invoices)
 
 // An uploaded SASH invoice: "india" (SASH Autotech Pvt. Ltd. → Lotus Automotive: dispatched) or "inc" (SASH Autotech,
 // Inc. → John Deere: outbound).

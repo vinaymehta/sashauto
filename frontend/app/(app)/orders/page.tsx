@@ -318,7 +318,7 @@ function OrdersView() {
     { section: "Order", key: "status", label: "Status", options: [
       { value: "none", label: "No status" }, { value: "received", label: "Received" }, { value: "dispatch", label: "Dispatch (part dispatched)" },
       { value: "dispatched", label: "Dispatched" },
-      { value: "inbound", label: "Inbound" }, { value: "delivery", label: "Part outbound (part delivered to Deere)" },
+      { value: "inbound", label: "Inbound" }, { value: "delivery", label: "Partial outbound (part delivered to Deere)" },
       { value: "outbound", label: "Outbound (fulfilled)" },
     ] },
     { section: "Order", key: "source", label: "Source", options: [{ value: "upload", label: "Uploaded file" }, { value: "manual", label: "Manual orders" }] },

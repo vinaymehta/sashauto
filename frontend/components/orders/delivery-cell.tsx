@@ -35,7 +35,7 @@ type Step = (typeof STATUS_STEPS)[number];
 // How far each status goes, and the status each step stands for: an order whose status is at or past a step has
 // reached it (Received is reached once the order is on its way, even without a Received mark). The dispatch step is
 // reached (Dispatched) by a Dispatched mark (dispatched orders list or by hand) or SASH India invoices for all of the Qty;
-// part of it on invoices leaves it at Dispatch. Likewise SASH Inc invoices for part of the Qty: Part outbound (Inbound
+// part of it on invoices leaves it at Dispatch. Likewise SASH Inc invoices for part of the Qty: Partial outbound (Inbound
 // reached), for all of it: Outbound.
 const STATUS_RANK: Record<OrderStatus, number> = { none: 0, received: 1, dispatch: 2, dispatched: 3, inbound: 4, delivery: 5, outbound: 6 };
 const STEP_RANK: Record<DeliveryKind, number> = { received: 1, dispatched: 3, inbound: 4, outbound: 6 };
@@ -50,16 +50,22 @@ const PILL: Record<OrderStatus, { label: string; cls: string; Icon: typeof Check
   dispatch: { label: "Dispatch", cls: "border-dashed border-violet-300 bg-violet-50/60 text-violet-800", Icon: TruckIcon },
   dispatched: { label: "Dispatched", cls: "border-violet-300 bg-violet-50 text-violet-800", Icon: TruckIcon },
   inbound: { label: "Inbound", cls: "border-blue-300 bg-blue-50 text-blue-800", Icon: MapPinIcon },
-  delivery: { label: "Part outbound", cls: "border-dashed border-green-300 bg-green-50/60 text-green-800", Icon: CheckIcon },
+  delivery: { label: "Partial outbound", cls: "border-dashed border-green-300 bg-green-50/60 text-green-800", Icon: CheckIcon },
   outbound: { label: "Outbound", cls: "border-green-300 bg-green-50 text-green-800", Icon: CheckIcon },
 };
+
+// The longest label: every pill is as wide as it (an invisible copy under the label), so all pills are one size.
+const WIDEST = Object.values(PILL).reduce((a, p) => (p.label.length > a.length ? p.label : a), "");
 
 export function StatusPill({ kind }: { kind: OrderStatus }) {
   const { label, cls, Icon } = PILL[kind];
   return (
-    <span className={`inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 text-sm font-semibold ${cls}`}>
+    <span className={`inline-flex h-7 items-center justify-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 text-sm font-semibold ${cls}`}>
       <Icon size={14} strokeWidth={2.25} />
-      {label}
+      <span className="inline-grid text-center">
+        <span className="col-start-1 row-start-1">{label}</span>
+        <span aria-hidden className="invisible col-start-1 row-start-1">{WIDEST}</span>
+      </span>
     </span>
   );
 }
