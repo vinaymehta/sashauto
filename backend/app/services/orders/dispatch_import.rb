@@ -177,7 +177,7 @@ module Orders
       create(order, key, "received", dates.min, nil, "Set by the dispatched orders list") unless marks.key?("received")
       delivery = create(order, key, "dispatched", dates.max, invoice_text(file_rows.map { |row| row[:invoice_number] }),
                         (NOTE + file_rows.map { |row| entry(row) }.join(", ")).first(500))
-      delivery.update!(invoice_lines: file_rows.map { |row| line(row) }.uniq)
+      delivery.update!(invoice_lines: merge_lines([], file_rows))
       AuditLog.record("order.delivery_marked", subject: delivery, user: @user, kind: "dispatched", po_number: order.po_number,
                                                part_number: order.part_number, source: "dispatched_list")
       nil
@@ -186,7 +186,7 @@ module Orders
     # Adds the rows' invoices to the mark: the ones it does not list yet (its date: the latest invoice date), and the
     # order row each was sent for (invoice_lines; also for a mark made before they were recorded).
     def add_invoices(delivery, file_rows)
-      lines = (delivery.invoice_lines + file_rows.map { |row| line(row) }).uniq
+      lines = merge_lines(delivery.invoice_lines, file_rows)
       listed = delivery.note.delete_prefix(NOTE).scan(/(?:\A|\), )([^()]+?) \(/).flatten
       added = file_rows.reject { |row| listed.include?(row[:invoice_number]) }.uniq { |row| row[:invoice_number] }
       return "the order is already marked Dispatched with this invoice" if added.empty? && lines == delivery.invoice_lines
@@ -203,6 +203,20 @@ module Orders
                                                          source: "dispatched_list")
       end
       nil
+    end
+
+    # `lines` plus the rows' shipments not among them yet. A shipment is the same one by its invoice, Qty and order row,
+    # whatever its date: a list without invoice dates (Book 38) dates them the import day, so importing it again, or
+    # after the old list, must not count a shipment twice. The line already there keeps its date.
+    def merge_lines(lines, file_rows)
+      file_rows.each_with_object(lines.dup) do |row, merged|
+        added = line(row)
+        merged << added unless merged.any? { |l| same_shipment?(l, added) }
+      end
+    end
+
+    def same_shipment?(a, b)
+      a.values_at("invoice", "qty", "order_key") == b.values_at("invoice", "qty", "order_key")
     end
 
     # An invoice of the mark with the order row it was sent for (OrderDelivery#invoice_lines).

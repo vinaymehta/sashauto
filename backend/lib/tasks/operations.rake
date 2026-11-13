@@ -157,3 +157,30 @@ namespace :products do
     puts "Failed products are reported to Bugsnag (DeereShopImages); parts not in the shop are listed when the run ends."
   end
 end
+
+namespace :dispatch do
+  # The dispatched orders list imported twice, once from the old list (with invoice dates) and once from Book 38 (no
+  # dates: dated the import day), stored each shipment twice on its Dispatched mark, so Shipped Qty was doubled. Drops
+  # the copies: a line with the same invoice, Qty and order row as an earlier line of the mark. DRY=1 lists them.
+  desc "Remove duplicate shipment lines of Dispatched marks (same invoice, Qty and order row). [DRY=1]"
+  task dedupe_lines: :environment do
+    dry = ENV["DRY"].present?
+    marks = 0
+    dropped = 0
+    OrderDelivery.transaction do
+      OrderDelivery.active.where(kind: "dispatched").where("jsonb_array_length(invoice_lines) > 1").find_each do |d|
+        kept = d.invoice_lines.uniq { |l| l.values_at("invoice", "qty", "order_key") }
+        next if kept.size == d.invoice_lines.size
+
+        dups = d.invoice_lines.size - kept.size
+        puts "#{dry ? 'WOULD FIX' : 'FIXED'}  #{d.part_number} PO #{d.po_number} ship #{d.ship_date}: #{dups} duplicate line(s) of " \
+             "#{(d.invoice_lines - kept).map { |l| "#{l['invoice']} Qty #{l['qty']}" }.uniq.join(', ')}"
+        marks += 1
+        dropped += dups
+        d.update!(invoice_lines: kept) unless dry
+      end
+      raise ActiveRecord::Rollback if dry
+    end
+    puts "#{dry ? 'Would fix' : 'Fixed'} #{marks} orders, #{dropped} duplicate lines dropped."
+  end
+end
