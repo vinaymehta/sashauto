@@ -198,7 +198,8 @@ namespace :dispatch do
 
         puts "#{dry ? 'WOULD FIX' : 'FIXED'}  #{a.invoice.label} #{a.invoice.invoice_number} on #{a.part_number} PO #{a.po_number} ship #{a.ship_date}: " \
              "Order Qty #{a.order_qty.to_i} → #{expected.to_i}"
-        a.update_columns(order_qty: expected) unless dry
+        # Allocations are append-only (InvoiceAllocation#readonly?); this one-off correction writes the column directly.
+        InvoiceAllocation.where(id: a.id).update_all(order_qty: expected) unless dry
         fixed += 1
       end
       raise ActiveRecord::Rollback if dry
