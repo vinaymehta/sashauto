@@ -10,9 +10,10 @@ module VendorOrders
   #
   # Uploading again: a row recorded by an earlier upload (same order row and vendor) with the same vendor PO number and
   # Qty is skipped; one with another number or Qty is kept as a conflict (VendorPoImport#conflicts) for the user to override (#override) or keep.
+  # A Forecast row is a PO placed for an order already dispatched: it goes to that order (#fulfilled_order).
   # The rows of one file all go in, even several of one order. Otherwise nothing is overwritten: a row whose order is
   # already fully ordered (by POs generated here or earlier uploads) is skipped,
-  # as are Forecast rows, rows whose order or vendor is not found, and rows without a Qty issued; each with the reason,
+  # as are rows whose order or vendor is not found and rows without a Qty issued; each with the reason,
   # and each an open PurchaseIssue (a row whose vendor was not found is recorded later with the vendor chosen: #place).
   #
   #   import = VendorOrders::FileImport.call(path:, filename:, business: "dtp", user:)   # => VendorPoImport
@@ -97,11 +98,14 @@ module VendorOrders
 
     # Records one file row (with `vendor`, else the vendor of its Vendor Name); returns why not, or nil.
     def place(row, record, added, seen, vendor: nil)
-      return "a Forecast line is not an order yet" if row[:order_type] == "Forecast"
       return "no PO Qty issued" unless row[:issued]&.positive?
       return "no vendor PO number" if row[:vendor_po].blank?
 
-      order = find_order(row) or return "no #{row[:order_type]} of PO #{row[:po_number]} Line #{row[:po_line_number]} on #{row[:date]&.strftime('%d %b %Y') || 'its date'} in the order data"
+      order = if row[:order_type] == "Forecast"
+        fulfilled_order(row) or return "a Forecast line, and PO #{row[:po_number]} has no dispatched order of #{row[:part_number]} without a vendor PO"
+      else
+        find_order(row) or return "no #{row[:order_type]} of PO #{row[:po_number]} Line #{row[:po_line_number]} on #{row[:date]&.strftime('%d %b %Y') || 'its date'} in the order data"
+      end
       vendors = vendor ? [ vendor ] : vendors_of(row)
       return no_vendor(row) if vendors.empty?
 
@@ -110,8 +114,9 @@ module VendorOrders
       own_key = VendorOrderPlacement.order_key(order)
       product = Product.find_by(part_number: anchor.part_number)
       sets = (row[:issued] / [ product&.pack_size.to_i, 1 ].max).round(3)
-      numbers = vendors.to_h { |v| [ v, number_for(row[:vendor_po], v, vendors.size) ] }
-      pieces = vendors.to_h { |v| [ v, qty_for(row[:vendor_po], v, vendors.size) || row[:issued] ] }
+      split = split_cell(row[:vendor_po], vendors)
+      numbers = split.transform_values(&:first)
+      pieces = split.transform_values { |_, qty| qty || row[:issued] }
       return "this vendor PO is listed twice in the file for the order" unless vendors.all? { |v| seen.add?([ key, v.id, numbers[v] ]) }
 
       # The same row (its order row and vendor) recorded by an earlier upload: the same vendor PO number and Qty are
@@ -184,6 +189,11 @@ module VendorOrders
       named = @vendor_match.named_in(row[:vendor], part_number: row[:part_number])
       return named if named.size > 1
 
+      # A PO cell with a number per vendor, each ending in the code of one of the part's vendors ("…/AT -500 &
+      # …/HC - 500", while the Vendor Name spells one of them wrongly: "Hurlimun Casters"): each of those vendors.
+      coded = @vendor_match.coded_in(row[:vendor_po], part_number: row[:part_number])
+      return coded if coded.size > 1
+
       # A cell naming several vendors ("JTB Hydraulic Industries & S.B Auto"): each of them, when every name is a vendor.
       names = row[:vendor].to_s.split(/\s*[&,+]\s*|\s+and\s+/i).reject(&:blank?)
       if names.size > 1
@@ -195,37 +205,37 @@ module VendorOrders
       found ? [ found ] : named
     end
 
-    # The vendor PO number of `vendor` in a cell that may list several ("5501072400-SEP/AEC & 5501072367-SEP/GB"): the
-    # one ending in its code or the acronym of its name (Qty notes like " - 200 pcs" left out); the whole cell when it
-    # is one vendor's or none fits.
-    def number_for(cell, vendor, count)
-      return cell if count == 1
+    # Each vendor's [vendor PO number, Qty or nil] in a PO cell that may list several ("5501072400-SEP/AEC &
+    # 5501072367-SEP/GB", "…/JTB - 35 pcs , …/SB - 465 pcs"): the number ending in its code, the acronym of its name or
+    # its first word, else one whose ending and code start alike, else (one left of each) the number no other vendor
+    # took. One vendor, or a vendor no number fits: the whole cell and no Qty (each vendor then gets the row's Qty).
+    def split_cell(cell, vendors)
+      return { vendors.first => [ cell, nil ] } if vendors.size == 1
 
-      cell_entry(cell, vendor)&.first || cell
-    end
-
-    # The vendor's pieces in a cell that splits the PO Qty between its vendors ("5500929571-July/JTB - 35 pcs ,
-    # 5500929571-Sep/SB - 465 pcs"); nil when the cell gives none (each vendor then gets the row's Qty).
-    def qty_for(cell, vendor, count)
-      return nil if count == 1
-
-      cell_entry(cell, vendor)&.last
-    end
-
-    # [vendor PO number, Qty or nil] of `vendor` in a cell listing several.
-    def cell_entry(cell, vendor)
-      # Codes of one letter ("s" of "S.B. Auto") would fit any suffix starting with it.
-      codes = [ vendor.code, VendorOrder.acronym(vendor.name), VendorMatch.normalize(vendor.name).split.first ].compact.map { |c| c.to_s.downcase.delete(" ") }.select { |c| c.length > 1 }
       entries = cell.split(/\s*(?:&|,)\s*/).filter_map do |part|
         qty = part[/\s*-\s*(\d[\d.,]*)\s*(?:pcs)?\s*\z/i, 1]
         number = part.sub(/\s*-\s*\d[\d.,]*\s*(?:pcs)?\s*\z/i, "").strip
         suffix = number.split("/").last.to_s.downcase.gsub(/[^a-z0-9]/, "")
         [ number, qty && BigDecimal(qty.delete(",")), suffix ] unless number.empty? || suffix.empty?
       end
-      # The entry ending in the vendor's code itself first, else one whose ending and code start alike.
-      found = entries.find { |_, _, suffix| codes.include?(suffix) } ||
-              entries.find { |_, _, suffix| codes.any? { |c| c.start_with?(suffix) || suffix.start_with?(c) } }
-      found&.first(2)
+      # Codes of one letter ("s" of "S.B. Auto") would fit any ending starting with it.
+      codes = vendors.to_h do |v|
+        [ v, [ v.code, VendorOrder.acronym(v.name), VendorMatch.normalize(v.name).split.first ].compact.map { |c| c.to_s.downcase.delete(" ") }.select { |c| c.length > 1 } ]
+      end
+      taken = {}
+      [ ->(c, suffix) { c.include?(suffix) },
+        ->(c, suffix) { c.any? { |x| x.start_with?(suffix) || suffix.start_with?(x) } } ].each do |fits|
+        vendors.each do |v|
+          next if taken[v]
+
+          entry = entries.find { |e| !taken.value?(e) && fits.(codes[v], e[2]) }
+          taken[v] = entry if entry
+        end
+      end
+      left = vendors.reject { |v| taken[v] }
+      rest = entries.reject { |e| taken.value?(e) }
+      taken[left.first] = rest.first if left.one? && rest.one?
+      vendors.to_h { |v| [ v, taken[v] ? taken[v].first(2) : [ cell, nil ] ] }
     end
 
     # The order row of a file row: the current order data's row of its PO + Part + Type + PO Line on its date (Ship Date
@@ -237,6 +247,44 @@ module VendorOrders
       on = ->(rel) { rel.where(ship_date: row[:date]).or(rel.where(due_date: row[:date])).to_a.max_by { |r| [ r.qty.to_d, -r.id ] } }
       on.(OrderRow.where(upload_batch_id: @batch.id, **scope)) || on.(OrderRow.dropped([ @batch.id ], **scope.except(:order_type, :po_line_number))
                                                                          .where(order_type: row[:order_type], po_line_number: row[:po_line_number]))
+    end
+
+    # A Forecast row of the list is a vendor PO SASH placed for an order already dispatched (Deere has since dropped
+    # that order or moved its line to Forecast): the Firm / Order of its PO + Part, in any upload of the business, that
+    # was dispatched or delivered (a status mark or an uploaded invoice) and has no vendor PO yet. The one with the
+    # row's Qty, else the earliest; each version of an order counts once, with its largest Qty. nil when none.
+    def fulfilled_order(row)
+      # The row's PO first, then a Deere PO written in its vendor PO number ("4500448537/AT" on a row of PO 5500929704).
+      pos = [ row[:po_number], *row[:vendor_po].to_s.scan(/(?<!\d)(?:45|55)\d{8}(?!\d)/) ].uniq
+      pos.each do |po|
+        order = fulfilled_order_of(row, po)
+        return order if order
+      end
+      nil
+    end
+
+    def fulfilled_order_of(row, po_number)
+      rows = OrderRow.joins(:upload_batch).where(upload_batches: { business: @business }, po_number: po_number,
+                                                 part_number: row[:part_number], order_type: %w[Firm Order]).where("order_rows.qty > 0")
+      orders = rows.to_a.group_by { |r| VendorOrderPlacement.order_key(r) }.transform_values { |v| v.max_by { |r| [ r.qty, r.upload_batch_id ] } }
+      return nil if orders.empty?
+
+      keys = orders.keys
+      # Recorded by an earlier upload (its vendor PO number on one of these orders, the one with the row's Qty first):
+      # that order, so the row is checked as the same row (skipped, or a conflict when it changed).
+      recorded = VendorOrder.where(source: "file", source_order_key: keys).where("strpos(?, vendor_orders.number) > 0", row[:vendor_po].to_s)
+                            .order(Arel.sql(VendorOrder.sanitize_sql_array([ "(vendor_orders.qty = ?) DESC, vendor_orders.id", row[:issued] ]))).pick(:source_order_key)
+      return orders[recorded] if recorded
+
+      sent = OrderDelivery.where(removed_at: nil, kind: %w[dispatched inbound outbound], order_key: keys).distinct.pluck(:order_key) |
+             InvoiceAllocation.joins(:invoice).where(invoices: { removed_at: nil }, order_key: keys).distinct.pluck(:order_key)
+      free = orders.slice(*(sent - VendorOrderPlacement.where(order_key: keys).distinct.pluck(:order_key))).values
+      return free.min_by { |r| [ r.qty == row[:issued] ? 0 : 1, r.ship_date ] } if free.any?
+
+      # Else the order whose Qty less the pieces its vendor POs already order is just the row's Qty (a PO for the rest
+      # of an order: 1,800 of an order of 2,000 with a PO of 200).
+      ordered = VendorOrder.joins(:vendor_order_placement).where(vendor_order_placements: { order_key: keys }).group("vendor_order_placements.order_key").sum(:qty)
+      orders.values.select { |r| ordered[VendorOrderPlacement.order_key(r)] && r.qty - ordered[VendorOrderPlacement.order_key(r)] == row[:issued] }.min_by(&:ship_date)
     end
 
     # The order a row belongs to: its combined order's first row and total Qty (Orders::Combiner), else itself and its Qty.

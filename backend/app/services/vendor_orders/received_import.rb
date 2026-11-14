@@ -110,11 +110,25 @@ module VendorOrders
       return [ "no Quantity", "qty" ] unless row[:qty]&.positive?
       return [ "no Vendor Invoice No.", "other" ] if row[:invoice_number].blank?
 
+      # A part written with a suffix ("JXAUC10057-2") that is not a product: the product without it.
+      if (base = row[:part_number].to_s[/\A(.+)-\d+\z/, 1]) && !Product.exists?(part_number: row[:part_number]) && Product.exists?(part_number: base)
+        row = row.merge(part_number: base)
+      end
       vendor ||= (@vendors ||= VendorMatch.new).find(row[:vendor], part_number: row[:part_number]) or return [ "vendor \"#{row[:vendor]}\" is not in Vendors", "vendor" ]
-      # A vendor saved twice under one name: the one its POs of the part were recorded with.
-      vendor = (@vendors ||= VendorMatch.new).twins(vendor).find do |v|
-        VendorOrder.joins(:vendor_order_placement).where(vendor: v, vendor_order_placements: { part_number: row[:part_number] }).exists?
-      end || vendor
+      # A vendor saved twice (under one name, or spelt a little differently: "Pal Shell Cast" / "Pal Shellcast Private
+      # Limited", "Polestar Enggineers" / "Polestar Engineers"): the one its POs of the part were recorded with.
+      with_po = VendorOrder.joins(:vendor_order_placement).where(vendor_order_placements: { part_number: row[:part_number] }).distinct.pluck(:vendor_id)
+      unless with_po.include?(vendor.id)
+        vendor = ((@vendors ||= VendorMatch.new).twins(vendor) + Vendor.where(id: with_po).select { |v| VendorMatch.alike?(v.name, vendor.name) })
+                 .find { |v| with_po.include?(v.id) } || vendor
+        # The part's own vendor (Products) when its POs were listed under one vendor that is not the part's (a wrong
+        # Vendor Name in the PO list: Meko for Makhija's water pump): those POs.
+        unless with_po.include?(vendor.id)
+          own = Vendor.joins(vendor_products: :product).where(products: { part_number: row[:part_number] }).distinct.pluck(:id)
+          others = with_po - own
+          vendor = Vendor.find(others.first) if own.include?(vendor.id) && others.one? && (with_po & own).empty?
+        end
+      end
       orders = VendorOrder.joins(:vendor_order_placement).left_joins(vendor_order_placement: :upload_batch)
                           .where(vendor: vendor, vendor_order_placements: { part_number: row[:part_number] })
       orders = orders.where(upload_batches: { business: @business }).or(orders.where(vendor_order_placements: { upload_batch_id: nil }))

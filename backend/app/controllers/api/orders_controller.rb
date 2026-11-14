@@ -109,18 +109,22 @@ module Api
       }
     end
 
-    # Cards above the Orders table, for the current order data (latest upload + manual orders), counting rows of the
+    # Cards above the Orders table, for the current order data (latest upload, kept rows + manual orders), counting rows of the
     # order file (a combined order counts each of its rows, which share its PO and status). open: Firm / Order rows not
     # yet delivered to Deere (an Outbound mark, or all of the row on SASH Inc invoices); po_pending: open ones with a Qty
     # and no PO generated yet that SASH India has not dispatched (MADE_STATUSES: nothing is left to make); below_moq: parts that need MOQ (Orders::MoqBalance: Firm Qty less PO issued, still to
     # order, below the MOQ); aged: open ones 90+ days since their order's Firm Date (age group red, on the browser's
     # `today`).
     def summary
-      batch_ids = UploadBatch.latest_for(current_business).map(&:id)
+      batches = UploadBatch.latest_for(current_business)
+      batch_ids = batches.map(&:id)
       combined = Orders::Combiner.for_batches(batch_ids)
       load_combined_orders(combined)
       anchor_of = @anchor_of
-      imported = OrderRow.where(upload_batch_id: batch_ids, order_type: %w[Firm Order]).pluck(:id, :group_key, :po_line_number, :ship_date, :qty)
+      # The rows the Orders list shows: the latest uploads' and the kept ones (no longer in Deere's file, kept for their
+      # shipments, invoices or vendor POs: #kept_rows), so a card and the list it filters count the same rows.
+      imported = OrderRow.where(upload_batch_id: batch_ids).or(OrderRow.where(id: kept_ids(batches))).where(order_type: %w[Firm Order])
+                         .pluck(:id, :group_key, :po_line_number, :ship_date, :qty)
       keys = imported.to_h { |id, g, line, ship, _| [ id, Digest::SHA256.hexdigest([ g, line, ship.iso8601 ].join(OrderRows::Normalizer::KEY_SEPARATOR)) ] }
       rows = imported.map { |id, *, qty| [ id, keys[anchor_of.fetch(id, id)], qty, false ] }
       rows += manual_orders.where(order_type: %w[Firm Order]).pluck(:id, :qty)
@@ -327,6 +331,8 @@ module Api
     # Statuses in route order: dispatch (part of the Qty dispatched on SASH India invoices) and dispatched (all of it, or a
     # Dispatched mark) come from Faridabad; delivery (part of the Qty delivered to Deere on SASH Inc invoices) and
     # outbound (all of it, or an Outbound mark) from SASH US.
+    # Note of the Received mark the dispatched orders list sets (Orders::DispatchImport).
+    LIST_RECEIVED_NOTE = "Set by the dispatched orders list".freeze
     STATUSES = %w[none received dispatch dispatched inbound delivery outbound].freeze
     # Statuses of an order SASH India has dispatched in full: nothing of it is left to make, so no vendor PO to generate.
     MADE_STATUSES = %w[dispatched inbound delivery outbound].freeze
@@ -380,6 +386,7 @@ module Api
     def load_combined_orders(combined)
       @anchor_of = {}
       @combined_keys = {}
+      @combined_own = {}
       @combined_ship = {}
       combined.groups.each_value do |g|
         next unless g.combined?
@@ -389,6 +396,7 @@ module Api
         g.members.each do |m|
           @anchor_of[m.id] = g.anchor_id
           @combined_keys[m.id] = key
+          @combined_own[m.id] = VendorOrderPlacement.order_key(m)
           @combined_ship[m.id] = ships
         end
       end
@@ -481,9 +489,29 @@ module Api
       return CURRENT_STATUS_SQL if @combined_keys.empty?
 
       ids = @combined_keys.keys.map { |id| Integer(id) }.join(",")
-      combined = "COALESCE((SELECT d.kind FROM order_deliveries d WHERE d.removed_at IS NULL AND d.order_key = (CASE order_rows.id #{when_ids(@combined_keys)} END) " \
-                 "ORDER BY array_position(ARRAY['received', 'dispatched', 'inbound', 'outbound']::varchar[], d.kind) DESC LIMIT 1), 'none')"
+      by_key = "(CASE order_rows.id #{when_ids(@combined_keys)} END)"
+      order = "ORDER BY array_position(ARRAY['received', 'dispatched', 'inbound', 'outbound']::varchar[], d.kind) DESC LIMIT 1), 'none')"
+      combined = "COALESCE((SELECT d.kind FROM order_deliveries d WHERE d.removed_at IS NULL AND d.order_key = #{by_key} #{order}"
+      # Its rows nothing of which has gone (#not_sent_ids): the combined order's marks from Dispatched on, and its
+      # Received set by the list, are not theirs (as #invoice_info).
+      unsent = not_sent_ids
+      if unsent.any?
+        theirs = "d.kind IN ('dispatched', 'inbound', 'outbound') OR (d.kind = 'received' AND d.note LIKE #{OrderRow.connection.quote("#{LIST_RECEIVED_NOTE}%")})"
+        own = "COALESCE((SELECT d.kind FROM order_deliveries d WHERE d.removed_at IS NULL AND d.order_key = #{by_key} AND NOT (#{theirs}) #{order}"
+        combined = "(CASE WHEN order_rows.id IN (#{unsent.map { |id| Integer(id) }.join(',')}) THEN #{own} ELSE #{combined} END)"
+      end
       "(CASE WHEN NOT order_rows.manual AND order_rows.id IN (#{ids}) THEN #{combined} ELSE #{CURRENT_STATUS_SQL} END)"
+    end
+
+    # Rows of combined orders (#load_combined_orders) whose combined order was marked Dispatched by a dispatched orders
+    # list that names other rows, while no list line names them: nothing of them has gone. Looked up once per request.
+    def not_sent_ids
+      @not_sent_ids ||= begin
+        marks = OrderDelivery.active.where(kind: "dispatched").where.not(invoice_lines: nil).pluck(:order_key, :invoice_lines)
+        listed = marks.select { |_, lines| Array(lines).any? }.map(&:first).to_set
+        named = marks.flat_map { |_, lines| Array(lines).map { |l| l["order_key"] } }.to_set
+        @combined_keys.select { |id, key| listed.include?(key) && !named.include?(@combined_own[id]) }.keys
+      end
     end
 
     # "WHEN id THEN 'value' …" of a CASE order_rows.id.
@@ -539,6 +567,13 @@ module Api
     # Balance Qty (still to send), Outbound Qty (delivered on SASH Inc invoices), each invoice move, and the status: the
     # further of its marks' (`marks`, kind => mark) and its invoices'.
     def invoice_info(row, progress, marks, named: nil)
+      # A row of a combined order (its first row too) that no line of a dispatched orders list names, while the combined
+      # order's Dispatched mark came from such a list: nothing of it has gone, so the marks from Dispatched on, and the
+      # Received the list set, are the other rows' (e.g. 14 Dec under a combined order whose 26 Nov row was shipped).
+      # As #mark_status_sql.
+      if !row[:manual] && @combined_keys && not_sent_ids.include?(row.id)
+        marks = marks.reject { |kind, d| %w[dispatched inbound outbound].include?(kind) || (kind == "received" && d[:note].to_s.start_with?(LIST_RECEIVED_NOTE)) }
+      end
       mark = OrderDelivery::KINDS.reverse.find { |kind| marks.key?(kind) } || "none"
       from_invoices = progress&.status(row.qty)
       status = [ mark, from_invoices ].compact.max_by { |kind| STATUSES.index(kind) }

@@ -267,8 +267,8 @@ CREATE TABLE public.ageing_digests (
     sent_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT ageing_digests_mode_valid CHECK (((mode)::text = ANY ((ARRAY['scheduled'::character varying, 'manual'::character varying, 'preview'::character varying, 'baseline'::character varying, 'upload'::character varying])::text[]))),
-    CONSTRAINT ageing_digests_status_valid CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'sent'::character varying, 'failed'::character varying, 'skipped'::character varying])::text[])))
+    CONSTRAINT ageing_digests_mode_valid CHECK (((mode)::text = ANY (ARRAY[('scheduled'::character varying)::text, ('manual'::character varying)::text, ('preview'::character varying)::text, ('baseline'::character varying)::text, ('upload'::character varying)::text]))),
+    CONSTRAINT ageing_digests_status_valid CHECK (((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('sent'::character varying)::text, ('failed'::character varying)::text, ('skipped'::character varying)::text])))
 );
 
 
@@ -427,8 +427,8 @@ CREATE TABLE public.import_issues (
     resolved_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT import_issues_kind_valid CHECK (((kind)::text = ANY ((ARRAY['skipped'::character varying, 'unreadable'::character varying, 'vendor_details'::character varying])::text[]))),
-    CONSTRAINT import_issues_status_valid CHECK (((status)::text = ANY ((ARRAY['open'::character varying, 'resolved'::character varying, 'dismissed'::character varying])::text[])))
+    CONSTRAINT import_issues_kind_valid CHECK (((kind)::text = ANY (ARRAY[('skipped'::character varying)::text, ('unreadable'::character varying)::text, ('vendor_details'::character varying)::text]))),
+    CONSTRAINT import_issues_status_valid CHECK (((status)::text = ANY (ARRAY[('open'::character varying)::text, ('resolved'::character varying)::text, ('dismissed'::character varying)::text])))
 );
 
 
@@ -515,7 +515,7 @@ CREATE TABLE public.invoices (
     removed_by_id bigint,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT invoices_kind_valid CHECK (((kind)::text = ANY ((ARRAY['india'::character varying, 'inc'::character varying])::text[])))
+    CONSTRAINT invoices_kind_valid CHECK (((kind)::text = ANY (ARRAY[('india'::character varying)::text, ('inc'::character varying)::text])))
 );
 
 
@@ -577,9 +577,9 @@ CREATE TABLE public.manual_orders (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     business character varying DEFAULT 'dtp'::character varying NOT NULL,
-    CONSTRAINT manual_orders_business_valid CHECK (((business)::text = ANY ((ARRAY['dtp'::character varying, 'gmbh'::character varying])::text[]))),
+    CONSTRAINT manual_orders_business_valid CHECK (((business)::text = ANY (ARRAY[('dtp'::character varying)::text, ('gmbh'::character varying)::text]))),
     CONSTRAINT manual_orders_quantities_non_negative CHECK (((qty >= (0)::numeric) AND (previous_qty >= (0)::numeric) AND (last_asn_qty >= (0)::numeric) AND (last_receipt_qty >= (0)::numeric))),
-    CONSTRAINT manual_orders_quantity_source_valid CHECK (((quantity_source)::text = ANY ((ARRAY['qty'::character varying, 'previous_qty'::character varying, 'unknown'::character varying])::text[])))
+    CONSTRAINT manual_orders_quantity_source_valid CHECK (((quantity_source)::text = ANY (ARRAY[('qty'::character varying)::text, ('previous_qty'::character varying)::text, ('unknown'::character varying)::text])))
 );
 
 
@@ -672,7 +672,7 @@ CREATE TABLE public.notifications (
     address_change_count integer DEFAULT 0 NOT NULL,
     moq_alert_count integer DEFAULT 0 NOT NULL,
     ship_to_alert_count integer DEFAULT 0 NOT NULL,
-    CONSTRAINT notifications_kind_valid CHECK (((kind)::text = ANY ((ARRAY['quantity_changes'::character varying, 'address_changes'::character varying, 'moq_alerts'::character varying, 'ship_to_alerts'::character varying])::text[]))),
+    CONSTRAINT notifications_kind_valid CHECK (((kind)::text = ANY (ARRAY[('quantity_changes'::character varying)::text, ('address_changes'::character varying)::text, ('moq_alerts'::character varying)::text, ('ship_to_alerts'::character varying)::text]))),
     CONSTRAINT notifications_status_valid CHECK (((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('sent'::character varying)::text, ('failed'::character varying)::text])))
 );
 
@@ -721,7 +721,7 @@ CREATE TABLE public.order_deliveries (
     invoice_number character varying(64),
     invoice_lines jsonb DEFAULT '[]'::jsonb NOT NULL,
     CONSTRAINT order_deliveries_dispatch_invoice CHECK ((((kind)::text <> 'dispatched'::text) OR (invoice_number IS NOT NULL))),
-    CONSTRAINT order_deliveries_kind_valid CHECK (((kind)::text = ANY ((ARRAY['received'::character varying, 'dispatched'::character varying, 'inbound'::character varying, 'outbound'::character varying])::text[]))),
+    CONSTRAINT order_deliveries_kind_valid CHECK (((kind)::text = ANY (ARRAY[('received'::character varying)::text, ('dispatched'::character varying)::text, ('inbound'::character varying)::text, ('outbound'::character varying)::text]))),
     CONSTRAINT order_deliveries_one_order CHECK (((order_row_id IS NULL) <> (manual_order_id IS NULL)))
 );
 
@@ -790,7 +790,7 @@ CREATE TABLE public.order_merges (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     kind character varying DEFAULT 'added'::character varying NOT NULL,
-    CONSTRAINT order_merges_kind_valid CHECK (((kind)::text = ANY ((ARRAY['added'::character varying, 'removed'::character varying])::text[])))
+    CONSTRAINT order_merges_kind_valid CHECK (((kind)::text = ANY (ARRAY[('added'::character varying)::text, ('removed'::character varying)::text])))
 );
 
 
@@ -851,7 +851,7 @@ CREATE TABLE public.order_rows (
     source_data jsonb DEFAULT '{}'::jsonb NOT NULL,
     source_columns character varying[] DEFAULT '{}'::character varying[] NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT order_rows_quantity_source_valid CHECK (((quantity_source)::text = ANY ((ARRAY['qty'::character varying, 'previous_qty'::character varying, 'unknown'::character varying])::text[])))
+    CONSTRAINT order_rows_quantity_source_valid CHECK (((quantity_source)::text = ANY (ARRAY[('qty'::character varying)::text, ('previous_qty'::character varying)::text, ('unknown'::character varying)::text])))
 );
 
 
@@ -955,8 +955,8 @@ CREATE TABLE public.price_changes (
     upload_batch_id bigint,
     changed_by_id bigint,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT price_changes_kind_valid CHECK (((kind)::text = ANY ((ARRAY['customer'::character varying, 'vendor'::character varying])::text[]))),
-    CONSTRAINT price_changes_source_valid CHECK (((source)::text = ANY ((ARRAY['upload'::character varying, 'manual'::character varying, 'import'::character varying])::text[])))
+    CONSTRAINT price_changes_kind_valid CHECK (((kind)::text = ANY (ARRAY[('customer'::character varying)::text, ('vendor'::character varying)::text]))),
+    CONSTRAINT price_changes_source_valid CHECK (((source)::text = ANY (ARRAY[('upload'::character varying)::text, ('manual'::character varying)::text, ('import'::character varying)::text])))
 );
 
 
@@ -1089,7 +1089,7 @@ CREATE TABLE public.purchase_issues (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     fingerprint character varying(64),
-    CONSTRAINT purchase_issues_status_valid CHECK (((status)::text = ANY ((ARRAY['open'::character varying, 'resolved'::character varying, 'dismissed'::character varying])::text[])))
+    CONSTRAINT purchase_issues_status_valid CHECK (((status)::text = ANY (ARRAY[('open'::character varying)::text, ('resolved'::character varying)::text, ('dismissed'::character varying)::text])))
 );
 
 
@@ -1139,7 +1139,7 @@ CREATE TABLE public.quantity_changes (
     previous_order_row_id bigint,
     manual_order_id bigint,
     previous_ship_date date,
-    CONSTRAINT quantity_changes_difference_valid CHECK (((difference = (new_qty - old_qty)) AND ((difference <> (0)::numeric) OR ((direction)::text = ANY ((ARRAY['added'::character varying, 'removed'::character varying, 'rescheduled'::character varying])::text[]))))),
+    CONSTRAINT quantity_changes_difference_valid CHECK (((difference = (new_qty - old_qty)) AND ((difference <> (0)::numeric) OR ((direction)::text = ANY (ARRAY[('added'::character varying)::text, ('removed'::character varying)::text, ('rescheduled'::character varying)::text]))))),
     CONSTRAINT quantity_changes_direction_valid CHECK (((((direction)::text = 'increase'::text) AND (difference > (0)::numeric)) OR (((direction)::text = 'decrease'::text) AND (difference < (0)::numeric)) OR (((direction)::text = 'added'::text) AND (old_qty = (0)::numeric)) OR (((direction)::text = 'removed'::text) AND (new_qty = (0)::numeric)) OR (((direction)::text = 'rescheduled'::text) AND (difference = (0)::numeric) AND (previous_ship_date IS NOT NULL)))),
     CONSTRAINT quantity_changes_source_present CHECK (((manual_order_id IS NOT NULL) OR ((upload_batch_id IS NOT NULL) AND (previous_upload_batch_id IS NOT NULL))))
 );
@@ -1210,7 +1210,7 @@ CREATE TABLE public.upload_batches (
     moq_alert_count integer,
     rescheduled_count integer,
     business character varying DEFAULT 'dtp'::character varying NOT NULL,
-    CONSTRAINT upload_batches_business_valid CHECK (((business)::text = ANY ((ARRAY['dtp'::character varying, 'gmbh'::character varying])::text[]))),
+    CONSTRAINT upload_batches_business_valid CHECK (((business)::text = ANY (ARRAY[('dtp'::character varying)::text, ('gmbh'::character varying)::text]))),
     CONSTRAINT upload_batches_status_valid CHECK (((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('processing'::character varying)::text, ('completed'::character varying)::text, ('failed'::character varying)::text]))),
     CONSTRAINT upload_batches_version_iff_completed CHECK ((((status)::text = 'completed'::text) = (version_number IS NOT NULL)))
 );
@@ -1257,7 +1257,7 @@ CREATE TABLE public.users (
     permissions jsonb DEFAULT '{}'::jsonb NOT NULL,
     configurable jsonb DEFAULT '{}'::jsonb NOT NULL,
     read_notification_ids jsonb DEFAULT '[]'::jsonb NOT NULL,
-    CONSTRAINT users_role_valid CHECK (((role)::text = ANY ((ARRAY['admin'::character varying, 'warehouse_manager'::character varying, 'employee'::character varying])::text[])))
+    CONSTRAINT users_role_valid CHECK (((role)::text = ANY (ARRAY[('admin'::character varying)::text, ('warehouse_manager'::character varying)::text, ('employee'::character varying)::text])))
 );
 
 
@@ -1413,10 +1413,10 @@ CREATE TABLE public.vendor_orders (
     goods_received_by_id bigint,
     order_date date,
     source_order_key character varying(64),
-    CONSTRAINT vendor_orders_email_status_valid CHECK (((email_status)::text = ANY ((ARRAY['not_sent'::character varying, 'pending'::character varying, 'sent'::character varying, 'failed'::character varying, 'no_email'::character varying])::text[]))),
+    CONSTRAINT vendor_orders_email_status_valid CHECK (((email_status)::text = ANY (ARRAY[('not_sent'::character varying)::text, ('pending'::character varying)::text, ('sent'::character varying)::text, ('failed'::character varying)::text, ('no_email'::character varying)::text]))),
     CONSTRAINT vendor_orders_qty_positive CHECK ((qty > (0)::numeric)),
-    CONSTRAINT vendor_orders_source_valid CHECK (((source)::text = ANY ((ARRAY['app'::character varying, 'file'::character varying])::text[]))),
-    CONSTRAINT vendor_orders_unit_valid CHECK (((unit)::text = ANY ((ARRAY['sets'::character varying, 'pcs'::character varying])::text[])))
+    CONSTRAINT vendor_orders_source_valid CHECK (((source)::text = ANY (ARRAY[('app'::character varying)::text, ('file'::character varying)::text]))),
+    CONSTRAINT vendor_orders_unit_valid CHECK (((unit)::text = ANY (ARRAY[('sets'::character varying)::text, ('pcs'::character varying)::text])))
 );
 
 
@@ -1456,7 +1456,7 @@ CREATE TABLE public.vendor_po_imports (
     kind character varying DEFAULT 'orders'::character varying NOT NULL,
     conflicts jsonb DEFAULT '[]'::jsonb NOT NULL,
     line_totals jsonb DEFAULT '{}'::jsonb NOT NULL,
-    CONSTRAINT vendor_po_imports_kind_valid CHECK (((kind)::text = ANY ((ARRAY['orders'::character varying, 'received'::character varying])::text[])))
+    CONSTRAINT vendor_po_imports_kind_valid CHECK (((kind)::text = ANY (ARRAY[('orders'::character varying)::text, ('received'::character varying)::text])))
 );
 
 
@@ -1504,7 +1504,7 @@ CREATE TABLE public.vendor_products (
     price_text character varying(200),
     available_qty numeric(15,3),
     CONSTRAINT vendor_products_available_qty_non_negative CHECK (((available_qty IS NULL) OR (available_qty >= (0)::numeric))),
-    CONSTRAINT vendor_products_currency_valid CHECK (((price_currency)::text = ANY ((ARRAY['INR'::character varying, 'USD'::character varying, 'EUR'::character varying, 'CNY'::character varying, 'GBP'::character varying])::text[]))),
+    CONSTRAINT vendor_products_currency_valid CHECK (((price_currency)::text = ANY (ARRAY[('INR'::character varying)::text, ('USD'::character varying)::text, ('EUR'::character varying)::text, ('CNY'::character varying)::text, ('GBP'::character varying)::text]))),
     CONSTRAINT vendor_products_moq_positive CHECK (((moq IS NULL) OR (moq > (0)::numeric))),
     CONSTRAINT vendor_products_moq_sets_positive CHECK (((moq_sets IS NULL) OR (moq_sets > (0)::numeric))),
     CONSTRAINT vendor_products_pack_size_positive CHECK ((pack_size >= 1)),
@@ -1567,8 +1567,8 @@ CREATE TABLE public.vendors (
     remarks text,
     CONSTRAINT vendors_gst_rate_valid CHECK (((gst_rate IS NULL) OR (gst_rate >= (0)::numeric))),
     CONSTRAINT vendors_lead_days_valid CHECK (((lead_days IS NULL) OR (lead_days >= 0))),
-    CONSTRAINT vendors_tax_preference_valid CHECK (((tax_preference)::text = ANY ((ARRAY['taxable'::character varying, 'tax_exempt'::character varying])::text[]))),
-    CONSTRAINT vendors_type_valid CHECK (((vendor_type)::text = ANY ((ARRAY['business'::character varying, 'individual'::character varying])::text[])))
+    CONSTRAINT vendors_tax_preference_valid CHECK (((tax_preference)::text = ANY (ARRAY[('taxable'::character varying)::text, ('tax_exempt'::character varying)::text]))),
+    CONSTRAINT vendors_type_valid CHECK (((vendor_type)::text = ANY (ARRAY[('business'::character varying)::text, ('individual'::character varying)::text])))
 );
 
 

@@ -286,3 +286,48 @@ namespace :invoices do
     puts dry ? "DRY run: nothing changed." : "Done."
   end
 end
+
+namespace :purchases do
+  # Records the open import issues again with the current rules (Purchase orders → Import issues): vendor PO list rows
+  # first (e.g. Forecast rows, now recorded on their dispatched order), then Purchase Received rows (whose vendor PO may
+  # now be there). A row whose vendor is still not in Vendors is added as a vendor with the file's name when
+  # ADD_VENDORS=1 (as "Add as vendor"). Resolved issues are closed as "recorded".
+  #   bin/rails purchases:retry_issues [BUSINESS=dtp] [ADD_VENDORS=1] [EMAIL=admin@…] [DRY=1]
+  desc "Record the open purchase import issues again with the current rules"
+  task retry_issues: :environment do
+    dry = ENV["DRY"] == "1"
+    user = ENV["EMAIL"].present? ? User.find_by!(email: ENV["EMAIL"]) : User.where(role: "admin", active: true).order(:id).first!
+    issues = PurchaseIssue.where(status: "open").includes(:vendor_po_import)
+    issues = issues.where(business: ENV["BUSINESS"]) if ENV["BUSINESS"].present?
+    done = Hash.new(0)
+    still = Hash.new(0)
+    ActiveRecord::Base.transaction do
+      issues.sort_by { |i| [ i.vendor_po_import.kind == "orders" ? 0 : 1, i.vendor_po_import_id, i.excel_row.to_i ] }.each do |issue|
+        kind = issue.vendor_po_import.kind
+        vendor = nil
+        if issue.reason_kind == "vendor" && ENV["ADD_VENDORS"] == "1" && issue.row_data["vendor"].present?
+          name = issue.row_data["vendor"].to_s.squish.first(200)
+          vendor = Vendor.where("lower(name) = ?", name.downcase).first || Vendor.create!(name: name)
+        elsif issue.reason_kind == "vendor"
+          still[kind] += 1
+          next
+        end
+        reason = if kind == "orders"
+          VendorOrders::FileImport.new(nil, nil, issue.business, user).place_issue(issue, vendor)
+        else
+          VendorOrders::ReceivedImport.new(nil, nil, issue.business, user).receive_issue(issue, vendor)
+        end
+        if reason.nil?
+          issue.close!("resolved", user: user, resolution: vendor ? "vendor_created" : "recorded")
+          done[kind] += 1
+          puts "#{issue.business} #{kind} row #{issue.excel_row}: recorded"
+        else
+          still[kind] += 1
+          puts "#{issue.business} #{kind} row #{issue.excel_row}: still not recorded (#{reason})" if ENV["VERBOSE"] == "1"
+        end
+      end
+      puts "Recorded: #{done.to_h} · still open: #{still.to_h}#{dry ? ' (DRY: rolled back)' : ''}"
+      raise ActiveRecord::Rollback if dry
+    end
+  end
+end

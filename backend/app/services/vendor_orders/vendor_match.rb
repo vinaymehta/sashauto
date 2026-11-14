@@ -12,6 +12,18 @@ module VendorOrders
       name.to_s.downcase.gsub("&", " and ").scan(/[a-z0-9]+/).reject { |w| NAME_NOISE.include?(w) }.join(" ")
     end
 
+    # Two spellings of one vendor: the same name without spaces, one starting with the other, or the same first word
+    # (of 4 letters or more).
+    def self.alike?(one, other)
+      a = normalize(one)
+      b = normalize(other)
+      return false if a.empty? || b.empty?
+
+      x = a.delete(" ")
+      y = b.delete(" ")
+      x == y || x.start_with?(y) || y.start_with?(x) || (a.split.first.length >= 4 && a.split.first == b.split.first)
+    end
+
     def initialize
       @vendors = Vendor.order(:id).to_a.map { |v| [ self.class.normalize(v.name), v ] }
     end
@@ -45,6 +57,18 @@ module VendorOrders
         words = self.class.normalize(v.name).split
         key = words.first.to_s.length >= 4 ? words.first : words.first(2).join
         key.length >= 4 && text.include?(key)
+      end
+    end
+
+    # The part's vendors (Products) whose code ends one of the vendor PO numbers in a cell ("5501072342/SEP/AT -500 &
+    # 5501072342/SEP/HC - 500": AT and HC), in the order the part lists them.
+    def coded_in(cell, part_number:)
+      return [] if part_number.blank? || cell.blank?
+
+      endings = cell.to_s.split(/\s*(?:&|,)\s*/).map { |p| p.sub(/\s*-\s*\d[\d.,]*\s*(?:pcs)?\s*\z/i, "").split("/").last.to_s.downcase.gsub(/[^a-z0-9]/, "") }
+      Vendor.joins(vendor_products: :product).where(products: { part_number: part_number }).distinct.order(:id).select do |v|
+        code = v.code.to_s.downcase.gsub(/[^a-z0-9]/, "")
+        code.length > 1 && endings.include?(code)
       end
     end
 
