@@ -71,7 +71,7 @@ class ApplicationController < ActionController::Base
   SECTION_OF = {
     "api/sessions" => :all, "api/activity" => :all,
     "api/dashboard" => %w[dashboard], "api/stats" => %w[dashboard],
-    "api/orders" => %w[orders], "api/uploads" => %w[orders], "api/manual_orders" => %w[orders], "api/vendor_orders" => %w[orders],
+    "api/orders" => %w[orders], "api/uploads" => %w[orders], "api/manual_orders" => %w[orders], "api/vendor_orders" => %w[orders], "api/purchase_orders" => %w[orders], "api/purchase_issues" => %w[orders],
     "api/order_merges" => %w[orders], "api/order_deliveries" => %w[orders], "api/invoices" => %w[orders],
     "api/products" => %w[products], "api/product_images" => %w[products], "api/available_parts" => %w[products],
     "api/product_conflicts" => %w[products],

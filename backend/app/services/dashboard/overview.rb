@@ -18,7 +18,8 @@ module Dashboard
   #   upcoming   the next open orders to ship (overdue first), with their status and whether a PO exists
   class Overview
     TYPES = %w[Firm Order].freeze
-    STATUSES = %w[none received dispatched inbound].freeze
+    STATUSES = %w[none received dispatch dispatched inbound delivery outbound].freeze
+    PIPELINE_STATUSES = %w[none received dispatched inbound delivery].freeze
     # Statuses of an order not dispatched from SASH Faridabad yet (nil: no mark and not on SASH India invoices).
     NOT_DISPATCHED = [ nil, "received" ].freeze
     # One listed order: its anchor row (or manual order), every row's value summed, and the keys of its marks.
@@ -52,7 +53,7 @@ module Dashboard
       @order_placed = VendorOrderPlacement.order_placed_keys(placed.to_a)
       {
         kpis: kpis(open, placed),
-        pipeline: STATUSES.map { |s| bucket(open.select { |o| (status[o.key] || "none") == s }).merge(status: s) },
+        pipeline: PIPELINE_STATUSES.map { |s| bucket(open.select { |o| (status[o.key] || "none") == s }).merge(status: s) },
         ageing: ageing(open),
         outlook: outlook(orders),
         top_parts: top_parts(open, status, placed),
@@ -125,9 +126,8 @@ module Dashboard
     # uploaded invoices' (see #invoice_statuses).
     def statuses
       @statuses ||= begin
-        kinds = OrderDelivery::KINDS
         keys = listed_orders.select { |o| TYPES.include?(o.order_type) }.map(&:key)
-        marks.merge(invoice_statuses(keys)) { |_, mark, invoice| [ mark, invoice ].max_by { |k| kinds.index(k) } }
+        marks.merge(invoice_statuses(keys)) { |_, mark, invoice| [ mark, invoice ].max_by { |k| STATUSES.index(k) || 0 } }
       end
     end
 
@@ -157,8 +157,8 @@ module Dashboard
     end
 
     # order key => status from the uploaded invoices (Invoices::Progress, recorded on each row of a combined order):
-    # outbound when every row of the order is delivered in full (by the Qty it was dispatched for), else dispatched when
-    # any row was dispatched (part or all: in transit).
+    # outbound when every row of the order is delivered in full (by the Qty it was dispatched for), delivery when
+    # any row is delivered in part or full (partial outbound), else dispatched when any row was dispatched (in transit).
     def invoice_statuses(keys)
       members = keys.to_h { |key| [ key, [ key ] ] }
       anchor_keys.each { |member, anchor| members[anchor] << member if members.key?(anchor) && member != anchor }
@@ -167,19 +167,29 @@ module Dashboard
         entries = list.map { |k| progress[k] }
         next unless entries.compact.any? { |entry| entry.shipped.positive? || entry.outbound.positive? }
 
-        [ key, entries.all? { |entry| entry&.status(nil) == "outbound" } ? "outbound" : "dispatched" ]
+        status = if entries.all? { |entry| entry&.status(nil) == "outbound" }
+                   "outbound"
+        elsif entries.any? { |entry| %w[delivery outbound].include?(entry&.status(nil)) }
+                   "delivery"
+        else
+                   "dispatched"
+        end
+        [ key, status ]
       end.to_h
     end
 
     def kpis(open, placed)
       covered = open.select { |o| placed.include?(o.key) }
       total = open.sum(BigDecimal("0"), &:value)
+      firm_order = listed_orders.select { |o| TYPES.include?(o.order_type) }
       {
         open: bucket(open),
         due_30: bucket(open.select { |o| o.ship_date >= @today && o.ship_date <= @today + 30 }),
         overdue: late_rows(open).then { |rows| { count: rows.size, value: money(rows.sum(BigDecimal("0"), &:last)) } },
         po_coverage: { percent: total.positive? ? (covered.sum(BigDecimal("0"), &:value) / total * 100).round(1).to_f : 0.0,
-                       covered: bucket(covered), without_po: bucket(open.reject { |o| placed.include?(o.key) || o.qty.zero? }) }
+                       covered: bucket(covered), without_po: bucket(open.reject { |o| placed.include?(o.key) || o.qty.zero? }) },
+        partial_outbound: bucket(firm_order.select { |o| statuses[o.key] == "delivery" }),
+        outbound: bucket(firm_order.select { |o| statuses[o.key] == "outbound" })
       }
     end
 

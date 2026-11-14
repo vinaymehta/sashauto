@@ -150,6 +150,7 @@ module Api
         below_moq: Orders::MoqBalance.needs(batch_ids).values.sum(&:size),
         aged: open_orders.count { |id| aged.include?(id) },
         in_transit: statuses["dispatch"].to_i + statuses["dispatched"].to_i,
+        partial_outbound: statuses["delivery"].to_i, # part delivered to Deere (Dashboard card, as the list counts it)
         fulfilled: statuses["outbound"].to_i
       }
     end
@@ -490,20 +491,20 @@ module Api
     # the latest. Otherwise the mark's invoice number.
     def row_invoice(dispatched, row, progress)
       india = progress&.moves.to_a.select { |move| move.kind == "india" }
-      if india.any?
-        return { dispatch_invoice: india.last.invoice_number,
-                 dispatch_invoices: india.map { |m| "#{m.invoice_number} (#{m.invoice_date.iso8601}, Qty #{Serializers.qty(m.qty)})" } }
-      end
-      return { dispatch_invoice: nil, dispatch_invoices: [] } unless dispatched
+      uploaded = india.map { |m| "#{m.invoice_number} (#{m.invoice_date.iso8601}, Qty #{Serializers.qty(m.qty)})" }
+      return { dispatch_invoice: india.last&.invoice_number, dispatch_invoices: uploaded } unless dispatched
       if dispatched[:invoice_lines].blank?
-        return { dispatch_invoice: dispatched[:invoice_number], dispatch_invoices: [ dispatched[:invoice_number] ].compact }
+        return { dispatch_invoice: india.last&.invoice_number || dispatched[:invoice_number],
+                 dispatch_invoices: (uploaded + [ dispatched[:invoice_number] ]).compact }
       end
 
+      # The list's lines of the row, without the invoices uploaded as SASH India invoices (shown as those).
       own = own_key(row)
-      lines = dispatched[:invoice_lines].select { |line| line["order_key"] == own }.sort_by { |line| line["date"].to_s }
+      lines = dispatched[:invoice_lines].select { |line| line["order_key"] == own && !india_numbers.include?(line["invoice"]) }
+                                        .sort_by { |line| line["date"].to_s }
       shown = lines.find { |line| row.qty && line["qty"].present? && BigDecimal(line["qty"]) == row.qty } || lines.last
-      { dispatch_invoice: shown&.dig("invoice"),
-        dispatch_invoices: lines.map { |line| "#{line['invoice']} (#{line['date']}#{", Qty #{line['qty']}" if line['qty']})" }.uniq }
+      { dispatch_invoice: india.last&.invoice_number || shown&.dig("invoice"),
+        dispatch_invoices: (lines.map { |line| "#{line['invoice']} (#{line['date']}#{", Qty #{line['qty']}" if line['qty']})" } + uploaded).uniq }
     end
 
     # A listed row's own order key (not its combined order's): the key its invoices are recorded on.
@@ -519,9 +520,10 @@ module Api
       mark = OrderDelivery::KINDS.reverse.find { |kind| marks.key?(kind) } || "none"
       from_invoices = progress&.status(row.qty)
       status = [ mark, from_invoices ].compact.max_by { |kind| STATUSES.index(kind) }
-      # Sent by the dispatched orders list (no SASH India invoice Qty): its Qty on the list counts as shipped. `named`: the
-      # list's Dispatched mark naming the row (#listed_marks), else the order's own.
-      listed = progress&.shipped&.positive? ? 0.to_d : listed_qty(row, named || marks["dispatched"])
+      # Sent by the dispatched orders list: its Qty there counts as shipped, with its Qty on SASH India invoices (a list
+      # line of an uploaded invoice is left out, #listed_qty). `named`: the list's Dispatched mark naming the row
+      # (#listed_marks), else the order's own.
+      listed = listed_qty(row, named || marks["dispatched"])
       if progress.nil? && listed.zero?
         return { status: status, order_qty: Serializers.qty(row.qty), shipped_qty: nil, balance_qty: Serializers.qty(row.qty), outbound_qty: nil, invoice_moves: [] }
       end
@@ -554,7 +556,13 @@ module Api
       return row.qty.to_d if lines.empty?
 
       own = row[:manual] ? VendorOrderPlacement.order_key(ManualOrder.new(id: row.id)) : VendorOrderPlacement.order_key(row)
-      lines.select { |line| line["order_key"] == own }.sum(0.to_d) { |line| line["qty"].present? ? BigDecimal(line["qty"].to_s) : row.qty.to_d }
+      lines.select { |line| line["order_key"] == own && !india_numbers.include?(line["invoice"]) }
+           .sum(0.to_d) { |line| line["qty"].present? ? BigDecimal(line["qty"].to_s) : row.qty.to_d }
+    end
+
+    # Numbers of the uploaded SASH India invoices (Invoice.india_numbers), once per request.
+    def india_numbers
+      @india_numbers ||= Invoice.india_numbers
     end
 
     # Every dispatch and outbound of the orders with these keys, oldest first: the invoice (kind, number, date, file),

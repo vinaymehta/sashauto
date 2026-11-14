@@ -48,12 +48,17 @@ module VendorOrders
       qty = row.qty.to_d
       return qty if entry && MADE_STATUSES.include?(entry.status(row.qty))
 
+      uploaded = Invoice.india_numbers # their list lines count as the invoices
       by_marks = marks.map do |mark|
         next qty if mark.kind != "dispatched" || mark.invoice_lines.blank?
 
-        mark.invoice_lines.sum(0.to_d) { |line| line["order_key"] == key ? (line["qty"].present? ? BigDecimal(line["qty"].to_s) : qty) : 0.to_d }
+        mark.invoice_lines.sum(0.to_d) do |line|
+          next 0.to_d if line["order_key"] != key || uploaded.include?(line["invoice"])
+
+          line["qty"].present? ? BigDecimal(line["qty"].to_s) : qty
+        end
       end
-      [ *by_marks, entry&.shipped || 0.to_d ].max
+      (by_marks.max || 0.to_d) + (entry&.shipped || 0.to_d)
     end
   end
 end

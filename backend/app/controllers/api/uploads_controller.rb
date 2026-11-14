@@ -52,6 +52,8 @@ module Api
         file = from_file[l[:order_row_id]].presence || from_file[l[:previous_order_row_id]]
         l[:part_description] = file.to_s.squish.presence || products[l[:part_number]]
       end
+      types = multi_param(:type, OrderRows::Normalizer::ORDER_TYPES)
+      lines = lines.select { |l| types.include?(l[:order_type]) } if types.any?
       counts = lines.group_by { |l| l[:direction] }.transform_values(&:size)
 
       directions = multi_param(:direction, COMPARE_DIRECTIONS)

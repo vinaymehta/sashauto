@@ -18,6 +18,12 @@ class Invoice < ApplicationRecord
 
   scope :active, -> { where(removed_at: nil) }
 
+  # Numbers of the uploaded SASH India invoices. The dispatched orders list names the same shipments: a list line of
+  # one of these invoices is not counted (the uploaded invoice is), so a shipment is never counted twice.
+  def self.india_numbers
+    active.where(kind: "india").pluck(:invoice_number).to_set
+  end
+
   def label
     LABELS.fetch(kind)
   end

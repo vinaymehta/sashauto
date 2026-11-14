@@ -12,6 +12,25 @@ class VendorOrder < ApplicationRecord
   belongs_to :vendor_order_placement
   belongs_to :vendor
   belongs_to :order_placed_by, class_name: "User", optional: true
+  belongs_to :goods_received_by, class_name: "User", optional: true
+  has_many :receipts, -> { order(:received_on, :id) }, class_name: "VendorOrderReceipt"
+
+  # "app": generated here (Place order, with its PDF); "file": recorded from an uploaded vendor PO list (no PDF; its
+  # number is the vendor PO number of the file, which several orders can share).
+  SOURCES = %w[app file].freeze
+  validates :source, inclusion: { in: SOURCES }
+
+  def from_file? = source == "file"
+
+  # Pieces received so far (receipts), and whether that is all of it: goods_received_at follows (set when the
+  # receipts reach the Qty, cleared when they no longer do), and the order's Received mark (VendorOrders::ReceivedMark).
+  def received_qty = receipts.sum(:qty)
+
+  def sync_received!(user)
+    full = received_qty >= qty
+    update!(goods_received_at: full ? Time.current : nil, goods_received_by: full ? user : nil) unless full == goods_received_at.present?
+    VendorOrders::ReceivedMark.sync(vendor_order_placement, user) # the order's Received status on the Orders page
+  end
 
   validates :email_status, inclusion: { in: EMAIL_STATUSES }
 

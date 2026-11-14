@@ -6,12 +6,14 @@ module Invoices
   # line's Qty is used up. A line's Qty no order takes is unmatched, with the reason. Nothing is saved (see
   # Invoices::Import).
   #
-  #   SASH India invoice (dispatched): the Firm / Order rows of the current order data of the view's businesses (each
-  #     business's latest upload, plus its manual orders) with the PO + Part; each takes its Balance (Order Qty less
-  #     dispatched before, Invoices::Progress). An order Deere lists twice (same order key) counts once, the line with
-  #     the Qty. Rows sent before invoices were uploaded (and without invoice dispatches) are left out: those a
-  #     Dispatched mark of the former dispatched orders list names (OrderDelivery#invoice_lines), and every row of an
-  #     order (a combined order) marked Dispatched by hand, or Inbound / Outbound.
+  #   SASH India invoice (dispatched): first the rows the dispatched orders list names for this invoice number
+  #     (OrderDelivery#invoice_lines, also of orders Deere has dropped since): the uploaded invoice takes the place of
+  #     those list lines, which are not counted any more (Invoice.india_numbers). The rest goes to the Firm / Order
+  #     rows of the current order data of the view's businesses (each business's latest upload, plus its manual
+  #     orders) with the PO + Part; each takes its Balance: Order Qty less what was dispatched before on SASH India
+  #     invoices and on the list (other invoices). An order Deere lists twice (same order key) counts once, the line
+  #     with the Qty. Every row of an order (a combined order) marked Dispatched by hand, or Inbound / Outbound, without
+  #     invoice dispatches is left out: sent before invoices were uploaded.
   #   SASH Inc invoice (outbound): the orders of the PO + Part dispatched on SASH India invoices or the dispatched
   #     orders list, also those Deere has received and dropped from its file since (OrderRow.dropped: kept on Orders by
   #     their mark); each takes what is still in transit (dispatched less outbound before), oldest Ship Date first.
@@ -34,6 +36,7 @@ module Invoices
       @invoice = invoice
       @view = view
       @planned = Hash.new(0.to_d) # order key => Qty given by earlier lines of this invoice
+      @own_planned = Hash.new(0.to_d) # order key => Qty of the list's lines of this invoice taken by earlier lines
     end
 
     def call
@@ -58,26 +61,51 @@ module Invoices
       return [ [], "no PO No. above this item on the invoice" ] unless line.po_number
 
       orders = candidates(line)
-      return [ [], "PO #{line.po_number} + Part #{line.part_number} has no Firm / Order row in the current order data" ] if orders.empty?
+      named = dropped_candidates(line).merge(orders.to_h) # the list may name a delivery Deere has dropped since
+      return [ [], "PO #{line.po_number} + Part #{line.part_number} has no Firm / Order row in the current order data" ] if named.empty?
 
-      progress = Progress.for_keys(orders.map(&:first))
-      open = orders.reject { |key, _| legacy?(key) && !progress[key]&.shipped&.positive? }
-      return [ [], "the orders of this PO + Part are already marked Dispatched (before invoice uploads)" ] if open.empty?
-
-      left = line.qty
-      given = open.filter_map do |key, order|
+      progress = Progress.for_keys(named.keys)
+      take = lambda do |key, order, room, left|
         entry = progress[key]
-        order_qty = entry ? entry.order_qty(order.qty) : order.qty.to_d
-        before = (entry&.shipped || 0.to_d) + @planned[key]
-        qty = [ order_qty - before, left ].min
-        next unless qty.positive?
-
-        left -= qty
+        before = (entry&.shipped || 0.to_d) + listed_qty(key, order) + @planned[key]
+        order_qty = [ entry ? entry.order_qty(order.qty) : order.qty.to_d, before + room ].max
+        qty = [ room, left ].min
         @planned[key] += qty
         Allocation.new(line_index: line.index, order: order, order_key: key, order_qty: order_qty, qty: qty, before: before,
                        left: order_qty - before - qty, business: business_of(order))
       end
+      left = line.qty
+      # The rows the dispatched orders list names for this invoice: it takes the place of those list lines there.
+      given = named.sort_by { |_, row| [ row.ship_date, row.po_line_number, row.id ] }.filter_map do |key, order|
+        room = [ own_listed(key) - @own_planned[key], left ].min
+        next unless room.positive?
+
+        @own_planned[key] += room
+        take.(key, order, room, left).tap { |a| left -= a.qty }
+      end
+      # The rest: the open orders, oldest first, each its Balance.
+      open = orders.reject { |key, _| legacy_orders.include?(placement_key(key)) && !progress[key]&.shipped&.positive? && listed_qty(key, named[key]).zero? }
+      return [ given, "the orders of this PO + Part are already marked Dispatched (before invoice uploads)" ] if open.empty? && given.empty?
+
+      open.each do |key, order|
+        break unless left.positive?
+
+        entry = progress[key]
+        before = (entry&.shipped || 0.to_d) + listed_qty(key, order) + @planned[key]
+        room = (entry ? entry.order_qty(order.qty) : order.qty.to_d) - before
+        next unless room.positive?
+
+        given << take.(key, order, room, left).tap { |a| left -= a.qty }
+      end
       [ given, "the orders of this PO + Part are dispatched in full (no Balance left)" ]
+    end
+
+    # Qty the dispatched orders list names for this (SASH India) invoice on the row with this key.
+    def own_listed(key)
+      @own_listed ||= OrderDelivery.active.where(kind: "dispatched").pluck(:invoice_lines).flatten
+                                   .select { |l| l["invoice"] == @invoice.invoice_number }.group_by { |l| l["order_key"] }
+                                   .transform_values { |lines| lines.sum(0.to_d) { |l| BigDecimal(l["qty"].presence || "0") } }
+      @own_listed.fetch(key, 0.to_d)
     end
 
     # SASH Inc invoice line: [allocations, reason when none]. The orders of the PO + Part that were sent from India (on
@@ -95,7 +123,7 @@ module Invoices
         order = rows[key] || india[key]&.last&.then { |a| a.order_row || a.manual_order }
         next unless order
 
-        qty = (progress[key]&.shipped || 0.to_d) + (india.key?(key) ? 0.to_d : listed_qty(key, order))
+        qty = (progress[key]&.shipped || 0.to_d) + listed_qty(key, order)
         [ key, order, qty ] if qty.positive?
       end
       if sent.empty?
@@ -121,10 +149,15 @@ module Invoices
     end
 
     # Qty of the row with this key sent on the dispatched orders list: its lines there (their Qty, the row's Qty when a
-    # line has none), or all of it when its order was marked Dispatched by hand (no lines).
+    # line has none) of invoices not uploaded as SASH India invoices (those count as invoices: Invoice.india_numbers,
+    # and the one being read), or all of it when its order was marked Dispatched by hand (no lines).
     def listed_qty(key, order)
-      @listed_lines ||= OrderDelivery.active.where(kind: "dispatched").pluck(:invoice_lines).flatten
-                                     .group_by { |l| l["order_key"] }
+      @listed_lines ||= begin
+        uploaded = Invoice.india_numbers
+        uploaded << @invoice.invoice_number if @invoice.kind == "india"
+        OrderDelivery.active.where(kind: "dispatched").pluck(:invoice_lines).flatten
+                     .reject { |l| uploaded.include?(l["invoice"]) }.group_by { |l| l["order_key"] }
+      end
       lines = @listed_lines[key]
       return lines.sum(0.to_d) { |l| l["qty"].present? ? BigDecimal(l["qty"].to_s) : order.qty.to_d } if lines
 

@@ -7,6 +7,7 @@ class VendorOrderPlacement < ApplicationRecord
   belongs_to :manual_order, optional: true
   belongs_to :product, optional: true
   belongs_to :placed_by, class_name: "User"
+  belongs_to :vendor_po_import, optional: true # recorded from an uploaded vendor PO list (Purchase orders)
   has_many :vendor_orders, -> { order(:number) }
 
   def readonly?

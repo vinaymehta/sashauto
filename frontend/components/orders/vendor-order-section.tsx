@@ -61,7 +61,7 @@ export function VendorOrderSection({ orderId, manual = false, onPlaced }: { orde
               {" · "}MOQ <span className="tabular font-semibold text-ink">{state.moq !== null ? formatQty(state.moq) : "—"}</span>
             </span>
             {state.placements.length > 0 && (
-              <RegeneratePo orders={state.placements.flatMap((pl) => pl.vendor_orders)} onChanged={() => { reload(); onPlaced?.(); }} />
+              <RegeneratePo orders={state.placements.flatMap((pl) => pl.vendor_orders).filter((vo) => vo.source !== "file")} onChanged={() => { reload(); onPlaced?.(); }} />
             )}
             </span>
           )}
@@ -89,7 +89,7 @@ export function VendorOrderSection({ orderId, manual = false, onPlaced }: { orde
           </>
         )}
       </section>
-      {state && state.placements.length > 0 && <EmailDrafts placements={state.placements} />}
+      {state && state.placements.some((pl) => pl.vendor_orders.some((vo) => vo.source !== "file")) && <EmailDrafts placements={state.placements} />}
     </>
   );
 }
@@ -288,7 +288,10 @@ function PlacedOrders({ state, placement, onChanged }: { state: VendorOrderState
             <span className="tabular font-semibold text-ink">{formatQty(vo.qty)} {vo.unit === "pcs" || state.pack_size <= 1 ? "pcs" : "sets"}</span>
             {/* The saved PO and (a vendor at the 0.1% GST rate) Intimation Letter, each in its own card, and the admin's "Order placed" tick once they
                 were sent to the vendor (the emails are in the Email draft section below). */}
-            <span className="col-span-2 grid gap-3 sm:grid-cols-2">
+            {vo.source === "file" ? (
+              // Recorded from an uploaded vendor PO list: the vendor's own PO, no PDF here.
+              <span className="col-span-2 text-xs text-ink-muted">From an uploaded vendor PO list (Purchase orders); no PDF in the app.</span>
+            ) : <span className="col-span-2 grid gap-3 sm:grid-cols-2">
               <DocCard title="Purchase Order">
                 <button type="button" onClick={() => setViewing({ id: vo.id, number: vo.number, kind: "po" })} className={fileButton}>
                   <FileIcon size={13} className="text-ink-muted" />View
@@ -311,7 +314,7 @@ function PlacedOrders({ state, placement, onChanged }: { state: VendorOrderState
                   <PrintIcon size={13} className="text-ink-muted" />Print
                 </button>
               </DocCard>}
-            </span>
+            </span>}
             <span className="col-span-2 flex justify-end"><OrderPlacedTick order={vo} onChanged={onChanged} /></span>
           </li>
         ))}
@@ -348,7 +351,7 @@ function EmailDrafts({ placements }: { placements: VendorOrderPlacementInfo[] })
         <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-muted">Email draft</h3>
       </header>
       <ul className="divide-y divide-neutral-100">
-        {placements.flatMap((p) => p.vendor_orders).map((vo) => (
+        {placements.flatMap((p) => p.vendor_orders).filter((vo) => vo.source !== "file").map((vo) => (
           <li key={vo.id} className="flex items-center gap-3 px-5 py-3 text-sm">
             <MailIcon size={15} className="shrink-0 text-tint-violet-ink" />
             <span className="min-w-0 flex-1">

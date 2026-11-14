@@ -398,10 +398,11 @@ export interface DashboardOrder {
   id: number; manual: boolean; po_number: string; po_line_number: string; part_number: string; order_type: OrderType;
   ship_date: string; qty: string; value: string; status: PipelineStatus; po: boolean; order_placed: boolean; overdue: boolean;
 }
-export type PipelineStatus = "none" | "received" | "dispatched" | "inbound";
+export type PipelineStatus = "none" | "received" | "dispatched" | "inbound" | "delivery" | "outbound";
 export interface DashboardOverview {
   kpis: { open: OrderBucket; due_30: OrderBucket; overdue: OrderBucket;
-          po_coverage: { percent: number; covered: OrderBucket; without_po: OrderBucket } };
+          po_coverage: { percent: number; covered: OrderBucket; without_po: OrderBucket };
+          partial_outbound?: OrderBucket; outbound?: OrderBucket };
   pipeline: (OrderBucket & { status: PipelineStatus })[];
   ageing: (OrderBucket & { band: "red" | "yellow" | "green" | "none" })[];
   outlook: { date: string; firm: string; forecast: string }[];
@@ -539,6 +540,7 @@ export interface OrdersSummary {
   aged: number;
   in_transit: number; // Dispatch or Dispatched (part or all sent from India), not yet delivered to SASH US
   fulfilled: number; // delivered to Deere
+  partial_outbound?: number; // part delivered to Deere
 }
 
 export interface OrdersPage {
@@ -632,6 +634,7 @@ export interface OrderSummaryRow {
 
 export interface OrderSummaryPage extends Paginated<OrderSummaryRow> {
   days: OrderSummaryDay[];
+  available_dates?: { date: string; filename: string; version: string | null }[];
   // The newest shown day over every matching part: Firm, Qty added / taken off, parts whose Firm changed, Forecast.
   latest: { date: string; firm: string; added: string; reduced: string; changed: number; forecast: string } | null;
   first_date: string | null;
@@ -662,6 +665,9 @@ export type OrderUnit = "sets" | "pcs";
 export interface VendorOrderInfo {
   id: number;
   number: string;
+  source?: "app" | "file"; // file: recorded from an uploaded vendor PO list (no PDF)
+  goods_received_at?: string | null; // the vendor's material at SASH Faridabad
+  goods_received_by?: string | null;
   vendor_id: number;
   vendor_name: string;
   ship_date: string | null; // Vendor Ship Due Date, chosen when placing; null for orders placed before it existed
@@ -890,4 +896,39 @@ export interface PartsSummaryRow extends PartSummaryFigures {
   moq: string | null;
   forecast: string;
   pos: number;
+}
+
+// Purchase orders page: one vendor PO (generated here, or recorded from an uploaded vendor PO list) and its order.
+export interface PurchaseOrderRow {
+  id: number; number: string; source: "app" | "file"; vendor_name: string; qty: string; unit: OrderUnit;
+  po_number: string; po_line_number: string; part_number: string; order_type: OrderType; ship_date: string; business: "dtp" | "gmbh" | null;
+  placed_at: string; filename: string | null;
+  order_placed_at: string | null; order_placed_by: string | null; goods_received_at: string | null; goods_received_by: string | null;
+  order_date: string | null; // the day SASH received the Deere order (its first upload as Firm / Order)
+  received_qty: string; receipts: { id: number; received_on: string; invoice_number: string; qty: string }[];
+}
+export interface VendorPoImportInfo {
+  id: number; kind: "orders" | "received"; business: "dtp" | "gmbh"; filename: string; uploaded_by: string | null; uploaded_at: string; rows: number; created: number;
+  skipped: { row: number; part_number: string; po_number: string; vendor: string; vendor_po: string; reason: string }[];
+  conflicts: PurchaseConflict[]; // rows uploaded again with other values, to override or keep
+}
+// A row of an upload that was uploaded before with other values: a vendor PO (vendor PO number / Qty) or an invoice's
+// lines of a part (Qty received).
+export interface PurchaseConflict {
+  id: number; kind: "orders" | "received"; status: "open" | "overridden" | "kept"; row: number; part_number: string;
+  po_number?: string; ship_date?: string; invoice_number?: string; vendor: string;
+  old: { number?: string; qty: string; received_on?: string | null }; new: { number?: string; qty: string; received_on?: string | null };
+}
+export interface PurchaseOrdersPage extends Paginated<PurchaseOrderRow> {
+  imports: VendorPoImportInfo[];
+  counts: { total: number; file: number; app: number; awaiting: number; issues: number }; // awaiting: goods not received in full; issues: open
+}
+
+// Purchase orders → Import issues: a row of an uploaded vendor PO list or Purchase Received file not recorded.
+export interface PurchaseIssue {
+  id: number; status: "open" | "resolved" | "dismissed"; kind: "orders" | "received";
+  reason_kind: "vendor" | "order" | "recorded" | "forecast" | "qty" | "received" | "other"; reason: string;
+  excel_row: number | null; business: "dtp" | "gmbh"; filename: string; uploaded_at: string; uploaded_by: string | null;
+  part_number: string | null; po_number: string | null; vendor: string | null; reference: string | null; qty: string | null; date: string | null;
+  resolution: string | null; resolved_by: string | null; resolved_at: string | null;
 }

@@ -62,6 +62,23 @@ $$;
 
 
 --
+-- Name: reject_placement_change(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.reject_placement_change() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'UPDATE' AND OLD.vendor_po_import_id IS NOT NULL AND NEW.id = OLD.id AND NEW.order_key = OLD.order_key
+     AND NEW.order_row_id IS NOT DISTINCT FROM OLD.order_row_id AND NEW.created_at = OLD.created_at THEN
+    RETURN NEW;
+  END IF;
+  RAISE EXCEPTION '% on % is not allowed: historical records are immutable', TG_OP, TG_TABLE_NAME;
+END;
+$$;
+
+
+--
 -- Name: reject_vendor_order_change(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -71,8 +88,9 @@ CREATE FUNCTION public.reject_vendor_order_change() RETURNS trigger
 BEGIN
   IF TG_OP = 'DELETE' OR NEW.id IS DISTINCT FROM OLD.id
      OR NEW.vendor_order_placement_id IS DISTINCT FROM OLD.vendor_order_placement_id
-     OR NEW.vendor_id IS DISTINCT FROM OLD.vendor_id OR NEW.number IS DISTINCT FROM OLD.number
-     OR NEW.qty IS DISTINCT FROM OLD.qty OR NEW.unit IS DISTINCT FROM OLD.unit OR NEW.ship_date IS DISTINCT FROM OLD.ship_date OR NEW.unit_price IS DISTINCT FROM OLD.unit_price
+     OR NEW.vendor_id IS DISTINCT FROM OLD.vendor_id
+     OR (OLD.source <> 'file' AND (NEW.number IS DISTINCT FROM OLD.number OR NEW.qty IS DISTINCT FROM OLD.qty))
+     OR NEW.unit_price IS DISTINCT FROM OLD.unit_price
      OR NEW.price_currency IS DISTINCT FROM OLD.price_currency OR NEW.price_note IS DISTINCT FROM OLD.price_note
      OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
     RAISE EXCEPTION 'placed vendor orders are locked: % of the allocation is not allowed', TG_OP;
@@ -1053,6 +1071,48 @@ ALTER SEQUENCE public.products_id_seq OWNED BY public.products.id;
 
 
 --
+-- Name: purchase_issues; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.purchase_issues (
+    id bigint NOT NULL,
+    vendor_po_import_id bigint NOT NULL,
+    business character varying NOT NULL,
+    excel_row integer,
+    reason_kind character varying NOT NULL,
+    reason text NOT NULL,
+    row_data jsonb DEFAULT '{}'::jsonb NOT NULL,
+    status character varying DEFAULT 'open'::character varying NOT NULL,
+    resolution character varying,
+    resolved_by_id bigint,
+    resolved_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    fingerprint character varying(64),
+    CONSTRAINT purchase_issues_status_valid CHECK (((status)::text = ANY ((ARRAY['open'::character varying, 'resolved'::character varying, 'dismissed'::character varying])::text[])))
+);
+
+
+--
+-- Name: purchase_issues_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.purchase_issues_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: purchase_issues_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.purchase_issues_id_seq OWNED BY public.purchase_issues.id;
+
+
+--
 -- Name: quantity_changes; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1257,6 +1317,7 @@ CREATE TABLE public.vendor_order_placements (
     updated_at timestamp(6) without time zone NOT NULL,
     manual_order_id bigint,
     allocated_qty numeric(15,3),
+    vendor_po_import_id bigint,
     CONSTRAINT vendor_order_placements_allocated_positive CHECK (((allocated_qty IS NULL) OR (allocated_qty > (0)::numeric))),
     CONSTRAINT vendor_order_placements_one_order CHECK ((((manual_order_id IS NOT NULL) AND (order_row_id IS NULL) AND (upload_batch_id IS NULL)) OR ((manual_order_id IS NULL) AND (order_row_id IS NOT NULL) AND (upload_batch_id IS NOT NULL)))),
     CONSTRAINT vendor_order_placements_qty_positive CHECK ((order_qty > (0)::numeric))
@@ -1280,6 +1341,45 @@ CREATE SEQUENCE public.vendor_order_placements_id_seq
 --
 
 ALTER SEQUENCE public.vendor_order_placements_id_seq OWNED BY public.vendor_order_placements.id;
+
+
+--
+-- Name: vendor_order_receipts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.vendor_order_receipts (
+    id bigint NOT NULL,
+    vendor_order_id bigint NOT NULL,
+    received_on date NOT NULL,
+    invoice_number character varying NOT NULL,
+    qty numeric(15,3) NOT NULL,
+    rate numeric(15,4),
+    value numeric(15,2),
+    vendor_po_import_id bigint,
+    created_by_id bigint NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT vendor_order_receipts_qty_positive CHECK ((qty > (0)::numeric))
+);
+
+
+--
+-- Name: vendor_order_receipts_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.vendor_order_receipts_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: vendor_order_receipts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.vendor_order_receipts_id_seq OWNED BY public.vendor_order_receipts.id;
 
 
 --
@@ -1308,8 +1408,14 @@ CREATE TABLE public.vendor_orders (
     ship_date date,
     order_placed_at timestamp(6) without time zone,
     order_placed_by_id bigint,
+    source character varying DEFAULT 'app'::character varying NOT NULL,
+    goods_received_at timestamp(6) without time zone,
+    goods_received_by_id bigint,
+    order_date date,
+    source_order_key character varying(64),
     CONSTRAINT vendor_orders_email_status_valid CHECK (((email_status)::text = ANY ((ARRAY['not_sent'::character varying, 'pending'::character varying, 'sent'::character varying, 'failed'::character varying, 'no_email'::character varying])::text[]))),
     CONSTRAINT vendor_orders_qty_positive CHECK ((qty > (0)::numeric)),
+    CONSTRAINT vendor_orders_source_valid CHECK (((source)::text = ANY ((ARRAY['app'::character varying, 'file'::character varying])::text[]))),
     CONSTRAINT vendor_orders_unit_valid CHECK (((unit)::text = ANY ((ARRAY['sets'::character varying, 'pcs'::character varying])::text[])))
 );
 
@@ -1331,6 +1437,46 @@ CREATE SEQUENCE public.vendor_orders_id_seq
 --
 
 ALTER SEQUENCE public.vendor_orders_id_seq OWNED BY public.vendor_orders.id;
+
+
+--
+-- Name: vendor_po_imports; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.vendor_po_imports (
+    id bigint NOT NULL,
+    business character varying NOT NULL,
+    original_filename character varying NOT NULL,
+    uploaded_by_id bigint NOT NULL,
+    rows_count integer DEFAULT 0 NOT NULL,
+    created_count integer DEFAULT 0 NOT NULL,
+    skipped jsonb DEFAULT '[]'::jsonb NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    kind character varying DEFAULT 'orders'::character varying NOT NULL,
+    conflicts jsonb DEFAULT '[]'::jsonb NOT NULL,
+    line_totals jsonb DEFAULT '{}'::jsonb NOT NULL,
+    CONSTRAINT vendor_po_imports_kind_valid CHECK (((kind)::text = ANY ((ARRAY['orders'::character varying, 'received'::character varying])::text[])))
+);
+
+
+--
+-- Name: vendor_po_imports_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.vendor_po_imports_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: vendor_po_imports_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.vendor_po_imports_id_seq OWNED BY public.vendor_po_imports.id;
 
 
 --
@@ -1600,6 +1746,13 @@ ALTER TABLE ONLY public.products ALTER COLUMN id SET DEFAULT nextval('public.pro
 
 
 --
+-- Name: purchase_issues id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.purchase_issues ALTER COLUMN id SET DEFAULT nextval('public.purchase_issues_id_seq'::regclass);
+
+
+--
 -- Name: quantity_changes id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -1628,10 +1781,24 @@ ALTER TABLE ONLY public.vendor_order_placements ALTER COLUMN id SET DEFAULT next
 
 
 --
+-- Name: vendor_order_receipts id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vendor_order_receipts ALTER COLUMN id SET DEFAULT nextval('public.vendor_order_receipts_id_seq'::regclass);
+
+
+--
 -- Name: vendor_orders id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.vendor_orders ALTER COLUMN id SET DEFAULT nextval('public.vendor_orders_id_seq'::regclass);
+
+
+--
+-- Name: vendor_po_imports id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vendor_po_imports ALTER COLUMN id SET DEFAULT nextval('public.vendor_po_imports_id_seq'::regclass);
 
 
 --
@@ -1833,6 +2000,14 @@ ALTER TABLE ONLY public.products
 
 
 --
+-- Name: purchase_issues purchase_issues_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.purchase_issues
+    ADD CONSTRAINT purchase_issues_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: quantity_changes quantity_changes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1873,11 +2048,27 @@ ALTER TABLE ONLY public.vendor_order_placements
 
 
 --
+-- Name: vendor_order_receipts vendor_order_receipts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vendor_order_receipts
+    ADD CONSTRAINT vendor_order_receipts_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: vendor_orders vendor_orders_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.vendor_orders
     ADD CONSTRAINT vendor_orders_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: vendor_po_imports vendor_po_imports_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vendor_po_imports
+    ADD CONSTRAINT vendor_po_imports_pkey PRIMARY KEY (id);
 
 
 --
@@ -2415,6 +2606,34 @@ CREATE UNIQUE INDEX index_products_on_part_number ON public.products USING btree
 
 
 --
+-- Name: index_purchase_issues_on_fingerprint; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_purchase_issues_on_fingerprint ON public.purchase_issues USING btree (fingerprint);
+
+
+--
+-- Name: index_purchase_issues_on_resolved_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_purchase_issues_on_resolved_by_id ON public.purchase_issues USING btree (resolved_by_id);
+
+
+--
+-- Name: index_purchase_issues_on_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_purchase_issues_on_status ON public.purchase_issues USING btree (status);
+
+
+--
+-- Name: index_purchase_issues_on_vendor_po_import_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_purchase_issues_on_vendor_po_import_id ON public.purchase_issues USING btree (vendor_po_import_id);
+
+
+--
 -- Name: index_quantity_changes_on_batch_and_key; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2590,10 +2809,52 @@ CREATE INDEX index_vendor_order_placements_on_upload_batch_id ON public.vendor_o
 
 
 --
+-- Name: index_vendor_order_placements_on_vendor_po_import_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_vendor_order_placements_on_vendor_po_import_id ON public.vendor_order_placements USING btree (vendor_po_import_id);
+
+
+--
+-- Name: index_vendor_order_receipts_on_created_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_vendor_order_receipts_on_created_by_id ON public.vendor_order_receipts USING btree (created_by_id);
+
+
+--
+-- Name: index_vendor_order_receipts_on_vendor_order_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_vendor_order_receipts_on_vendor_order_id ON public.vendor_order_receipts USING btree (vendor_order_id);
+
+
+--
+-- Name: index_vendor_order_receipts_on_vendor_po_import_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_vendor_order_receipts_on_vendor_po_import_id ON public.vendor_order_receipts USING btree (vendor_po_import_id);
+
+
+--
+-- Name: index_vendor_orders_on_goods_received_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_vendor_orders_on_goods_received_by_id ON public.vendor_orders USING btree (goods_received_by_id);
+
+
+--
 -- Name: index_vendor_orders_on_number; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX index_vendor_orders_on_number ON public.vendor_orders USING btree (number);
+CREATE INDEX index_vendor_orders_on_number ON public.vendor_orders USING btree (number);
+
+
+--
+-- Name: index_vendor_orders_on_number_app; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_vendor_orders_on_number_app ON public.vendor_orders USING btree (number) WHERE ((source)::text = 'app'::text);
 
 
 --
@@ -2601,6 +2862,13 @@ CREATE UNIQUE INDEX index_vendor_orders_on_number ON public.vendor_orders USING 
 --
 
 CREATE INDEX index_vendor_orders_on_order_placed_by_id ON public.vendor_orders USING btree (order_placed_by_id);
+
+
+--
+-- Name: index_vendor_orders_on_source_order_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_vendor_orders_on_source_order_key ON public.vendor_orders USING btree (source_order_key);
 
 
 --
@@ -2615,6 +2883,13 @@ CREATE INDEX index_vendor_orders_on_vendor_id ON public.vendor_orders USING btre
 --
 
 CREATE UNIQUE INDEX index_vendor_orders_on_vendor_order_placement_id_and_vendor_id ON public.vendor_orders USING btree (vendor_order_placement_id, vendor_id);
+
+
+--
+-- Name: index_vendor_po_imports_on_uploaded_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_vendor_po_imports_on_uploaded_by_id ON public.vendor_po_imports USING btree (uploaded_by_id);
 
 
 --
@@ -2698,7 +2973,7 @@ CREATE TRIGGER upload_batches_protect_finished BEFORE DELETE OR UPDATE ON public
 -- Name: vendor_order_placements vendor_order_placements_locked; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER vendor_order_placements_locked BEFORE DELETE OR UPDATE ON public.vendor_order_placements FOR EACH ROW EXECUTE FUNCTION public.reject_history_mutation();
+CREATE TRIGGER vendor_order_placements_locked BEFORE DELETE OR UPDATE ON public.vendor_order_placements FOR EACH ROW EXECUTE FUNCTION public.reject_placement_change();
 
 
 --
@@ -2757,6 +3032,14 @@ ALTER TABLE ONLY public.price_changes
 
 
 --
+-- Name: vendor_orders fk_rails_149f2cf90d; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vendor_orders
+    ADD CONSTRAINT fk_rails_149f2cf90d FOREIGN KEY (goods_received_by_id) REFERENCES public.users(id);
+
+
+--
 -- Name: price_changes fk_rails_16c0a4d23e; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2770,6 +3053,14 @@ ALTER TABLE ONLY public.price_changes
 
 ALTER TABLE ONLY public.moq_alerts
     ADD CONSTRAINT fk_rails_1b49354c35 FOREIGN KEY (manual_order_id) REFERENCES public.manual_orders(id);
+
+
+--
+-- Name: purchase_issues fk_rails_1ce4db0c09; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.purchase_issues
+    ADD CONSTRAINT fk_rails_1ce4db0c09 FOREIGN KEY (resolved_by_id) REFERENCES public.users(id);
 
 
 --
@@ -2818,6 +3109,22 @@ ALTER TABLE ONLY public.ageing_notifications
 
 ALTER TABLE ONLY public.vendor_order_placements
     ADD CONSTRAINT fk_rails_2e04a01d7a FOREIGN KEY (placed_by_id) REFERENCES public.users(id);
+
+
+--
+-- Name: vendor_order_placements fk_rails_2e35dcb211; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vendor_order_placements
+    ADD CONSTRAINT fk_rails_2e35dcb211 FOREIGN KEY (vendor_po_import_id) REFERENCES public.vendor_po_imports(id);
+
+
+--
+-- Name: purchase_issues fk_rails_2f33dd0380; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.purchase_issues
+    ADD CONSTRAINT fk_rails_2f33dd0380 FOREIGN KEY (vendor_po_import_id) REFERENCES public.vendor_po_imports(id);
 
 
 --
@@ -2925,6 +3232,14 @@ ALTER TABLE ONLY public.import_issues
 
 
 --
+-- Name: vendor_order_receipts fk_rails_66509a4364; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vendor_order_receipts
+    ADD CONSTRAINT fk_rails_66509a4364 FOREIGN KEY (vendor_po_import_id) REFERENCES public.vendor_po_imports(id);
+
+
+--
 -- Name: import_issues fk_rails_66b84faf19; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2938,6 +3253,14 @@ ALTER TABLE ONLY public.import_issues
 
 ALTER TABLE ONLY public.quantity_changes
     ADD CONSTRAINT fk_rails_6db61947e6 FOREIGN KEY (upload_batch_id) REFERENCES public.upload_batches(id);
+
+
+--
+-- Name: vendor_order_receipts fk_rails_7575b9c029; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vendor_order_receipts
+    ADD CONSTRAINT fk_rails_7575b9c029 FOREIGN KEY (created_by_id) REFERENCES public.users(id);
 
 
 --
@@ -3085,6 +3408,14 @@ ALTER TABLE ONLY public.active_storage_attachments
 
 
 --
+-- Name: vendor_order_receipts fk_rails_c444c1a33c; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vendor_order_receipts
+    ADD CONSTRAINT fk_rails_c444c1a33c FOREIGN KEY (vendor_order_id) REFERENCES public.vendor_orders(id);
+
+
+--
 -- Name: vendor_order_placements fk_rails_c8e917d54e; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3138,6 +3469,14 @@ ALTER TABLE ONLY public.import_issues
 
 ALTER TABLE ONLY public.quantity_changes
     ADD CONSTRAINT fk_rails_dba99be903 FOREIGN KEY (order_snapshot_row_id) REFERENCES public.order_snapshot_rows(id);
+
+
+--
+-- Name: vendor_po_imports fk_rails_dbda815168; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vendor_po_imports
+    ADD CONSTRAINT fk_rails_dbda815168 FOREIGN KEY (uploaded_by_id) REFERENCES public.users(id);
 
 
 --
@@ -3243,6 +3582,12 @@ ALTER TABLE ONLY public.address_changes
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261114000006'),
+('20261114000005'),
+('20261114000004'),
+('20261114000003'),
+('20261114000002'),
+('20261114000001'),
 ('20261112000001'),
 ('20261106100001'),
 ('20261106000001'),

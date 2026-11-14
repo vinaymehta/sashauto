@@ -101,12 +101,58 @@ module Api
     end
 
     # "Order placed" tick of a generated PO (the admin sent it to the vendor): PATCH { order_placed: true | false }.
+    # Ticks (or clears) "Order placed" (sent to the vendor) or "Goods received" (the vendor's material at SASH Faridabad).
     def update
       order = VendorOrder.find(params[:id])
-      placed = ActiveModel::Type::Boolean.new.cast(params.require(:order_placed))
-      order.update!(order_placed_at: placed ? Time.current : nil, order_placed_by: placed ? current_user : nil)
-      audit(placed ? "vendor_order.marked_placed" : "vendor_order.unmarked_placed", subject: order, number: order.number)
+      if params.key?(:order_date)
+        date = params[:order_date].presence && (Date.iso8601(params[:order_date].to_s) rescue nil)
+        return render_error("Enter a valid order date.", :unprocessable_content) if params[:order_date].present? && date.nil?
+
+        order.update!(order_date: date)
+        audit("vendor_order.order_date_set", subject: order, number: order.number, order_date: date&.iso8601)
+      elsif params.key?(:goods_received)
+        received = ActiveModel::Type::Boolean.new.cast(params[:goods_received])
+        order.update!(goods_received_at: received ? Time.current : nil, goods_received_by: received ? current_user : nil)
+        audit(received ? "vendor_order.goods_received" : "vendor_order.goods_not_received", subject: order, number: order.number)
+      else
+        placed = ActiveModel::Type::Boolean.new.cast(params.require(:order_placed))
+        order.update!(order_placed_at: placed ? Time.current : nil, order_placed_by: placed ? current_user : nil)
+        audit(placed ? "vendor_order.marked_placed" : "vendor_order.unmarked_placed", subject: order, number: order.number)
+      end
       render json: { data: Serializers.vendor_order(order) }
+    end
+
+    # POST /api/vendor_orders/:id/receipts { received_on, invoice_number, qty }: goods the vendor delivered (by hand; a
+    # Purchase Received file adds them in bulk). Goods received is ticked once the receipts reach the Qty.
+    def add_receipt
+      order = VendorOrder.find(params[:id])
+      date = (Date.iso8601(params[:received_on].to_s) rescue nil)
+      qty = (BigDecimal(params[:qty].to_s) rescue nil)
+      invoice = params[:invoice_number].to_s.squish
+      problems = { received_on: ("Enter the date received." unless date), invoice_number: ("Enter the vendor invoice number." if invoice.empty?),
+                   qty: ("Enter a Qty above 0." unless qty&.positive?) }.compact
+      return render_error(problems.values.join(" "), :unprocessable_content, details: problems.transform_values { |m| [ m ] }) if problems.any?
+
+      VendorOrderReceipt.transaction do
+        order.receipts.create!(received_on: date, invoice_number: invoice.first(255), qty: qty, created_by: current_user)
+        order.sync_received!(current_user)
+      end
+      audit("vendor_order.receipt_added", subject: order, number: order.number, invoice_number: invoice, qty: qty.to_s("F"))
+      render json: { data: Serializers.vendor_order(order.reload) }, status: :created
+    end
+
+    # DELETE /api/vendor_orders/:id/receipts/:receipt_id: a receipt entered by mistake (admin).
+    def remove_receipt
+      return render_error("Only an admin can remove a receipt.", :forbidden) unless current_user.admin?
+
+      order = VendorOrder.find(params[:id])
+      receipt = order.receipts.find(params[:receipt_id])
+      VendorOrderReceipt.transaction do
+        receipt.destroy!
+        order.sync_received!(current_user)
+      end
+      audit("vendor_order.receipt_removed", subject: order, number: order.number, invoice_number: receipt.invoice_number)
+      render json: { data: Serializers.vendor_order(order.reload) }
     end
 
     # Regenerate PO: rebuilds the saved PO (and Intimation Letter) from the current vendor, part and company details;

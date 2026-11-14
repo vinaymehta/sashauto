@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { OrderSummaryPage } from "@/lib/types";
 import { formatCount, formatDate, formatDifference, formatQty } from "@/lib/format";
 import { useApi, useDebounced } from "../use-api";
@@ -67,14 +67,17 @@ export function OrderSummaryPanel() {
     return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
   });
   const [to, setTo] = useState("");
-  const query = { q, from: from || undefined, to: to || undefined };
+  // Compare dates: chosen days only (any number), side by side; Addition is then the change since the chosen day before.
+  const [dates, setDates] = useState<string[]>([]);
+  const comparing = dates.length > 0;
+  const query = comparing ? { q, dates: [...dates].sort().join(",") } : { q, from: from || undefined, to: to || undefined };
   const { data, error, loading } = useApi<OrderSummaryPage>(business === "all" ? null : "/api/products/order_summary", {
     ...query, all: 1,
   });
   // The export link carries the business itself (a download sends no X-Business header).
   const exportQuery = new URLSearchParams(Object.entries({ business, ...query }).filter((e): e is [string, string] => !!e[1]));
-  const ranged = from !== "" || to !== "";
-  const clearAll = () => { setSearch(""); setFrom(""); setTo(""); };
+  const ranged = from !== "" || to !== "" || comparing;
+  const clearAll = () => { setSearch(""); setFrom(""); setTo(""); setDates([]); };
 
   return (
     <Panel flush>
@@ -84,15 +87,21 @@ export function OrderSummaryPanel() {
           <BusinessPicker alignLeft />
         </div>
         {business !== "all" && (<>
+          {!comparing && (<>
+            <div className="space-y-1.5">
+              <label htmlFor="order-summary-from" className="block text-sm font-medium text-ink">From</label>
+              <DatePicker id="order-summary-from" value={from} onChange={setFrom} min={data?.first_date ?? undefined}
+                          max={to || (data?.last_date ?? undefined)} placeholder="Oldest day" clearable className="w-44" />
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="order-summary-to" className="block text-sm font-medium text-ink">To</label>
+              <DatePicker id="order-summary-to" value={to} onChange={setTo} min={from || (data?.first_date ?? undefined)}
+                          max={data?.last_date ?? undefined} placeholder="Newest day" clearable className="w-44" />
+            </div>
+          </>)}
           <div className="space-y-1.5">
-            <label htmlFor="order-summary-from" className="block text-sm font-medium text-ink">From</label>
-            <DatePicker id="order-summary-from" value={from} onChange={setFrom} min={data?.first_date ?? undefined}
-                        max={to || (data?.last_date ?? undefined)} placeholder="Oldest day" clearable className="w-44" />
-          </div>
-          <div className="space-y-1.5">
-            <label htmlFor="order-summary-to" className="block text-sm font-medium text-ink">To</label>
-            <DatePicker id="order-summary-to" value={to} onChange={setTo} min={from || (data?.first_date ?? undefined)}
-                        max={data?.last_date ?? undefined} placeholder="Newest day" clearable className="w-44" />
+            <span className="block text-sm font-medium text-ink">Compare dates</span>
+            <CompareDates options={data?.available_dates ?? []} value={dates} onChange={setDates} />
           </div>
         </>)}
       </div>
@@ -114,6 +123,12 @@ export function OrderSummaryPanel() {
           )}
         </ListToolbar>
         {data?.latest && data.data.length > 0 && <LatestDay latest={data.latest} />}
+        {comparing && data && data.days.length > 1 && (
+          <p className="border-b border-line bg-tint-violet/40 px-4 py-2 text-sm text-ink sm:px-6">
+            Comparing {data.days.map((d) => excelDate(d.date)).join(" with ")}: under each date, the <b>vs</b> column is how much its
+            Firm went up (green) or down (red) since the next date. Parts that did not change show 0.
+          </p>
+        )}
         {error ? (
           <div className="p-4"><Alert title="Could not load the order summary">{error.message}</Alert></div>
         ) : loading && !data ? (
@@ -147,8 +162,9 @@ export function OrderSummaryPanel() {
                     <th className={`${COLS.part.sticky} ${COLS.part.width} top-7 z-30 ${GRID} ${ORANGE} px-2 text-left font-bold`}>Part Number</th>
                     <th className={`${COLS.description.sticky} ${COLS.description.width} top-7 z-30 ${GRID} ${ORANGE} px-2 text-left font-bold`}>Description</th>
                     <th className={`${COLS.moq.sticky} ${COLS.moq.width} top-7 z-30 ${GRID} ${PART_EDGE} ${ORANGE} px-2 text-center font-bold`}>MOQ</th>
-                    {data.days.map((day) => (
-                      <DayHeadings key={day.date} />
+                    {data.days.map((day, i) => (
+                      // Comparing dates: each Addition is the change since the next chosen date (to its right).
+                      <DayHeadings key={day.date} addition={comparing ? (data.days[i + 1] ? `vs ${excelDate(data.days[i + 1].date).slice(0, 5)}` : "vs day before") : "Addition"} />
                     ))}
                   </tr>
                 </thead>
@@ -176,11 +192,11 @@ export function OrderSummaryPanel() {
 }
 
 // Second header row of a day, under its date.
-function DayHeadings() {
+function DayHeadings({ addition = "Addition" }: { addition?: string }) {
   return (
     <>
       <th className={`sticky top-7 z-20 ${DAY_COLS.firm} ${GRID} ${DAY_EDGE} ${BLUE} px-2 text-center font-bold`}>Firm</th>
-      <th className={`sticky top-7 z-20 ${DAY_COLS.addition} ${GRID} ${BLUE} px-2 text-center font-bold`}>Addition</th>
+      <th className={`sticky top-7 z-20 ${DAY_COLS.addition} ${GRID} ${BLUE} px-2 text-center font-bold`}>{addition}</th>
       <th className={`sticky top-7 z-20 ${DAY_COLS.forecast} ${GRID} ${BLUE} px-2 text-center font-bold`}>Forecast</th>
     </>
   );
@@ -218,6 +234,51 @@ function LatestDay({ latest }: { latest: NonNullable<OrderSummaryPage["latest"]>
           <span className={`block text-lg font-semibold tabular ${t.tone}`}>{t.value}</span>
         </div>
       ))}
+    </div>
+  );
+}
+
+// Compare dates: tick any days with an upload (newest first) to show only those side by side. "Clear" goes back to
+// From / To.
+function CompareDates({ options, value, onChange }: {
+  options: { date: string; filename: string; version: string | null }[]; value: string[]; onChange: (dates: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+  const toggle = (date: string) => onChange(value.includes(date) ? value.filter((d) => d !== date) : [...value, date]);
+
+  return (
+    <div ref={box} className="relative">
+      <Button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="w-44 justify-between">
+        <span className="truncate">{value.length === 0 ? "Choose dates" : `${value.length} date${value.length === 1 ? "" : "s"} chosen`}</span>
+        <span aria-hidden className="text-ink-muted">▾</span>
+      </Button>
+      {open && (
+        <div className="absolute left-0 z-[60] mt-1 w-72 overflow-hidden rounded-lg border border-line bg-white shadow-xl ring-1 ring-black/5">
+          <div className="flex items-center justify-between border-b border-line px-3 py-2 text-xs text-ink-muted">
+            <span>Tick the days to compare</span>
+            {value.length > 0 && <button type="button" onClick={() => onChange([])} className="font-medium text-accent hover:underline">Clear</button>}
+          </div>
+          <ul className="max-h-80 overflow-y-auto overscroll-contain py-1">
+            {options.length === 0 && <li className="px-3 py-2 text-sm text-ink-muted">No uploads yet.</li>}
+            {options.map((o) => (
+              <li key={o.date}>
+                <label className="flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm hover:bg-subtle">
+                  <input type="checkbox" checked={value.includes(o.date)} onChange={() => toggle(o.date)} className="h-4 w-4 shrink-0 accent-accent" />
+                  <span className="tabular flex-1 text-ink">{formatDate(o.date)}</span>
+                  {o.version && <span className="shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 text-2xs font-medium text-ink-muted">{o.version}</span>}
+                </label>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

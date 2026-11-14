@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { BoxIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, DashboardIcon, MenuIcon, TableIcon, TruckIcon, UsersIcon, SettingsIcon } from "./icons";
+import { BoxIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, DashboardIcon, FileIcon, MenuIcon, TableIcon, TruckIcon, UsersIcon, SettingsIcon } from "./icons";
 import { BrandLogo } from "./brand-logo";
 import { BusinessProvider, useBusiness } from "./business-switch";
 import { ChangePasswordForm } from "./users/change-password-form";
@@ -22,6 +22,7 @@ const NAV: { href: string; label: string; icon: typeof DashboardIcon; match: (p:
   { href: "/", label: "Dashboard", icon: DashboardIcon, match: (p: string) => p === "/", section: "dashboard" },
   { href: "/orders", label: "Orders", icon: TableIcon, match: (p: string) => p.startsWith("/orders") || p.startsWith("/uploads"), section: "orders" },
   { href: "/products", label: "Products", icon: BoxIcon, match: (p: string) => p.startsWith("/products"), section: "products" },
+  { href: "/purchase-orders", label: "Purchase orders", icon: FileIcon, match: (p: string) => p.startsWith("/purchase-orders"), section: "orders" },
   { href: "/vendors", label: "Vendors", icon: TruckIcon, match: (p: string) => p.startsWith("/vendors"), section: "vendors" },
   { href: "/users", label: "Users", icon: UsersIcon, match: (p: string) => p.startsWith("/users") },
   { href: "/settings", label: "Admin Settings", icon: SettingsIcon, match: (p: string) => p.startsWith("/settings"), section: "settings" },

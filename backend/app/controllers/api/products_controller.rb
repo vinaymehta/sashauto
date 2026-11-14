@@ -141,6 +141,7 @@ module Api
                                       forecast: Serializers.qty(latest.sum(&:last)) } : nil,
         business: current_business,
         days: summary.days.map { |day| { date: day.date.iso8601, upload_id: day.upload.id, filename: day.upload.original_filename, version: day.upload.version_label } },
+        available_dates: summary.all_days.map { |day| { date: day.date.iso8601, filename: day.upload.original_filename, version: day.upload.version_label } },
         first_date: summary.all_days.last&.date&.iso8601, last_date: summary.all_days.first&.date&.iso8601,
         data: rows.map do |row|
           { serial: row.serial, part_number: row.part_number, description: row.description, moq: Serializers.qty(row.moq),
@@ -177,12 +178,18 @@ module Api
         render_error("Choose DTP or GMBH: the order summary is for one business.", :unprocessable_content, code: "business_required")
         return nil
       end
-      dates = %i[from to].to_h do |key|
+      dates_param = params[:dates].is_a?(Array) ? params[:dates] : params[:dates].to_s.split(",").map(&:strip).reject(&:empty?)
+      dates = dates_param.filter_map do |d|
+        Date.iso8601(d)
+      rescue Date::Error
+        nil
+      end
+      dates_range = %i[from to].to_h do |key|
         [ key, (Date.iso8601(params[key].to_s) if params[key].present?) ]
       rescue Date::Error
         [ key, nil ]
       end
-      Products::OrderSummary.new(current_business, **dates)
+      Products::OrderSummary.new(current_business, dates: dates.presence, **dates_range)
     end
 
     # Commodity Type filter: the chosen types, "_none" for parts without one.

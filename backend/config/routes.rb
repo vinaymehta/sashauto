@@ -65,12 +65,29 @@ Rails.application.routes.draw do
     resources :manual_orders, only: %i[show create update destroy] do
       get :fields, on: :collection
     end
+    # Purchase orders page: every vendor PO, and uploading a vendor PO list.
+    resources :purchase_orders, only: :index do
+      post :import, on: :collection
+      post :import_received, on: :collection
+      post :override, on: :collection
+    end
+    # Rows of uploaded vendor PO lists / Purchase Received files not recorded (Purchase orders → Import issues).
+    resources :purchase_issues, only: :index do
+      member do
+        post :dismiss
+        post :reopen
+        post :link_vendor
+        post :create_vendor
+      end
+    end
     resources :vendor_orders, only: :update do
       member do
         get :pdf
         get :letter
         get :email
         post :regenerate
+        post :receipts, action: :add_receipt
+        delete "receipts/:receipt_id", action: :remove_receipt
       end
     end
     resources :vendors, only: %i[index show create update] do

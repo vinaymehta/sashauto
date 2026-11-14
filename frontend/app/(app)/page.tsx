@@ -4,7 +4,8 @@ import { can } from "@/lib/permissions";
 import { useSession } from "@/components/session";
 import Link from "next/link";
 import { createContext, useContext, useState, type ReactNode } from "react";
-import type { DashboardOrder, DashboardOverview, DateAmount, OrderRow, PipelineStatus, ProductVendor, Stats } from "@/lib/types";
+import type { DashboardOrder, DashboardOverview, DateAmount, OrderRow, OrdersSummary, PipelineStatus, ProductVendor, Stats } from "@/lib/types";
+import { todayParam } from "@/components/age";
 import { OrderDetailPanel } from "@/components/orders/history-row";
 import { formatCount, formatDate, formatQty } from "@/lib/format";
 import { groupByPeriod, PeriodToggle, type Period } from "@/components/charts/month-bars";
@@ -46,6 +47,8 @@ const STATUS: Record<PipelineStatus, { label: string; hint: string; color: strin
   received: { label: "Received", hint: "At SASH Faridabad", color: "bg-tint-violet-ink" },
   dispatched: { label: "Dispatched", hint: "Shipped from Faridabad", color: "bg-tint-amber-ink" },
   inbound: { label: "Inbound", hint: "At SASH US, to deliver to Deere", color: "bg-series-a" },
+  delivery: { label: "Partial outbound", hint: "Part delivered to Deere", color: "bg-tint-amber-ink" },
+  outbound: { label: "Outbound", hint: "Delivered to Deere in full", color: "bg-age-green-ink" },
 };
 const AGE = {
   red: { label: "90+ days", color: "bg-age-red-ink" },
@@ -99,10 +102,14 @@ function StatCard({ label, value, extra, detail, icon, tint, href, size = "md", 
 
 export default function DashboardPage() {
   const { data, error, loading, reload } = useApi<Stats>("/api/stats");
+  // Partial outbound / Outbound cards: counted as the Orders page lists them (its tabs), with old deliveries Deere
+  // dropped since; the Dashboard's own figures when Orders cannot be read.
+  const me = useSession().user;
+  const listed = useApi<OrdersSummary>(can(me, "orders") ? "/api/orders/summary" : null, { today: todayParam() });
   // Order whose Order details panel is open (from Next shipments or a part's open orders).
   const [order, setOrder] = useState<DashboardOrder | null>(null);
 
-  const canUpload = can(useSession().user, "orders", "edit");
+  const canUpload = can(me, "orders", "edit");
   const header = (
     <PageHeader
       title="Dashboard"
@@ -177,7 +184,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Operations (Dashboard::Overview). */}
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           <StatCard label="Open orders" info={<>Firm and Order orders <b>not yet delivered to Deere</b>, counted as the Orders page lists them (a combined order counts once). The amount is their value.</>} icon={<FileIcon size={16} />} tint="neutral" href={OPEN_ORDERS}
                     value={formatCount(kpis.open.count)} detail={`${usd(kpis.open.value, true)} · Firm and Order`} />
           <StatCard label="Shipping in 30 days" href={`${OPEN_ORDERS}&timing=next30`} info={<>Open orders with a <b>ship date from today to 30 days ahead</b>, and their value. They are listed in Next shipments.</>} icon={<CalendarIcon size={16} />} tint="violet"
@@ -189,6 +196,10 @@ export default function DashboardPage() {
                     detail={`${plural(kpis.po_coverage.without_po.count, "open order")} without a vendor PO`}>
             <Progress percent={kpis.po_coverage.percent} />
           </StatCard>
+          <StatCard label="Partial outbound" href="/orders?status=delivery" info={<>Firm and Order orders with <b>part of the quantity delivered to Deere</b> on SASH Inc invoices. The remaining balance is still to deliver.</>} icon={<TruckIcon size={16} />} tint="amber"
+                    value={formatCount(listed.data?.partial_outbound ?? kpis.partial_outbound?.count ?? 0)} detail="Part delivered to Deere, as listed on Orders" />
+          <StatCard label="Outbound (fulfilled)" href="/orders?status=outbound" info={<>Orders <b>delivered to Deere in full</b> (Outbound mark or fulfilled on SASH Inc invoices).</>} icon={<CheckIcon size={16} />} tint="inc"
+                    value={formatCount(listed.data?.fulfilled ?? kpis.outbound?.count ?? 0)} detail="Delivered to Deere in full: the Orders fulfilled tab" />
         </div>
 
         <div className="grid gap-5 xl:grid-cols-3">
@@ -208,7 +219,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid gap-5 lg:grid-cols-2 xl:grid-cols-3">
-          <Card title="Order pipeline" info={<>Open orders by their <b>latest status</b>: No status → Received (at SASH Faridabad) → Dispatched (from Faridabad) → Inbound (at SASH US). Orders delivered to Deere (Outbound) are no longer open.</>} description="Open orders by their latest status">
+          <Card title="Order pipeline" info={<>Open orders by their <b>latest status</b>: No status → Received (at SASH Faridabad) → Dispatched (from Faridabad) → Inbound (at SASH US) → Partial outbound (part delivered to Deere). Orders delivered to Deere (Outbound) are no longer open.</>} description="Open orders by their latest status">
             <Pipeline items={overview.pipeline} />
           </Card>
           <Card title="Ageing since Effective Firm Date" info={<>Open orders by <b>days since their Effective Firm Date</b>: 90+ red, 60–89 yellow, 30–59 green; under 30 days or no Effective Firm Date grey. The same colours as on the Orders page.</>} description="Open orders by days since their Effective Firm Date">
@@ -326,7 +337,7 @@ function Pipeline({ items }: { items: DashboardOverview["pipeline"] }) {
     <ol className="-mx-2 space-y-1">
       {items.map((item, i) => (
         <li key={item.status}>
-          <Link href={`${OPEN_ORDERS}&status=${item.status}`} className="block rounded-md px-2 py-1.5 transition-colors hover:bg-neutral-50">
+          <Link href={item.status === "outbound" ? "/orders?status=outbound" : `${OPEN_ORDERS}&status=${item.status}`} className="block rounded-md px-2 py-1.5 transition-colors hover:bg-neutral-50">
           <div className="mb-1.5 flex items-baseline justify-between gap-3 text-sm">
             <span className="flex min-w-0 items-center gap-2">
               <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-2xs font-semibold text-ink-muted">{i + 1}</span>

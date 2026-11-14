@@ -23,10 +23,13 @@ module Products
     # One part: values has [firm, addition, forecast] per shown day, newest first.
     Row = Data.define(:serial, :part_number, :description, :moq, :values)
 
-    def initialize(business, from: nil, to: nil)
+    def initialize(business, from: nil, to: nil, dates: nil)
       @business = business
       @from = from
       @to = to
+      @dates = dates.presence&.map { |d| d.is_a?(Date) ? d : Date.iso8601(d.to_s) }&.to_set
+    rescue Date::Error
+      @dates = nil
     end
 
     # Every day with a completed upload of the business, newest first.
@@ -40,9 +43,13 @@ module Products
       end
     end
 
-    # The days shown: those within from..to (each optional), newest first.
+    # The days shown: those within from..to (each optional), or the selected dates, newest first.
     def days
-      @days ||= all_days.select { |day| (@from.nil? || day.date >= @from) && (@to.nil? || day.date <= @to) }
+      @days ||= if @dates&.any?
+        all_days.select { |day| @dates.include?(day.date) }
+      else
+        all_days.select { |day| (@from.nil? || day.date >= @from) && (@to.nil? || day.date <= @to) }
+      end
     end
 
     # [S No, Part Number] of the parts, only those whose Part Number or Description contains `query` when given.

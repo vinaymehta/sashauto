@@ -86,8 +86,8 @@ module Serializers
   end
 
   def vendor_order(order)
-    order.slice(:id, :number, :vendor_id, :ship_date, :order_placed_at, :created_at)
-         .merge(vendor_name: order.vendor.name, order_placed_by: order.order_placed_by&.name, qty: qty(order.qty), unit: order.unit, price_amount: qty(order.unit_price),
+    order.slice(:id, :number, :vendor_id, :ship_date, :order_placed_at, :goods_received_at, :source, :order_date, :created_at)
+         .merge(vendor_name: order.vendor.name, order_placed_by: order.order_placed_by&.name, goods_received_by: order.goods_received_by&.name, qty: qty(order.qty), unit: order.unit, price_amount: qty(order.unit_price),
                 price_currency: order.price_currency, price_note: order.price_note,
                 # An Intimation Letter comes with the PO (a vendor at the 0.1% GST rate, or one saved before that rule).
                 intimation_letter: order.intimation_letter.attached? || order.vendor.intimation_letter?)

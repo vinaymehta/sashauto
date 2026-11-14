@@ -114,9 +114,10 @@ export function VersionCompare({ business }: { business: "dtp" | "gmbh" }) {
   const to = listed(picked.to) ? picked.to! : uploads[0]?.id ?? null;
   const comparable = from !== null && to !== null && from !== to;
   const kind = list.filters.direction;
+  const orderType = list.filters.type;
 
   const { data, error, loading } = useApi<VersionDiffPage>(comparable ? "/api/uploads/compare" : null, {
-    from: from ?? undefined, to: to ?? undefined, q, direction: kind, page: list.page, per_page: list.perPage,
+    from: from ?? undefined, to: to ?? undefined, q, direction: kind, type: orderType, page: list.page, per_page: list.perPage,
   });
   const pick = (key: "from" | "to", id: string) => { setPicked({ from, to, [key]: Number(id) }); list.resetPage(); };
   const swap = () => { setPicked({ from: to, to: from }); list.resetPage(); };
@@ -151,8 +152,17 @@ export function VersionCompare({ business }: { business: "dtp" | "gmbh" }) {
       ) : (
         // Not overflow-hidden: the column headings stick to the top while scrolling.
         <div className="rounded-lg border border-line bg-surface shadow-card">
-          {/* How many lines differ, by type; clicking one shows only those lines. */}
+          {/* How many lines differ, by type; clicking one shows only those lines. Order type selector. */}
           <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 sm:px-5">
+            <div className="flex items-center gap-1.5 mr-1">
+              <label htmlFor="compare-order-type" className="text-xs font-semibold uppercase tracking-wider text-ink-muted">Type</label>
+              <Select id="compare-order-type" value={orderType ?? ""} onChange={(e) => { list.setFilter("type", e.target.value); list.resetPage(); }} className="h-8 py-0 pl-2.5 pr-7 text-xs font-medium w-32">
+                <option value="">All Types</option>
+                <option value="Order">Order</option>
+                <option value="Firm">Firm</option>
+                <option value="Forecast">Forecast</option>
+              </Select>
+            </div>
             <Chip active={!kind} onClick={() => list.setFilter("direction", "")}>All changes · {formatCount(total)}</Chip>
             {data && KIND_ORDER.filter((k) => (data.meta.counts[k] ?? 0) > 0).map((k) => (
               <Chip key={k} active={kind === k} tone={KINDS[k].tone} onClick={() => list.setFilter("direction", kind === k ? "" : k)}>
@@ -168,8 +178,8 @@ export function VersionCompare({ business }: { business: "dtp" | "gmbh" }) {
           ) : loading && !data ? (
             <TableSkeleton rows={8} columns={6} />
           ) : data && data.data.length === 0 ? (
-            q || kind ? (
-              <EmptyState title="No differences match" description="Clear the search or the chosen type to see all differences."
+            q || kind || orderType ? (
+              <EmptyState title="No differences match" description="Clear the search or the chosen filters to see all differences."
                           action={<Button size="sm" onClick={() => { setSearch(""); list.clearFilters(); }}>Show all differences</Button>} />
             ) : (
               <EmptyState title="No differences" description="These two versions have the same order lines." />
