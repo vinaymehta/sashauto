@@ -5,7 +5,8 @@ module Orders
   # row here, orders with nothing shipped are left out). Each row whose order is in the current order data (the
   # latest upload of each business) is marked "Dispatched from SASH Faridabad" with its invoice number and date, and
   # "Received at SASH Faridabad" first when it has no such mark yet (statuses go in route order). Book 38 has no
-  # invoice date: the date of that SASH India invoice when it was uploaded (Invoices), else the import day.
+  # invoice date: the date of that SASH India invoice when it was uploaded (Invoices), else the date an earlier list
+  # gave that invoice, else the import day.
   #
   # A row matches the Firm / Order order with its PO Number + Part Number whose Ship Date or Due Date is the row's date
   # (those with a Qty, then the same Qty, while that leaves several). With none on that date in the current order data,
@@ -59,11 +60,35 @@ module Orders
       combined = Combiner.for_batches(batch_ids)
       anchor_of = combined.groups.values.select(&:combined?).flat_map { |g| g.members.map { |m| [ m.id, g.anchor_id ] } }.to_h
 
+      # Shipments (Part + invoice + Qty) the list's marks hold already, in all and per order row, and how often the file
+      # names each: a shipment is recorded as often as the file names it, whatever order it is on. The lists do not
+      # always name the same PO for a shipment, and it must not count once under each.
+      recorded = Hash.new(0)
+      own = Hash.new(0)
+      OrderDelivery.active.where(kind: "dispatched").where("note LIKE ?", "#{NOTE}%").pluck(:part_number, :invoice_lines).each do |part, lines|
+        lines.each do |l|
+          recorded[[ part, l["invoice"], l["qty"] ]] += 1
+          own[[ part, l["invoice"], l["qty"], l["order_key"] ]] += 1
+        end
+      end
+      in_file = rows.reject { |row| row[:problem] }.map { |row| [ row[:part_number], row[:invoice_number], line(row)["qty"] ] }.tally
+      seen = Hash.new(0)
+      added = Hash.new(0)
+
       rows.each do |row|
         next skipped << skip(row, row[:problem]) if row[:problem]
 
         match = find_order(row)
         next skipped << skip(row, match) if match.is_a?(String)
+
+        shipment = [ match.part_number, row[:invoice_number], line(row)["qty"] ]
+        here = shipment + [ VendorOrderPlacement.order_key(match) ]
+        if (seen[here] += 1) > own[here] # not on this order yet
+          if recorded[shipment] + added[shipment] >= in_file[[ row[:part_number], row[:invoice_number], line(row)["qty"] ]].to_i
+            next skipped << skip(row, "this shipment is already recorded on another order of the Part (the lists name different POs for it)")
+          end
+          added[shipment] += 1
+        end
 
         if match.po_number != row[:po_number]
           corrected << skip(row, nil).except(:reason).merge(file_po: row[:po_number], po_number: match.po_number)
@@ -387,7 +412,10 @@ module Orders
       end.flatten
       dates = Invoice.where(kind: "india", invoice_number: rows.map { |r| r[:invoice_number] }.uniq, removed_at: nil)
                      .group(:invoice_number).minimum(:invoice_date)
-      rows.each { |row| row[:invoice_date] = dates.fetch(row[:invoice_number], row[:invoice_date]) }
+      # Else the date an earlier list gave the invoice (the old lists have invoice dates; also on marks removed since).
+      known = OrderDelivery.where(kind: "dispatched").pluck(:invoice_lines).flatten.group_by { |l| l["invoice"] }
+                           .transform_values { |lines| lines.filter_map { |l| Date.iso8601(l["date"].to_s) rescue nil }.min }
+      rows.each { |row| row[:invoice_date] = dates[row[:invoice_number]] || known[row[:invoice_number]] || row[:invoice_date] }
     end
 
     # Book 38's header row: { field => column index, invoices: [column of each shipment's Invoice No] }, else nil.
