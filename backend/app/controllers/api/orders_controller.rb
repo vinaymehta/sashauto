@@ -73,6 +73,9 @@ module Api
       # Dispatched / outbound Qty of each row from the uploaded invoices (by the row's own key).
       own_keys = rows.map { |row| own_key(row) }
       progress = Invoices::Progress.for_keys(own_keys)
+      # The dispatched orders list's mark naming each row (by its own key): a combined order's mark is on its first row
+      # then, and stays there when the combined order changes, so look it up by the row.
+      named = listed_marks(own_keys)
       # A combined order's rows show the combined order's Firm Date (the day it reached the MOQ).
       # (By position: an imported row and a manual order can share an id.)
       firm_keys = rows.map { |row| firm_key(row) }
@@ -88,8 +91,8 @@ module Api
           Serializers.order_row(row, source: true).merge(placed: ordered.key?(key), order_placed: order_placed.include?(key),
                                                          ordered_qty: Serializers.qty(ordered[key]),
                                                          deliveries: deliveries.fetch(key, {}),
-                                                         **row_invoice(deliveries.dig(key, "dispatched"), row, progress[own_keys[i]]),
-                                                         **invoice_info(row, progress[own_keys[i]], deliveries.fetch(key, {})),
+                                                         **row_invoice(named.dig(own_keys[i], "dispatched") || deliveries.dig(key, "dispatched"), row, progress[own_keys[i]]),
+                                                         **invoice_info(row, progress[own_keys[i]], deliveries.fetch(key, {}), named: named.dig(own_keys[i], "dispatched")),
                                                          firm_date: firm_dates[firm_keys[i]], came_firm_date: came[i], business: row[:business],
                                                          part_description: descriptions[row.part_number],
                                                          discontinued: discontinued.include?(row.part_number),
@@ -259,17 +262,18 @@ module Api
       deliveries = deliveries_by_key(rows)
       own_keys = rows.map { |row| own_key(row) }
       progress = Invoices::Progress.for_keys(own_keys)
+      named = listed_marks(own_keys) # the list's mark naming each row (see #index)
       fallback = Product.where(part_number: rows.map(&:part_number).uniq).pluck(:part_number, :customer_price).to_h
       rows.each_with_index.filter_map do |row, i|
         next if row.order_type == "Forecast"
 
         marks = deliveries.fetch(placement_key(row), {})
-        info = invoice_info(row, progress[own_keys[i]], marks)
+        info = invoice_info(row, progress[own_keys[i]], marks, named: named.dig(own_keys[i], "dispatched"))
         ordered = info[:order_qty].to_d
         # Without Qty on invoices or the list for the row, a status counts all of it as sent, unless the order's Dispatched
         # mark came from the dispatched orders list: it names what each row got, so a row of a combined order it does not
         # name (shown Dispatched with its combined order) has sent nothing yet.
-        by_list = marks.dig("dispatched", :invoice_lines).present?
+        by_list = marks.dig("dispatched", :invoice_lines).present? || named.key?(own_keys[i])
         shipped = if info[:shipped_qty] then info[:shipped_qty].to_d
         elsif !by_list && %w[dispatched inbound delivery outbound].include?(info[:status]) then ordered
         else 0.to_d
@@ -511,12 +515,13 @@ module Api
     # (the Qty when dispatched, when higher than Deere's open Qty now), Shipped Qty (dispatched on SASH India invoices),
     # Balance Qty (still to send), Outbound Qty (delivered on SASH Inc invoices), each invoice move, and the status: the
     # further of its marks' (`marks`, kind => mark) and its invoices'.
-    def invoice_info(row, progress, marks)
+    def invoice_info(row, progress, marks, named: nil)
       mark = OrderDelivery::KINDS.reverse.find { |kind| marks.key?(kind) } || "none"
       from_invoices = progress&.status(row.qty)
       status = [ mark, from_invoices ].compact.max_by { |kind| STATUSES.index(kind) }
-      # Sent by the dispatched orders list (no SASH India invoice Qty): its Qty on the list counts as shipped.
-      listed = progress&.shipped&.positive? ? 0.to_d : listed_qty(row, marks["dispatched"])
+      # Sent by the dispatched orders list (no SASH India invoice Qty): its Qty on the list counts as shipped. `named`: the
+      # list's Dispatched mark naming the row (#listed_marks), else the order's own.
+      listed = progress&.shipped&.positive? ? 0.to_d : listed_qty(row, named || marks["dispatched"])
       if progress.nil? && listed.zero?
         return { status: status, order_qty: Serializers.qty(row.qty), shipped_qty: nil, balance_qty: Serializers.qty(row.qty), outbound_qty: nil, invoice_moves: [] }
       end
