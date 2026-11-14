@@ -266,10 +266,12 @@ module Orders
     # whatever its date: a list without invoice dates (Book 38) dates them the import day, so importing it again, or
     # after the old list, must not count a shipment twice. The line already there keeps its date.
     def merge_lines(lines, file_rows)
-      file_rows.each_with_object(lines.dup) do |row, merged|
-        added = line(row)
-        merged << added unless merged.any? { |l| same_shipment?(l, added) }
+      merged = lines.dup
+      # A list can name the same shipment twice for an order (same invoice and Qty, two packings): as many as it names.
+      file_rows.map { |row| line(row) }.group_by { |l| l.values_at("invoice", "qty", "order_key") }.each_value do |same|
+        merged.concat(same.drop(merged.count { |l| same_shipment?(l, same.first) }))
       end
+      merged
     end
 
     def same_shipment?(a, b)
