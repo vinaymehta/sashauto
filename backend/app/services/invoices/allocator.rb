@@ -12,8 +12,9 @@ module Invoices
   #     the Qty. Rows sent before invoices were uploaded (and without invoice dispatches) are left out: those a
   #     Dispatched mark of the former dispatched orders list names (OrderDelivery#invoice_lines), and every row of an
   #     order (a combined order) marked Dispatched by hand, or Inbound / Outbound.
-  #   SASH Inc invoice (outbound): the orders of the PO + Part dispatched on SASH India invoices; each takes what is
-  #     still in transit (dispatched less outbound before).
+  #   SASH Inc invoice (outbound): the orders of the PO + Part dispatched on SASH India invoices or the dispatched
+  #     orders list, also those Deere has received and dropped from its file since (OrderRow.dropped: kept on Orders by
+  #     their mark); each takes what is still in transit (dispatched less outbound before), oldest Ship Date first.
   #
   #   plan = Invoices::Allocator.call(invoice, view: "dtp")   # => Plan
   class Allocator
@@ -87,7 +88,7 @@ module Invoices
 
       india = InvoiceAllocation.active.where(invoices: { kind: "india" }, po_number: line.po_number, part_number: line.part_number)
                                .includes(order_row: :upload_batch, manual_order: []).to_a.group_by(&:order_key)
-      rows = candidates(line).to_h
+      rows = dropped_candidates(line).merge(candidates(line).to_h)
       keys = (india.keys + rows.keys).uniq
       progress = Progress.for_keys(keys)
       sent = keys.filter_map do |key|
@@ -140,6 +141,12 @@ module Invoices
       manual = ManualOrder.active.where(business: Business.of(@view), po_number: line.po_number, part_number: line.part_number, order_type: %w[Firm Order])
                           .to_h { |order| [ VendorOrderPlacement.order_key(order), order ] }
       imported.merge(manual).sort_by { |_, row| [ row.ship_date, row.po_line_number, row.is_a?(ManualOrder) ? 1 : 0, row.id ] }
+    end
+
+    # { order key => row } of the line's PO + Part no longer in the current order data (OrderRow.dropped).
+    def dropped_candidates(line)
+      OrderRow.dropped(batch_ids, po_number: line.po_number, part_number: line.part_number).includes(:upload_batch)
+              .to_h { |row| [ VendorOrderPlacement.order_key(row), row ] }
     end
 
     def batch_ids

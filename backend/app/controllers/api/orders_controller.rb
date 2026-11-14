@@ -263,9 +263,17 @@ module Api
       rows.each_with_index.filter_map do |row, i|
         next if row.order_type == "Forecast"
 
-        info = invoice_info(row, progress[own_keys[i]], deliveries.fetch(placement_key(row), {}))
+        marks = deliveries.fetch(placement_key(row), {})
+        info = invoice_info(row, progress[own_keys[i]], marks)
         ordered = info[:order_qty].to_d
-        shipped = info[:shipped_qty] ? info[:shipped_qty].to_d : (%w[dispatched inbound delivery outbound].include?(info[:status]) ? ordered : 0.to_d)
+        # Without Qty on invoices or the list for the row, a status counts all of it as sent, unless the order's Dispatched
+        # mark came from the dispatched orders list: it names what each row got, so a row of a combined order it does not
+        # name (shown Dispatched with its combined order) has sent nothing yet.
+        by_list = marks.dig("dispatched", :invoice_lines).present?
+        shipped = if info[:shipped_qty] then info[:shipped_qty].to_d
+        elsif !by_list && %w[dispatched inbound delivery outbound].include?(info[:status]) then ordered
+        else 0.to_d
+        end
         delivered = info[:outbound_qty] ? info[:outbound_qty].to_d : (info[:status] == "outbound" ? ordered : 0.to_d)
         text = row.source_data&.dig("Unit Price").to_s.delete(",").strip
         price = text.match?(/\A\d+(\.\d+)?\z/) ? BigDecimal(text) : fallback[row.part_number]

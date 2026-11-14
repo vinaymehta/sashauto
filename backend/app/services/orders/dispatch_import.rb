@@ -7,12 +7,15 @@ module Orders
   # "Received at SASH Faridabad" first when it has no such mark yet (statuses go in route order). Book 38 has no
   # invoice date: the date of that SASH India invoice when it was uploaded (Invoices), else the import day.
   #
-  # A row matches the order with its PO Number + Part Number whose Ship Date or Due Date is the row's date (Firm and
-  # Order before Forecast, then those with a Qty, then the same Qty, while that leaves several); with none on that date,
-  # the one Firm / Order order of the PO + Part with the row's Qty. When the file's PO has no such order (SASH India's
-  # files sometimes name another PO), the PO is taken from the order data: the order of the Part Number on the row's
-  # date, as above, under any PO (listed in po_corrected). A row of a combined order marks the combined
-  # order (Orders::Combiner), as the Orders page does. Rows of the same order (sent on several invoices) give one mark
+  # A row matches the Firm / Order order with its PO Number + Part Number whose Ship Date or Due Date is the row's date
+  # (those with a Qty, then the same Qty, while that leaves several). With none on that date in the current order data,
+  # the delivery may be one Deere has received and dropped from its file since: the order on that date in an earlier
+  # upload (its last version), kept on Orders by its mark like other orders no longer in the file. Only then the one
+  # Firm / Order order of the PO + Part with the row's Qty that Deere had already sent when the shipment was invoiced
+  # (Deere sometimes moves the date). When the file's PO has no such order (SASH India's files sometimes name another
+  # PO), the PO is taken from the order data: the order of the Part Number on the row's date, as above, under any PO
+  # (listed in po_corrected). A row of a combined order marks the combined order (Orders::Combiner), as the Orders page
+  # does. Rows of the same order (sent on several invoices) give one mark
   # with all their invoice numbers; importing the list again adds the invoices such a mark does not have yet. Rows that
   # match nothing, or several orders, and orders already dispatched otherwise are skipped and listed with the reason,
   # to be marked by hand.
@@ -100,15 +103,21 @@ module Orders
       lines = OrderRow.where(upload_batch_id: batch_ids, po_number: row[:po_number], part_number: row[:part_number])
       if lines.exists?
         found = on_date(lines, row, "this PO + Part")
-        found = same_qty_order(lines, row) if found.nil?
+        return found unless found.nil?
+      end
+      found = on_date(dropped(po_number: row[:po_number], part_number: row[:part_number]), row, "this PO + Part in earlier order files")
+      return found unless found.nil?
+
+      if lines.exists?
+        found = same_qty_order(lines, row)
         return found unless found.is_a?(Symbol)
       end
 
       part_lines = OrderRow.where(upload_batch_id: batch_ids, part_number: row[:part_number])
-      return "Part #{row[:part_number]} is not in the current order data" unless part_lines.exists?
-
-      found = on_date(part_lines, row, "this Part")
+      found = part_lines.exists? ? on_date(part_lines, row, "this Part") : nil
+      found = on_date(dropped(part_number: row[:part_number]), row, "this Part in earlier order files") if found.nil?
       return found unless found.nil?
+      return "Part #{row[:part_number]} is not in the current order data" unless part_lines.exists?
 
       if lines.exists?
         on = row[:date].strftime("%d %b %Y")
@@ -143,16 +152,31 @@ module Orders
     end
 
     # No order on the list's date (its date is not always Deere's, e.g. GMBH's Due Date moved): the one Firm / Order
-    # order of this PO + Part with the same Qty. Only with the same Qty: an order of the PO + Part on another date with
-    # another Qty is a later delivery, not the one dispatched (Deere drops a delivery from its file once received).
-    # :none when there is none.
+    # order of this PO + Part with the same Qty that was in Deere's file by the shipment's invoice date. Only with the
+    # same Qty: an order of the PO + Part on another date with another Qty is a later delivery, not the one dispatched;
+    # and an order Deere sent only after the invoice is a later one with the same Qty, not this shipment's (Deere drops
+    # a delivery from its file once received). :none when there is none.
     def same_qty_order(lines, row)
       on = row[:date].strftime("%d %b %Y")
       same = distinct_orders(lines.where.not(order_type: "Forecast").where(qty: row[:qty]).to_a) if row[:qty]&.positive?
+      same = same.select { |line| came_by?(line, row[:invoice_date]) } if same
       return same.first if same&.one?
       return "#{same.size} orders of this PO + Part have Qty #{row[:qty].to_s('F').sub(/\.0\z/, '')} and none is on #{on}" if same&.many?
 
       :none
+    end
+
+    # Whether Deere's file had the order (its PO + Part + Type + PO Line + Ship Date) on `date` or before.
+    def came_by?(line, date)
+      first = OrderRow.joins(:upload_batch).where(upload_batches: { status: "completed" }, group_key: line.group_key,
+                                                  po_line_number: line.po_line_number, ship_date: line.ship_date)
+                      .minimum("upload_batches.completed_at")
+      first.nil? || first.in_time_zone(AppConfig.ageing_time_zone).to_date <= date
+    end
+
+    # Orders no longer in the current order data (OrderRow.dropped).
+    def dropped(**conditions)
+      OrderRow.dropped(batch_ids, **conditions)
     end
 
     # Order lines that are the same order (Deere's file can list an order line twice) once.

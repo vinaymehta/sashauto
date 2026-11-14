@@ -207,3 +207,82 @@ namespace :dispatch do
     puts "#{dry ? 'Would fix' : 'Fixed'} #{marks} orders, #{dropped} duplicate lines dropped; #{fixed} SASH Inc invoice line(s) given the right Order Qty."
   end
 end
+
+namespace :dispatch do
+  # Until 14 Nov 2026 the dispatched orders list put a shipment whose delivery Deere had dropped (received) on a later
+  # order with the same Qty (e.g. a March shipment on a January 2027 order), or skipped it. This sets the list's marks
+  # again: the Received / Dispatched marks the list made are removed (not those of orders also marked Inbound or
+  # Outbound, listed) and FILES (the dispatched lists, oldest first: the old lists with invoice dates, then Book 38)
+  # are imported again, each shipment on its own delivery. One transaction; DRY=1 shows the result and rolls back.
+  desc "Set the dispatched orders list's marks again from FILES=a.xlsx,b.xlsx (oldest first). [EMAIL=admin] [DRY=1]"
+  task rebuild: :environment do
+    dry = ENV["DRY"].present?
+    files = ENV.fetch("FILES") { abort "FILES is required (the dispatched list files, oldest first, comma-separated)" }
+                .split(",").map(&:strip).reject(&:empty?)
+    files.each { |f| abort "No such file: #{f}" unless File.file?(f) }
+    user = ENV["EMAIL"].present? ? User.find_by!(email: ENV["EMAIL"].strip.downcase) : User.active.admins.order(:id).first
+    note = Orders::DispatchImport::NOTE
+    OrderDelivery.transaction do
+      listed = OrderDelivery.active.where(kind: "dispatched").where("note LIKE ?", "#{note}%")
+      before = listed.count
+      kept = OrderDelivery.active.where(order_key: listed.select(:order_key), kind: %w[inbound outbound]).distinct.pluck(:order_key).to_set
+      removed = 0
+      listed.find_each do |d|
+        next puts("KEPT  #{d.part_number} PO #{d.po_number} ship #{d.ship_date}: also marked Inbound / Outbound") if kept.include?(d.order_key)
+
+        OrderDelivery.active.where(order_key: d.order_key).where(id: d.id).or(
+          OrderDelivery.active.where(order_key: d.order_key, kind: "received", note: "Set by the dispatched orders list")
+        ).find_each { |m| m.update!(removed_at: Time.current, removed_by: user) }
+        removed += 1
+      end
+      puts "Removed the list's marks of #{removed} orders."
+      files.each do |path|
+        result = Orders::DispatchImport.call(path: path, user: user)
+        puts "#{File.basename(path)}: #{result.rows} rows, #{result.orders_marked} orders marked, #{result.skipped.size} rows skipped"
+        result.skipped.each { |s| puts "   skipped row #{s[:row]} #{s[:part_number]} PO #{s[:po_number]}: #{s[:reason].to_s.first(140)}" }
+      end
+      after = OrderDelivery.active.where(kind: "dispatched").where("note LIKE ?", "#{note}%")
+      puts "List-made Dispatched marks: #{before} before → #{after.count} now."
+      AuditLog.record("order.dispatched_list_rebuilt", user: user, files: files.map { |f| File.basename(f) }, removed: removed, via: "rake") unless dry
+      raise ActiveRecord::Rollback if dry
+    end
+    puts dry ? "DRY run: nothing changed." : "Done."
+  end
+end
+
+namespace :invoices do
+  # SASH Inc invoices uploaded before the dispatched list's marks were set again (dispatch:rebuild) went to the orders
+  # the list knew then. This removes every active SASH Inc invoice and uploads the PDFs in DIR again in file-name order
+  # (EX/26-27/001 first), as EMAIL. Invoices that match nothing, or that are not SASH Inc invoices, are listed and not
+  # saved. One transaction; DRY=1 shows the result and rolls back.
+  desc "Remove all SASH Inc invoices and upload DIR's PDFs again, oldest first. EMAIL=... [DRY=1]"
+  task reupload_inc: :environment do
+    dry = ENV["DRY"].present?
+    dir = ENV.fetch("DIR") { abort "DIR is required (the folder with the SASH Inc invoice PDFs)" }
+    abort "No such folder: #{dir}" unless File.directory?(dir)
+    user = User.find_by!(email: ENV.fetch("EMAIL") { abort "EMAIL is required (who the invoices are uploaded by)" }.strip.downcase)
+    files = Dir.glob(File.join(dir, "*.pdf")).sort
+    abort "No PDF in #{dir}" if files.empty?
+    Invoice.transaction do
+      old = Invoice.active.where(kind: "inc").order(:id).to_a
+      old.each { |i| i.update!(removed_at: Time.current, removed_by: user) }
+      puts "Removed #{old.size} SASH Inc invoices: #{old.map(&:invoice_number).join(', ')}"
+      saved = unmatched = 0
+      files.each do |path|
+        name = File.basename(path)
+        record, summary = Invoices::Import.new(path: path, filename: name, kind: "inc", view: "all", user: user).save
+        lines = summary[:lines].select { |l| l[:unmatched_qty] }
+        saved += 1
+        unmatched += lines.sum { |l| l[:unmatched_qty].to_d }
+        puts "SAVED     #{name}: #{record.invoice_number}, #{summary[:matched_qty]} of #{summary[:total_qty]} pcs matched" +
+             lines.map { |l| "\n          unmatched #{l[:part_number]} PO #{l[:po_number]}: #{l[:unmatched_qty]} of #{l[:qty]} (#{l[:reason]})" }.join
+      rescue Invoices::Import::Rejected => e
+        puts "NOT SAVED #{name}: #{e.message.first(220)}"
+      end
+      puts "#{saved} of #{files.size} saved; #{unmatched.to_i} pcs unmatched."
+      AuditLog.record("invoices.reuploaded", user: user, kind: "inc", removed: old.size, saved: saved, via: "rake") unless dry
+      raise ActiveRecord::Rollback if dry
+    end
+    puts dry ? "DRY run: nothing changed." : "Done."
+  end
+end
