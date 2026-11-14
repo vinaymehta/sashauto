@@ -29,6 +29,12 @@ module VendorOrders
       linked(wanted, part_number)
     end
 
+    # The vendors saved more than once under one name ("… Pvt. Ltd." and "… Private Limited"): all with `vendor`'s name.
+    def twins(vendor)
+      key = self.class.normalize(vendor.name)
+      @vendors.select { |n, _| n == key }.map(&:last).presence || [ vendor ]
+    end
+
     # The part's vendors (Products) that a cell names, by the start of their name (its first word, or first two when
     # short: "aayess", "gbingeneure", "apls"), in the order the part lists them. Several mean the row is for each.
     def named_in(cell, part_number:)

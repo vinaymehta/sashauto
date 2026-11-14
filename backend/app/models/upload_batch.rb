@@ -23,6 +23,15 @@ class UploadBatch < ApplicationRecord
     (business ? latest_completed_first.where(business: business) : latest_completed_first).first
   end
 
+  # The day (app time zone) an upload was completed; cached, as a completed upload does not change.
+  def self.completed_day(id)
+    return nil unless id
+
+    Rails.cache.fetch("upload_batch_completed_day_#{id}") do
+      find_by(id: id)&.completed_at&.in_time_zone(AppConfig.ageing_time_zone)&.to_date
+    end
+  end
+
   # The latest completed upload of each business of a view ("dtp", "gmbh" or "all"), skipping a business without one.
   def self.latest_for(view)
     Business.of(view).filter_map { |business| latest_completed(business) }

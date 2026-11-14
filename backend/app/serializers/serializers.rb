@@ -87,6 +87,7 @@ module Serializers
 
   def vendor_order(order)
     order.slice(:id, :number, :vendor_id, :ship_date, :order_placed_at, :goods_received_at, :source, :order_date, :created_at)
+         .merge(received_qty: qty(order.receipts.sum(:qty)))
          .merge(vendor_name: order.vendor.name, order_placed_by: order.order_placed_by&.name, goods_received_by: order.goods_received_by&.name, qty: qty(order.qty), unit: order.unit, price_amount: qty(order.unit_price),
                 price_currency: order.price_currency, price_note: order.price_note,
                 # An Intimation Letter comes with the PO (a vendor at the 0.1% GST rate, or one saved before that rule).
@@ -146,6 +147,8 @@ module Serializers
       data[:manual] = row.has_attribute?(:manual) && row[:manual] ? true : false
       # Kept on the Orders page because of a delivery mark, though no longer in the latest upload.
       data[:kept] = row.has_attribute?(:kept) && row[:kept] ? true : false
+      # The day of the old Deere file a kept row comes from (Orders → File column).
+      data[:file_day] = data[:kept] ? UploadBatch.completed_day(row.upload_batch_id) : nil
       # Shipped somewhere other than its business's default Ship To (Orders::ShipTo). The Orders list selects the
       # business with the row; elsewhere it comes from the upload.
       business = row.has_attribute?(:business) ? row[:business] : row.upload_batch&.business

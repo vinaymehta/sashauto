@@ -31,9 +31,12 @@ export function DispatchImportPanel({ onClose, onImported }: { onClose: () => vo
     try {
       const { data } = await api.post<{ data: DispatchImportResult }>("/api/order_deliveries/import", form);
       setResult({ ...data, filename: file.name });
+      const known = data.skipped.filter(alreadyIn).length;
+      const problems = data.skipped.length - known;
       notify(`${formatCount(data.orders_marked)} order${data.orders_marked === 1 ? "" : "s"} marked Dispatched` +
-             `${data.skipped.length ? `, ${formatCount(data.skipped.length)} row${data.skipped.length === 1 ? "" : "s"} skipped` : ""}.`,
-             data.skipped.length ? "error" : "success");
+             `${known ? `, ${formatCount(known)} row${known === 1 ? "" : "s"} already recorded` : ""}` +
+             `${problems ? `, ${formatCount(problems)} row${problems === 1 ? "" : "s"} skipped` : ""}.`,
+             problems ? "error" : "success");
       onImported();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "The import failed.");
@@ -42,6 +45,9 @@ export function DispatchImportPanel({ onClose, onImported }: { onClose: () => vo
       if (input.current) input.current.value = "";
     }
   }
+
+  const known = result?.skipped.filter(alreadyIn) ?? [];
+  const problems = result?.skipped.filter((s) => !alreadyIn(s)) ?? [];
 
   return (
     <Sheet open wide onClose={onClose} title="Import dispatched list" icon={<TruckIcon size={18} />}
@@ -68,8 +74,12 @@ export function DispatchImportPanel({ onClose, onImported }: { onClose: () => vo
         <div className="space-y-4">
           <p className="text-sm text-ink">
             <b>{result.filename}</b>: {formatCount(result.rows)} rows · <b>{formatCount(result.orders_marked)}</b> order{result.orders_marked === 1 ? "" : "s"} marked
-            Dispatched (from {formatCount(result.rows_marked)} row{result.rows_marked === 1 ? "" : "s"}) · <b>{formatCount(result.skipped.length)}</b> skipped
+            Dispatched (from {formatCount(result.rows_marked)} row{result.rows_marked === 1 ? "" : "s"})
+            {known.length > 0 && <> · <b>{formatCount(known.length)}</b> already recorded</>} · <b>{formatCount(problems.length)}</b> skipped
           </p>
+          {result.orders_marked === 0 && known.length > 0 && (
+            <p className="rounded-md bg-subtle px-3 py-2 text-sm text-ink-muted">Nothing new in this file: its shipments were already recorded by an earlier upload.</p>
+          )}
           {result.po_corrected.length > 0 && (
             <section className="overflow-hidden rounded-lg border border-line bg-white shadow-card">
               <header className="border-b border-neutral-100 px-4 py-3">
@@ -95,7 +105,7 @@ export function DispatchImportPanel({ onClose, onImported }: { onClose: () => vo
               </Table>
             </section>
           )}
-          {result.skipped.length > 0 && (
+          {problems.length > 0 && (
             <section className="overflow-hidden rounded-lg border border-line bg-white shadow-card">
               <header className="border-b border-neutral-100 px-4 py-3">
                 <h3 className="text-sm font-semibold text-ink">Skipped rows</h3>
@@ -106,7 +116,7 @@ export function DispatchImportPanel({ onClose, onImported }: { onClose: () => vo
                   <tr><Th align="right">Row</Th><Th>PO Number</Th><Th>Part Number</Th><Th>Date</Th><Th>Invoice</Th><Th>Reason</Th></tr>
                 </thead>
                 <tbody>
-                  {result.skipped.map((s, i) => (
+                  {problems.map((s, i) => (
                     <tr key={`${s.row}-${i}`}>
                       <Td align="right" className="tabular text-ink-muted">{s.row}</Td>
                       <Td className="tabular">{s.po_number ?? "—"}</Td>
@@ -124,4 +134,9 @@ export function DispatchImportPanel({ onClose, onImported }: { onClose: () => vo
       )}
     </Sheet>
   );
+}
+
+// A skipped row whose shipment is already in (an earlier upload of the list recorded it): not a problem.
+function alreadyIn(s: DispatchImportResult["skipped"][number]) {
+  return /^the order is already marked Dispatched with this invoice|^this shipment is already recorded/.test(s.reason);
 }

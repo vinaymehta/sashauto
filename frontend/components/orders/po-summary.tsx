@@ -1,6 +1,6 @@
 "use client";
 
-import type { PoSummary } from "@/lib/types";
+import type { PoSummary, PoSummaryLine } from "@/lib/types";
 import { formatCount, formatDate, formatQty } from "@/lib/format";
 import { useApi } from "../use-api";
 import { formatCustomer } from "../vendors/price-format";
@@ -78,6 +78,7 @@ export function PoSummaryPanel({ po, uploadId }: { po: string; uploadId?: number
                   <th className="px-5 py-2 font-semibold">Line</th>
                   <th className="px-3 py-2 font-semibold">Part Number</th>
                   <th className="px-3 py-2 font-semibold">Type</th>
+                  <th className="px-3 py-2 font-semibold">File</th>
                   <th className="px-3 py-2 font-semibold">Ship date</th>
                   <th className="px-3 py-2 font-semibold">Status</th>
                   <th className="px-2 py-2 text-right font-semibold">Ordered</th>
@@ -96,6 +97,9 @@ export function PoSummaryPanel({ po, uploadId }: { po: string; uploadId?: number
                       {l.description && <span className="block max-w-48 truncate text-xs text-ink-muted" title={l.description}>{l.description}</span>}
                     </td>
                     <td className="px-3 py-2 text-ink">{l.order_type}</td>
+                    <td className="whitespace-nowrap px-3 py-2">
+                      <FileCell line={l} />
+                    </td>
                     <td className="whitespace-nowrap px-3 py-2 text-ink">{formatDate(l.ship_date)}</td>
                     <td className="px-3 py-2"><StatusPill kind={l.status} /></td>
                     <td className="px-2 py-2 text-right tabular text-ink">{formatQty(l.ordered)}</td>
@@ -111,5 +115,16 @@ export function PoSummaryPanel({ po, uploadId }: { po: string; uploadId?: number
         )}
       </section>
     </div>
+  );
+}
+
+function FileCell({ line }: { line: PoSummaryLine }) {
+  if (line.manual) return <span className="text-ink-muted">Manual</span>;
+  return line.kept ? (
+    <span className="whitespace-nowrap font-medium text-age-yellow-ink" title="Not in Deere's latest file: kept for its shipments, invoices or vendor POs">
+      Old file{line.file_day ? ` · ${formatDate(line.file_day)}` : ""}
+    </span>
+  ) : (
+    <span className="text-inc">Latest</span>
   );
 }

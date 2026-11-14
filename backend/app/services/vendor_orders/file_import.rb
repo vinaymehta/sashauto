@@ -111,6 +111,7 @@ module VendorOrders
       product = Product.find_by(part_number: anchor.part_number)
       sets = (row[:issued] / [ product&.pack_size.to_i, 1 ].max).round(3)
       numbers = vendors.to_h { |v| [ v, number_for(row[:vendor_po], v, vendors.size) ] }
+      pieces = vendors.to_h { |v| [ v, qty_for(row[:vendor_po], v, vendors.size) || row[:issued] ] }
       return "this vendor PO is listed twice in the file for the order" unless vendors.all? { |v| seen.add?([ key, v.id, numbers[v] ]) }
 
       # The same row (its order row and vendor) recorded by an earlier upload: the same vendor PO number and Qty are
@@ -122,12 +123,12 @@ module VendorOrders
         earlier = earlier.where.not(vendor_order_placements: { vendor_po_import_id: record.id }) if record
         same = earlier.find_by(number: numbers[v]) || (earlier.count == 1 ? earlier.first : nil)
         joined ||= same&.vendor_order_placement
-        next true if same && same.number == numbers[v] && same.qty == row[:issued]
+        next true if same && same.number == numbers[v] && same.qty == pieces[v]
 
         if same
           @conflicts << { id: @conflicts.size + 1, kind: "orders", status: "open", row: row[:row], part_number: anchor.part_number, po_number: anchor.po_number,
                           ship_date: anchor.ship_date.iso8601, vendor: v.name, vendor_order_id: same.id,
-                          old: { number: same.number, qty: same.qty.to_s("F") }, new: { number: numbers[v], qty: row[:issued].to_s("F"), sets: sets.to_s("F") } }
+                          old: { number: same.number, qty: same.qty.to_s("F") }, new: { number: numbers[v], qty: pieces[v].to_s("F"), sets: sets.to_s("F") } }
           next true
         end
         VendorOrder.joins(:vendor_order_placement).where(number: numbers[v], vendor: v, vendor_order_placements: { order_key: key }).exists?
@@ -157,7 +158,7 @@ module VendorOrders
       links = product ? product.vendor_products.where(vendor: fresh).index_by(&:vendor_id) : {}
       fresh.each do |v|
         link = links[v.id]
-        VendorOrder.create!(vendor_order_placement: placement, vendor: v, number: numbers[v].first(255), qty: row[:issued],
+        VendorOrder.create!(vendor_order_placement: placement, vendor: v, number: numbers[v].first(255), qty: pieces[v],
                             unit: "pcs", source: "file", email_status: "no_email", order_placed_at: now, order_placed_by: @user,
                             order_date: row[:order_date], source_order_key: own_key,
                             unit_price: vendors.size > 1 ? link&.price_amount : nil, price_currency: vendors.size > 1 ? link&.price_currency : nil)
@@ -183,6 +184,13 @@ module VendorOrders
       named = @vendor_match.named_in(row[:vendor], part_number: row[:part_number])
       return named if named.size > 1
 
+      # A cell naming several vendors ("JTB Hydraulic Industries & S.B Auto"): each of them, when every name is a vendor.
+      names = row[:vendor].to_s.split(/\s*[&,+]\s*|\s+and\s+/i).reject(&:blank?)
+      if names.size > 1
+        each = names.map { |n| @vendor_match.find(n) }
+        return each.uniq if each.all? && each.uniq.size == names.size
+      end
+
       found = @vendor_match.find(row[:vendor], part_number: row[:part_number])
       found ? [ found ] : named
     end
@@ -193,9 +201,31 @@ module VendorOrders
     def number_for(cell, vendor, count)
       return cell if count == 1
 
-      codes = [ vendor.code, VendorOrder.acronym(vendor.name), VendorMatch.normalize(vendor.name).split.first ].compact.map { |c| c.to_s.downcase.delete(" ") }.reject(&:empty?)
-      parts = cell.split(/\s*(?:&|,)\s*/).map { |p| p.sub(/\s*-\s*\d[\d.,]*\s*(?:pcs)?\s*\z/i, "").strip }.reject(&:empty?)
-      parts.find { |p| (suffix = p.split("/").last.to_s.downcase.gsub(/[^a-z0-9]/, "")) && codes.any? { |c| suffix == c || c.start_with?(suffix) || suffix.start_with?(c) } } || cell
+      cell_entry(cell, vendor)&.first || cell
+    end
+
+    # The vendor's pieces in a cell that splits the PO Qty between its vendors ("5500929571-July/JTB - 35 pcs ,
+    # 5500929571-Sep/SB - 465 pcs"); nil when the cell gives none (each vendor then gets the row's Qty).
+    def qty_for(cell, vendor, count)
+      return nil if count == 1
+
+      cell_entry(cell, vendor)&.last
+    end
+
+    # [vendor PO number, Qty or nil] of `vendor` in a cell listing several.
+    def cell_entry(cell, vendor)
+      # Codes of one letter ("s" of "S.B. Auto") would fit any suffix starting with it.
+      codes = [ vendor.code, VendorOrder.acronym(vendor.name), VendorMatch.normalize(vendor.name).split.first ].compact.map { |c| c.to_s.downcase.delete(" ") }.select { |c| c.length > 1 }
+      entries = cell.split(/\s*(?:&|,)\s*/).filter_map do |part|
+        qty = part[/\s*-\s*(\d[\d.,]*)\s*(?:pcs)?\s*\z/i, 1]
+        number = part.sub(/\s*-\s*\d[\d.,]*\s*(?:pcs)?\s*\z/i, "").strip
+        suffix = number.split("/").last.to_s.downcase.gsub(/[^a-z0-9]/, "")
+        [ number, qty && BigDecimal(qty.delete(",")), suffix ] unless number.empty? || suffix.empty?
+      end
+      # The entry ending in the vendor's code itself first, else one whose ending and code start alike.
+      found = entries.find { |_, _, suffix| codes.include?(suffix) } ||
+              entries.find { |_, _, suffix| codes.any? { |c| c.start_with?(suffix) || suffix.start_with?(c) } }
+      found&.first(2)
     end
 
     # The order row of a file row: the current order data's row of its PO + Part + Type + PO Line on its date (Ship Date

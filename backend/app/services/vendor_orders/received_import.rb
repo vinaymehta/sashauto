@@ -111,6 +111,10 @@ module VendorOrders
       return [ "no Vendor Invoice No.", "other" ] if row[:invoice_number].blank?
 
       vendor ||= (@vendors ||= VendorMatch.new).find(row[:vendor], part_number: row[:part_number]) or return [ "vendor \"#{row[:vendor]}\" is not in Vendors", "vendor" ]
+      # A vendor saved twice under one name: the one its POs of the part were recorded with.
+      vendor = (@vendors ||= VendorMatch.new).twins(vendor).find do |v|
+        VendorOrder.joins(:vendor_order_placement).where(vendor: v, vendor_order_placements: { part_number: row[:part_number] }).exists?
+      end || vendor
       orders = VendorOrder.joins(:vendor_order_placement).left_joins(vendor_order_placement: :upload_batch)
                           .where(vendor: vendor, vendor_order_placements: { part_number: row[:part_number] })
       orders = orders.where(upload_batches: { business: @business }).or(orders.where(vendor_order_placements: { upload_batch_id: nil }))
@@ -213,7 +217,8 @@ module VendorOrders
     # A number, also one Excel shows as a date (the Quantity and Rate cells of SASH's file are formatted as dates).
     def number(value)
       return nil if value.nil? || value.to_s.strip.empty?
-      return BigDecimal((value.to_date - EXCEL_EPOCH).to_i) if value.is_a?(Date) || value.is_a?(Time)
+      # A time of day is a fraction of a day: Rate 3.5 shows as 02 Jan 1900 12:00.
+      return BigDecimal((value.to_datetime - EXCEL_EPOCH.to_datetime).to_r, 12).round(4) if value.is_a?(Date) || value.is_a?(Time)
 
       BigDecimal(value.to_s.delete(",").strip)
     rescue ArgumentError

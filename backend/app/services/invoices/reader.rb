@@ -94,10 +94,25 @@ module Invoices
       first.match?(/PACKING\s+LIST/i) && !first.match?(/INVOICE/i)
     end
 
+    DISPATCHED_LIST = "This is a list of dispatched orders, not an invoice: upload it with Orders → Actions → Import dispatched list.".freeze
+
+    # A workbook that is SASH India's list of dispatched orders or Book 38 (its headers in the first rows).
+    def dispatched_list?(sheets)
+      sheets.any? do |s|
+        next false unless s.first_row
+
+        (s.first_row..[ s.last_row, s.first_row + 10 ].min).any? do |n|
+          heads = s.row(n).map { |c| cell_text(c).to_s.downcase.squish }
+          (heads.include?("sash part") && heads.include?("invoice number")) || (heads.include?("calc sales order no") && heads.include?("invoice no"))
+        end
+      end
+    end
+
     # Rows of the invoice sheet as cells: [[column index, value], ...] (values as Roo gives them: text, numbers, dates).
     def excel_rows
       book = Roo::Excelx.new(@path, extension: :xlsx, file_warning: :ignore)
       sheets = book.sheets.map { |name| book.sheet(name) }
+      raise InvalidFile, DISPATCHED_LIST if dispatched_list?(sheets)
       sheet = sheets.find { |s| s.first_row && (s.first_row..[ s.last_row, s.first_row + 40 ].min).any? { |n| s.row(n).any? { |c| INVOICE_LABEL.match?(cell_text(c)) } } }
       raise InvalidFile, "No sheet of the workbook has \"Invoice No. & Date\"." unless sheet
 

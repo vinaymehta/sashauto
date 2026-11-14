@@ -85,7 +85,7 @@ const COLUMNS: { label: string; value: (r: OrderRow, description: string | null)
 // after an admin adds orders to one or takes them out. `group` gives the part's MOQ (header, and ✓ / ✗ per Quantity).
 export function OrderDetailsBody({ row, rows, description, combined = [], onChanged, group }: {
   row: OrderRow; rows: OrderRow[]; description: string | null; combined?: ScheduleGroup[]; onChanged?: () => void;
-  group?: OrderHistory["group"];
+  group?: OrderHistory["group"]; file?: OrderHistory["file"];
 }) {
   const s = row.source_data;
   const cityLine = [src(s, "Ship to City"), [src(s, "Ship to Region"), src(s, "Ship to PostalCode")].filter(Boolean).join(" ")].filter(Boolean).join(", ");

@@ -76,6 +76,15 @@ function OrderedBadge({ row }: { row: OrderRow }) {
   return <span title={`${formatQty(String(total - ordered))} still to order`}><Badge tone="warn">PO {formatQty(String(ordered))} of {formatQty(String(total))}</Badge></span>;
 }
 
+// File: "Latest" for a row of Deere's latest file, "Old file" (its day) for one kept on Orders from an old file for its
+// status marks, invoices or vendor POs; manual orders are in no file.
+function FileCell({ row }: { row: OrderRow }) {
+  if (row.manual) return <span className="text-ink-muted">Manual</span>;
+  return row.kept
+    ? <span className="whitespace-nowrap font-medium text-age-yellow-ink" title="Not in Deere's latest file: kept for its shipments, invoices or vendor POs">Old file{row.file_day ? ` · ${formatDate(row.file_day)}` : ""}</span>
+    : <span className="text-inc">Latest</span>;
+}
+
 // Opens the Place order panel for a row (provided by the Orders page; null for the Warehouse Manager).
 // A text cell shown in full: it wraps onto more lines (up to 18rem wide) instead of ending in "…".
 const WRAP = "block min-w-40 max-w-72 whitespace-normal break-words leading-snug";
@@ -152,6 +161,7 @@ const typedColumns = (uploadId?: number): Record<string, Omit<Column, "key" | "l
 const invoiceTitle = (r: OrderRow, kind: InvoiceKind) => (r.invoice_moves ?? []).filter((m) => m.kind === kind)
   .map((m) => `${m.invoice_number} (${formatDate(m.invoice_date)}): Qty ${formatQty(m.qty)}`).join("\n") || undefined;
 const INVOICE_COLUMNS: Column[] = [
+  { key: "file", label: "File", sortable: false, render: (r) => <FileCell row={r} /> },
   { key: "order_qty", label: "Order Qty", align: "right", sortable: false, render: (r) => qty(r.order_qty ?? r.qty) },
   { key: "shipped_qty", label: "Shipped Qty", align: "right", sortable: false,
     render: (r) => <span title={invoiceTitle(r, "india")}>{qty(r.shipped_qty ?? null)}</span> },
@@ -210,7 +220,7 @@ function buildColumns(columns: { key: string; label: string }[], uploadId?: numb
 // The Orders table columns a user sees until they choose their own (Columns; its Default button goes back to them): ten
 // at most, with every clickable column: Status (marks), PO Number (Order details), Part Number (Product summary) and
 // Unit (Place order: Generate PO).
-const DEFAULT_COLUMNS = ["status", "type", "firm_date", "ship_date", "po_number", "part_number", "part_description", "unit", "qty", "balance_qty"];
+const DEFAULT_COLUMNS = ["status", "type", "file", "firm_date", "ship_date", "po_number", "part_number", "part_description", "unit", "qty", "balance_qty"];
 
 // Delivery tabs: the order rows with a fixed Status. Dispatched = part (Dispatch) or all (Dispatched) dispatched from
 // SASH Faridabad (SASH India invoices) but not yet at SASH US, Orders fulfilled = delivered to Deere.

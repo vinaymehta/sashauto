@@ -449,6 +449,7 @@ export interface OrderRow {
   order_placed?: boolean; // every PO of it is ticked "Order placed" (sent to the vendor; Orders list only)
   ordered_qty?: string | null; // sets ordered by its POs so far (Orders list only)
   kept?: boolean; // kept on Orders by a status mark, though no longer in the latest upload
+  file_day?: string | null; // a kept row: the day of the old Deere file it comes from
   other_ship_to?: boolean; // Ship To is not the default address
   below_moq?: boolean; // the part needs MOQ: its balance to order (Firm Qty less PO issued) is below its MOQ
   moq?: string | null; // the part's MOQ (sets), sent with below_moq
@@ -505,6 +506,9 @@ export interface OrderHistory {
   group: { po_number: string; part_number: string; order_type: OrderType; description: string | null; moq: string | null; moq_pcs: string | null; pack_size: number };
   combined?: ScheduleGroup[]; // combined orders among the rows (imported orders only)
   invoices?: InvoiceAllocationInfo[]; // every dispatch and outbound of the rows on uploaded invoices, oldest first
+  // The Deere file the order and its Schedule come from; latest false: an old file (the order is kept for its history),
+  // in_latest_ids: the Schedule rows still in the latest file.
+  file?: { name: string; day: string | null; latest: boolean; latest_day: string | null; in_latest_ids: number[] };
 }
 
 // A combined order in the Order details Schedule. manual_ids: orders an admin added by hand; removed_ids: orders
@@ -666,7 +670,8 @@ export interface VendorOrderInfo {
   id: number;
   number: string;
   source?: "app" | "file"; // file: recorded from an uploaded vendor PO list (no PDF)
-  goods_received_at?: string | null; // the vendor's material at SASH Faridabad
+  goods_received_at?: string | null; // the vendor's material at SASH Faridabad (received in full)
+  received_qty?: string; // pieces received so far (receipts)
   goods_received_by?: string | null;
   vendor_id: number;
   vendor_name: string;
@@ -880,6 +885,9 @@ export interface PoSummaryLine extends PartSummaryFigures {
   ship_date: string;
   ship_to_location: string;
   status: OrderStatus;
+  manual?: boolean;
+  kept?: boolean;
+  file_day?: string | null;
 }
 
 export interface PoSummary {

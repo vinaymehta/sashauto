@@ -3582,6 +3582,7 @@ ALTER TABLE ONLY public.address_changes
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261114000007'),
 ('20261114000006'),
 ('20261114000005'),
 ('20261114000004'),

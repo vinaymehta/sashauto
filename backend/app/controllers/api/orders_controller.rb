@@ -182,6 +182,7 @@ module Api
         end,
         headers: row.source_columns.presence || row.source_data.keys,
         group: group_info(row),
+        file: file_info(row, rows),
         combined: groups.map { |g| schedule_group(g, combined) },
         invoices: invoice_moves(rows.map { |r| VendorOrderPlacement.order_key(r) })
       }
@@ -233,8 +234,12 @@ module Api
                                              forecast: Serializers.qty(forecast.sum(0.to_d) { |r| r.qty.to_d }), forecast_rows: forecast.size),
         lines: lines.sort_by { |l| [ l[:row].po_line_number, l[:row].ship_date, l[:row].part_number ] }.map do |l|
           row = l[:row]
+          kept = row.has_attribute?(:kept) && row[:kept] ? true : false
+          manual = row.has_attribute?(:manual) ? row[:manual] : (row.upload_batch_id.nil? && row.source_file.nil?)
+          file_day = kept ? UploadBatch.completed_day(row.upload_batch_id) : nil
           summary_figures([ l ]).merge(part_number: row.part_number, description: descriptions[row.part_number], po_line_number: row.po_line_number,
-                                       order_type: row.order_type, ship_date: row.ship_date, ship_to_location: row.ship_to_location, status: l[:status])
+                                       order_type: row.order_type, ship_date: row.ship_date, ship_to_location: row.ship_to_location, status: l[:status],
+                                       kept: kept, manual: manual, file_day: file_day)
         end
       } }
     end
@@ -406,6 +411,23 @@ module Api
 
     # Order details header of a row's PO Number + Part Number + Type: the part's Description (the file's, as on the
     # Orders page, else the product's) and MOQ (sets, and pieces for pack parts).
+    # Which Deere file the opened order and its Schedule come from: that upload (name, day), whether it is the
+    # business's latest one, and (an old file) the latest file's day and the Schedule rows still in it (by order key).
+    def file_info(row, rows)
+      batch = row.upload_batch
+      latest = UploadBatch.latest_completed(batch.business)
+      in_latest = if latest && latest.id != batch.id
+        keys = rows.map { |r| [ r.group_key, r.po_line_number, r.ship_date ] }
+        OrderRow.where(upload_batch_id: latest.id, group_key: rows.map(&:group_key).uniq).pluck(:group_key, :po_line_number, :ship_date)
+                .select { |k| keys.include?(k) }.map { |g, l, d| rows.find { |r| [ r.group_key, r.po_line_number, r.ship_date ] == [ g, l, d ] }&.id }.compact
+      else
+        rows.map(&:id)
+      end
+      zone = Time.find_zone!(AppConfig.ageing_time_zone)
+      { name: batch.original_filename, day: batch.completed_at&.in_time_zone(zone)&.to_date, latest: latest&.id == batch.id,
+        latest_day: latest&.completed_at&.in_time_zone(zone)&.to_date, in_latest_ids: in_latest }
+    end
+
     def group_info(row)
       product = Product.find_by(part_number: row.part_number)
       from_file = row.source_data.find { |label, value| label.strip.casecmp?("description") && value.to_s.strip.present? }&.last.to_s.squish
