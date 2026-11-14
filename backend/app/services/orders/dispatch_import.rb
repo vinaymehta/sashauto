@@ -106,7 +106,7 @@ module Orders
         return found unless found.nil?
       end
       found = on_date(dropped(po_number: row[:po_number], part_number: row[:part_number]), row, "this PO + Part in earlier order files")
-      return found unless found.nil?
+      return moved_to(found) unless found.nil?
 
       if lines.exists?
         found = same_qty_order(lines, row)
@@ -115,7 +115,7 @@ module Orders
 
       part_lines = OrderRow.where(upload_batch_id: batch_ids, part_number: row[:part_number])
       found = part_lines.exists? ? on_date(part_lines, row, "this Part") : nil
-      found = on_date(dropped(part_number: row[:part_number]), row, "this Part in earlier order files") if found.nil?
+      found = moved_to(on_date(dropped(part_number: row[:part_number]), row, "this Part in earlier order files")) if found.nil?
       return found unless found.nil?
       return "Part #{row[:part_number]} is not in the current order data" unless part_lines.exists?
 
@@ -172,6 +172,38 @@ module Orders
                                                   po_line_number: line.po_line_number, ship_date: line.ship_date)
                       .minimum("upload_batches.completed_at")
       first.nil? || first.in_time_zone(AppConfig.ageing_time_zone).to_date <= date
+    end
+
+    # Where a delivery no longer in Deere's file went, when Deere moved it rather than receiving it: the order of the same
+    # PO + Part + PO Line that is new in the next upload after its last one, with the Qty it still had in that last one
+    # (e.g. 19 Nov pulled in to 13 Sep: the list still names 19 Nov). Followed while it moves again; the current order,
+    # else its last version. A delivery that ends with no Qty left (received) stays itself, even when a new one with
+    # the same Qty follows. Anything else (a message, nil) is returned as it is.
+    def moved_to(order, depth = 0)
+      return order unless order.is_a?(OrderRow) && depth < 5
+
+      business = order.upload_batch.business
+      same = OrderRow.where(po_number: order.po_number, part_number: order.part_number, po_line_number: order.po_line_number)
+                     .where.not(order_type: "Forecast")
+      last = same.where(ship_date: order.ship_date).joins(:upload_batch).where(upload_batches: { business: business, status: "completed" })
+                 .maximum(:upload_batch_id)
+      following = UploadBatch.completed.where(business: business).where("id > ?", last).order(:id).first
+      return order unless following
+
+      final = same.where(upload_batch_id: last, ship_date: order.ship_date).maximum(:qty)
+      return order unless final&.positive?
+
+      before = same.where(upload_batch_id: last).pluck(:ship_date).to_set
+      new_rows = same.where(upload_batch_id: following.id, qty: final).reject { |r| before.include?(r.ship_date) }
+      return order unless new_rows.one?
+
+      target = new_rows.first
+      current = OrderRow.where(upload_batch_id: batch_ids, group_key: target.group_key, po_line_number: target.po_line_number,
+                               ship_date: target.ship_date).first
+      return current if current
+
+      later = dropped(po_number: target.po_number, part_number: target.part_number).find_by(po_line_number: target.po_line_number, ship_date: target.ship_date)
+      later ? moved_to(later, depth + 1) : order
     end
 
     # Orders no longer in the current order data (OrderRow.dropped).
