@@ -854,7 +854,8 @@ export interface PartSummaryFigures {
   dispatched: string;
   in_transit: string;
   delivered: string;
-  pending: string;
+  pending: string; // still to dispatch as per SASH (Ordered − Dispatched)
+  pending_dtp: string; // still open in Deere's latest file (Ordered − Delivered)
   orders: number; // Firm / Order rows
   open_orders: number; // of them still to dispatch
   revenue_ordered: string; // Qty ordered × Deere Unit Price ÷ 100, in the business's currency

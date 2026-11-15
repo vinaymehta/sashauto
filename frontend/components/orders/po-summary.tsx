@@ -24,9 +24,11 @@ export function PoSummaryPanel({ po, uploadId }: { po: string; uploadId?: number
   const money = (v: string) => (s.currency ? formatCustomer(v, s.currency, 2) : Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 }));
   const tiles: { label: string; value: string; tone: string; dot: string }[] = [
     { label: "Total ordered", value: t.ordered, tone: "text-ink", dot: "bg-neutral-400" },
-    { label: "Pending to dispatch", value: t.pending, tone: Number(t.pending) > 0 ? "text-amber-700" : "text-ink-faint", dot: "bg-neutral-300" },
-    { label: "Dispatched", value: t.dispatched, tone: "text-violet-700", dot: "bg-violet-500" },
     { label: "Delivered to Deere", value: t.delivered, tone: "text-green-700", dot: "bg-green-600" },
+    { label: "In transit", value: t.in_transit, tone: "text-violet-700", dot: "bg-violet-500" },
+    { label: "Dispatched", value: t.dispatched, tone: "text-violet-700", dot: "bg-violet-500" },
+    { label: "Pending as per DTP", value: t.pending_dtp, tone: Number(t.pending_dtp) > 0 ? "text-amber-700" : "text-ink-faint", dot: "bg-neutral-300" },
+    { label: "Pending to dispatch", value: t.pending, tone: Number(t.pending) > 0 ? "text-amber-700" : "text-ink-faint", dot: "bg-neutral-300" },
   ];
 
   return (
@@ -46,7 +48,7 @@ export function PoSummaryPanel({ po, uploadId }: { po: string; uploadId?: number
       </section>
 
       <section className="space-y-3 rounded-lg border border-line bg-white px-5 py-4 shadow-card">
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
           {tiles.map((tile) => (
             <div key={tile.label} className="rounded-md bg-neutral-50 px-3 py-2 ring-1 ring-line">
               <span className="flex items-center gap-1.5 text-xs text-ink-muted"><span className={`h-2 w-2 rounded-full ${tile.dot}`} />{tile.label}</span>

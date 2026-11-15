@@ -215,7 +215,7 @@ module Api
         totals: summary_figures(lines).merge(forecast: Serializers.qty(rows.select { |r| r.order_type == "Forecast" }.sum(0.to_d) { |r| r.qty.to_d }),
                                              vendor_po: Serializers.qty(placed.values.sum(0.to_d)), pos: lines.map { |l| l[:row].po_number }.uniq.size),
         pos: lines.group_by { |l| l[:row].po_number }.sort_by { |po, list| [ list.map { |l| l[:row].ship_date }.min, po ] }.map do |po, list|
-          open = list.select { |l| l[:ordered] > l[:shipped] }
+          open = list.select { |l| l[:pending].positive? }
           summary_figures(list).merge(po_number: po, types: list.map { |l| l[:row].order_type }.uniq.sort,
                                       next_ship_date: open.map { |l| l[:row].ship_date }.min, last_ship_date: list.map { |l| l[:row].ship_date }.max)
         end
@@ -289,21 +289,46 @@ module Api
         else 0.to_d
         end
         delivered = info[:outbound_qty] ? info[:outbound_qty].to_d : (info[:status] == "outbound" ? ordered : 0.to_d)
+        # Ordered = what Deere has received + what Deere still lists as open (pending as per DTP). Deere's Qty is the
+        # open Qty, so a row's Qty at dispatch overstates it once goods arrive, and a kept row (no longer in Deere's file)
+        # has nothing open: its dispatches count, its Qty does not. A manual order is SASH's own: its Qty stays.
+        open = if row[:manual] then [ ordered - delivered, 0.to_d ].max
+        elsif row[:kept] then 0.to_d
+        else row.qty.to_d
+        end
         text = row.source_data&.dig("Unit Price").to_s.delete(",").strip
         price = text.match?(/\A\d+(\.\d+)?\z/) ? BigDecimal(text) : fallback[row.part_number]
-        { row: row, ordered: ordered, shipped: shipped, delivered: delivered, price: price, status: info[:status] }
+        { row: row, ordered: open + delivered, open: open, shipped: shipped, delivered: delivered, price: price, status: info[:status] }
+      end.then { |lines| allocate_pending(lines) }
+    end
+
+    # Pending to dispatch (as per SASH) of each summary line. Dispatches are often recorded on an earlier ship date than
+    # the Qty Deere now lists (e.g. on a kept row, or more than a row's Ordered), so within one PO line (PO + Part + PO
+    # Line) what a row got beyond its Ordered covers the open rows after it, earliest ship date first. The rows' pending
+    # then adds up to the PO line's Ordered − Dispatched.
+    def allocate_pending(lines)
+      lines.group_by { |l| [ l[:row].po_number, l[:row].part_number, l[:row].po_line_number ] }.each_value do |group|
+        group = group.sort_by { |l| l[:row].ship_date }
+        surplus = group.sum(0.to_d) { |l| [ l[:shipped] - l[:ordered], 0.to_d ].max }
+        group.each do |l|
+          own = [ l[:ordered] - l[:shipped], 0.to_d ].max
+          covered = [ own, surplus ].min
+          surplus -= covered
+          l[:pending] = own - covered
+        end
       end
+      lines
     end
 
     # Totals of summary lines: Qty ordered, dispatched, in transit, delivered, still to dispatch, orders (open), and the
     # revenue of the Qty ordered, dispatched and delivered (Qty × price ÷ 100; lines without a price left out, counted in
     # unpriced). Dispatched includes what is still in transit, so it is not 0 before Deere receives the goods.
     def summary_figures(lines)
-      ordered, shipped, delivered = %i[ordered shipped delivered].map { |k| lines.sum(0.to_d) { |l| l[k] } }
+      ordered, open, shipped, delivered, pending = %i[ordered open shipped delivered pending].map { |k| lines.sum(0.to_d) { |l| l[k] } }
       priced = lines.select { |l| l[:price] }
       { ordered: Serializers.qty(ordered), dispatched: Serializers.qty(shipped), in_transit: Serializers.qty([ shipped - delivered, 0 ].max),
-        delivered: Serializers.qty(delivered), pending: Serializers.qty([ ordered - shipped, 0 ].max), orders: lines.size,
-        open_orders: lines.count { |l| l[:ordered] > l[:shipped] },
+        delivered: Serializers.qty(delivered), pending: Serializers.qty(pending), pending_dtp: Serializers.qty(open), orders: lines.size,
+        open_orders: lines.count { |l| l[:pending].positive? },
         revenue_ordered: (priced.sum(0.to_d) { |l| l[:ordered] * l[:price] / 100 }).round(2).to_s("F"),
         revenue_dispatched: (priced.sum(0.to_d) { |l| l[:shipped] * l[:price] / 100 }).round(2).to_s("F"),
         revenue_delivered: (priced.sum(0.to_d) { |l| l[:delivered] * l[:price] / 100 }).round(2).to_s("F"),
