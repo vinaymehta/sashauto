@@ -52,6 +52,8 @@ Rails.application.routes.draw do
         get :po_summary
         get :part_summary
         get :parts_summary
+        get :fulfilment
+        get :ship_to_alerts
       end
     end
     resources :order_deliveries, only: :destroy do

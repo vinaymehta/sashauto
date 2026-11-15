@@ -1,3 +1,5 @@
+require "csv"
+
 module Api
   # The current order data of the business view (Business: DTP, GMBH or both for "All"): each business's latest
   # upload plus its manual orders, or (`upload_id`) any earlier upload's rows exactly as imported. Search, sorting and
@@ -248,6 +250,45 @@ module Api
       } }
     end
 
+    # Fulfilment figures of the Dashboard: the Product summary's totals (#summary_figures) over every Firm / Order order of
+    # the current order data, in total and per business of the view: Qty and value ordered, delivered to Deere, in
+    # transit, dispatched, pending as per DTP (open in Deere's file) and pending to dispatch as per SASH.
+    def fulfilment
+      batches = UploadBatch.latest_for(current_business)
+      load_combined_orders(Orders::Combiner.for_batches(batches.map(&:id)))
+      lines = summary_lines(dataset(batches).to_a)
+      by_business = lines.group_by { |l| l[:row][:business] }
+      render json: { data: {
+        currency: summary_currency, files: batches.map { |b| { business: b.business, name: b.original_filename, completed_at: b.completed_at } },
+        totals: summary_figures(lines),
+        by_business: businesses.map { |b| summary_figures(by_business[b] || []).merge(business: b, currency: Business.currency(b)) }
+      } }
+    end
+
+    # Different Ship To (Orders page box): the rows of each business's latest upload shipped to an address other than its
+    # default (Orders::ShipTo), as the alert email lists them, with the part's description and the Qty. `format=csv` or
+    # `format=xlsx` downloads the same list.
+    SHIP_TO_HEADERS = [ "Business", "PO Number", "PO Line", "Part Number", "Part Description", "Type", "Ship Date", "Qty", "Ship To" ].freeze
+
+    def ship_to_alerts
+      batches = UploadBatch.latest_for(current_business)
+      rows = batches.flat_map do |batch|
+        default = Orders::ShipTo.default_key(batch.business)
+        batch.order_rows.order(:ship_date, :po_number, :po_line_number).select { |r| Orders::ShipTo.other?(r.source_data, default) }
+             .map { |r| [ batch.business, r ] }
+      end
+      descriptions = Product.where(part_number: rows.map { |_, r| r.part_number }.uniq).pluck(:part_number, :description).to_h
+      list = rows.map do |business, r|
+        { business: business, po_number: r.po_number, po_line_number: r.po_line_number, part_number: r.part_number,
+          description: descriptions[r.part_number], order_type: r.order_type, ship_date: r.ship_date, qty: Serializers.qty(r.qty),
+          ship_to: Orders::ShipTo.address(r.source_data) }
+      end
+      return send_ship_to_export(list, params[:format].to_s) if %w[csv xlsx].include?(params[:format].to_s)
+
+      render json: { data: { rows: list, files: batches.map { |b| { business: b.business, name: b.original_filename } },
+                             defaults: batches.to_h { |b| [ b.business, AppConfig.default_ship_to(b.business) ] } } }
+    end
+
     # Product-wise summary (Products → Product summary): every part of the shown order data with the same figures as its
     # Product summary (#part_summary), largest revenue first.
     def parts_summary
@@ -332,6 +373,9 @@ module Api
         revenue_ordered: (priced.sum(0.to_d) { |l| l[:ordered] * l[:price] / 100 }).round(2).to_s("F"),
         revenue_dispatched: (priced.sum(0.to_d) { |l| l[:shipped] * l[:price] / 100 }).round(2).to_s("F"),
         revenue_delivered: (priced.sum(0.to_d) { |l| l[:delivered] * l[:price] / 100 }).round(2).to_s("F"),
+        revenue_in_transit: [ priced.sum(0.to_d) { |l| (l[:shipped] - l[:delivered]) * l[:price] / 100 }, 0.to_d ].max.round(2).to_s("F"),
+        revenue_pending_dtp: (priced.sum(0.to_d) { |l| l[:open] * l[:price] / 100 }).round(2).to_s("F"),
+        revenue_pending: (priced.sum(0.to_d) { |l| l[:pending] * l[:price] / 100 }).round(2).to_s("F"),
         unpriced: lines.size - priced.size }
     end
 
@@ -352,6 +396,23 @@ module Api
     end
 
     private
+
+    # The Different Ship To list as a .csv or .xlsx download.
+    def send_ship_to_export(list, format)
+      values = list.map do |r|
+        [ Business.label(r[:business]), r[:po_number], r[:po_line_number], r[:part_number], r[:description], r[:order_type],
+          r[:ship_date]&.strftime("%d.%m.%Y"), r[:qty]&.to_d, r[:ship_to] ]
+      end
+      audit("orders.ship_to_exported", business: current_business, rows: values.size, format: format)
+      name = "#{Business.label(current_business)} - Different Ship To #{Date.current.iso8601}"
+      if format == "xlsx"
+        send_data ExcelExport::XlsxWriter.call(SHIP_TO_HEADERS, values, sheet_name: "Different Ship To", freeze_columns: 4),
+                  filename: "#{name}.xlsx", type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", disposition: "attachment"
+      else
+        csv = CSV.generate { |out| out << SHIP_TO_HEADERS; values.each { |v| out << v.map { |x| x.is_a?(BigDecimal) ? Serializers.qty(x) : x } } }
+        send_data "\uFEFF#{csv}", filename: "#{name}.csv", type: "text/csv; charset=utf-8", disposition: "attachment"
+      end
+    end
 
     # Statuses in route order: dispatch (part of the Qty dispatched on SASH India invoices) and dispatched (all of it, or a
     # Dispatched mark) come from Faridabad; delivery (part of the Qty delivered to Deere on SASH Inc invoices) and

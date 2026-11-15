@@ -4,7 +4,7 @@ import { can } from "@/lib/permissions";
 import { useSession } from "@/components/session";
 import Link from "next/link";
 import { createContext, useContext, useState, type ReactNode } from "react";
-import type { DashboardOrder, DashboardOverview, DateAmount, OrderRow, OrdersSummary, PipelineStatus, ProductVendor, Stats } from "@/lib/types";
+import type { DashboardOrder, DashboardOverview, DateAmount, Fulfilment, OrderRow, OrdersSummary, PipelineStatus, ProductVendor, Stats } from "@/lib/types";
 import { todayParam } from "@/components/age";
 import { OrderDetailPanel } from "@/components/orders/history-row";
 import { formatCount, formatDate, formatQty } from "@/lib/format";
@@ -182,6 +182,8 @@ export default function DashboardPage() {
                     value={usd(ytd.amount)}
                     detail={`${formatDate(ytd.from)} – ${formatDate(ytd.to)} · ${ordersText(ytd.orders, ytd.without_price)}`} />
         </div>
+
+        {can(me, "orders") && <FulfilmentSection />}
 
         {/* Operations (Dashboard::Overview). */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
@@ -560,5 +562,83 @@ function DashboardSkeleton() {
         <Skeleton className="h-80 rounded-lg" />
       </div>
     </div>
+  );
+}
+
+// Fulfilment: the Product summary's figures over every Firm / Order order of the current order data, Qty and Deere value
+// (Qty × Unit Price ÷ 100), in total and per business in All.
+function FulfilmentSection() {
+  const { data, error } = useApi<{ data: Fulfilment }>("/api/orders/fulfilment");
+  const money = moneyIn(data?.data.currency ?? null);
+  if (error) return <Alert title="Could not load the fulfilment figures">{error.message}</Alert>;
+  if (!data) return <Skeleton className="h-44 w-full" />;
+  const f = data.data;
+  const t = f.totals;
+  const figures: { key: string; label: string; qty: string; value?: string; tint: Tint; icon: ReactNode; info: ReactNode }[] = [
+    { key: "ordered", label: "Total ordered", qty: t.ordered, value: t.revenue_ordered, tint: "neutral", icon: <FileIcon size={16} />,
+      info: <>Delivered to Deere + Pending as per DTP: what Deere has received plus what it still lists as open in its latest file (Firm and Order).</> },
+    { key: "delivered", label: "Delivered to Deere", qty: t.delivered, value: t.revenue_delivered, tint: "inc", icon: <CheckIcon size={16} />,
+      info: <>Qty on SASH Inc invoices to Deere (or an Outbound mark).</> },
+    { key: "in_transit", label: "In transit", qty: t.in_transit, value: t.revenue_in_transit, tint: "violet", icon: <TruckIcon size={16} />,
+      info: <>Dispatched − Delivered: sent from SASH Faridabad, not yet delivered to Deere.</> },
+    { key: "dispatched", label: "Dispatched", qty: t.dispatched, value: t.revenue_dispatched, tint: "violet", icon: <TruckIcon size={16} />,
+      info: <>Qty dispatched from SASH Faridabad: SASH India invoices and the dispatched orders list.</> },
+    { key: "pending_dtp", label: "Pending as per DTP", qty: t.pending_dtp, value: t.revenue_pending_dtp, tint: "amber", icon: <CalendarIcon size={16} />,
+      info: <>Firm and Order Qty still open in Deere&apos;s latest file (the Order summary&apos;s Firm).</> },
+    { key: "pending", label: "Pending to dispatch", qty: t.pending, value: t.revenue_pending, tint: "dec", icon: <AlertIcon size={16} />,
+      info: <>Pending as per SASH: Total ordered − Dispatched, per PO line (a line dispatched beyond Deere&apos;s Qty covers the next open lines of that PO line).</> },
+  ];
+  const several = f.by_business.length > 1;
+  return (
+    <Card title="Fulfilment" info={<>Totals of every Firm and Order order in the current order data, as the Product and PO summaries count them. Value = Qty × Deere Unit Price ÷ 100 (each order&apos;s own price).</>}
+          description={f.files.map((file) => file.name).join(" · ")}>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        {figures.map((fig) => (
+          <div key={fig.key} className={`rounded-lg border border-line bg-gradient-to-b ${TINTS[fig.tint].wash} via-white to-white px-4 py-4`}>
+            <div className="flex items-center gap-2 text-sm font-medium text-ink-muted">
+              <span aria-hidden className={`flex h-7 w-7 items-center justify-center rounded-md ${TINTS[fig.tint].chip}`}>{fig.icon}</span>
+              <span className="min-w-0 flex-1 leading-tight">{fig.label}</span>
+              <InfoTip label={`About ${fig.label}`}>{fig.info}</InfoTip>
+            </div>
+            <p className="tabular mt-3 text-2xl font-bold tracking-tight text-neutral-900">{formatQty(fig.qty)} <span className="text-sm font-medium text-ink-muted">pcs</span></p>
+            <p className="tabular mt-0.5 text-sm font-semibold text-ink">{fig.value !== undefined ? money(fig.value) : "—"}</p>
+          </div>
+        ))}
+      </div>
+      {t.unpriced > 0 && <p className="mt-3 text-xs text-amber-700">{plural(t.unpriced, "order")} without a Deere price, left out of the values.</p>}
+      {several && (
+        <div className="mt-5 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-2xs font-semibold uppercase tracking-wider text-ink-faint">
+                <th className="py-2 pr-3 font-semibold">Business</th>
+                {figures.map((fig) => <th key={fig.key} className="px-3 py-2 text-right font-semibold">{fig.label}</th>)}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-100">
+              {f.by_business.map((b) => {
+                const m = moneyIn(b.currency);
+                const row = figures.map((fig) => {
+                  const qty = (b as unknown as Record<string, string>)[fig.key] ?? "0";
+                  const value = (b as unknown as Record<string, string | undefined>)[fig.key === "dispatched" ? "revenue_dispatched" : `revenue_${fig.key}`];
+                  return { key: fig.key, qty, value };
+                });
+                return (
+                  <tr key={b.business}>
+                    <td className="py-2 pr-3 font-semibold uppercase text-ink">{b.business}</td>
+                    {row.map((c) => (
+                      <td key={c.key} className="tabular px-3 py-2 text-right">
+                        <span className="block text-ink">{formatQty(c.qty)}</span>
+                        <span className="block text-xs text-ink-muted">{c.value !== undefined ? m(c.value) : "—"}</span>
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
   );
 }

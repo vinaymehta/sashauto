@@ -861,7 +861,19 @@ export interface PartSummaryFigures {
   revenue_ordered: string; // Qty ordered × Deere Unit Price ÷ 100, in the business's currency
   revenue_dispatched?: string; // Qty dispatched (in transit and delivered) × Deere Unit Price ÷ 100
   revenue_delivered: string; // Qty delivered × Deere Unit Price ÷ 100
+  revenue_in_transit?: string; // (Dispatched − Delivered) × Deere Unit Price ÷ 100
+  revenue_pending_dtp?: string; // Pending as per DTP × Deere Unit Price ÷ 100
+  revenue_pending?: string; // Pending to dispatch × Deere Unit Price ÷ 100
   unpriced: number; // rows without a Deere price (left out of the revenue)
+}
+
+// Dashboard fulfilment figures (/api/orders/fulfilment): the Product summary's totals over the current order data, in
+// total and per business of the view.
+export interface Fulfilment {
+  currency: string | null;
+  files: { business: string; name: string; completed_at: string }[];
+  totals: PartSummaryFigures;
+  by_business: (PartSummaryFigures & { business: string; currency: string })[];
 }
 
 export interface PartSummary {
@@ -940,4 +952,16 @@ export interface PurchaseIssue {
   excel_row: number | null; business: "dtp" | "gmbh"; filename: string; uploaded_at: string; uploaded_by: string | null;
   part_number: string | null; po_number: string | null; vendor: string | null; reference: string | null; qty: string | null; date: string | null;
   resolution: string | null; resolved_by: string | null; resolved_at: string | null;
+}
+
+// Different Ship To (/api/orders/ship_to_alerts): rows of each business's latest upload going to another address than its
+// default Ship To, as the alert email lists them.
+export interface ShipToAlertRow {
+  business: string; po_number: string; po_line_number: string; part_number: string; description: string | null;
+  order_type: string; ship_date: string; qty: string | null; ship_to: string | null;
+}
+export interface ShipToAlerts {
+  rows: ShipToAlertRow[];
+  files: { business: string; name: string }[];
+  defaults: Record<string, string>;
 }
