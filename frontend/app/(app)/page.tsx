@@ -11,7 +11,7 @@ import { formatCount, formatDate, formatQty } from "@/lib/format";
 import { groupByPeriod, PeriodToggle, type Period } from "@/components/charts/month-bars";
 import { TimeChart } from "@/components/charts/time-chart";
 import { PieChart } from "@/components/charts/pie-chart";
-import { AlertIcon, BoxIcon, CalendarIcon, CheckIcon, FileIcon, TruckIcon, UploadIcon } from "@/components/icons";
+import { AlertIcon, BoxIcon, CalendarIcon, CheckIcon, ChevronDownIcon, FileIcon, TruckIcon, UploadIcon } from "@/components/icons";
 import { useApi } from "@/components/use-api";
 import { Button } from "@/components/ui/button";
 import { Alert, EmptyState } from "@/components/ui/feedback";
@@ -183,8 +183,6 @@ export default function DashboardPage() {
                     detail={`${formatDate(ytd.from)} – ${formatDate(ytd.to)} · ${ordersText(ytd.orders, ytd.without_price)}`} />
         </div>
 
-        {can(me, "orders") && <FulfilmentSection />}
-
         {/* Operations (Dashboard::Overview). */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           <StatCard label="Open orders" info={<>Firm and Order orders <b>not yet delivered to Deere</b>, counted as the Orders page lists them (a combined order counts once). The amount is their value.</>} icon={<FileIcon size={16} />} tint="neutral" href={OPEN_ORDERS}
@@ -203,6 +201,8 @@ export default function DashboardPage() {
           <StatCard label="Outbound (fulfilled)" href="/orders?status=outbound" info={<>Orders <b>delivered to Deere in full</b> (Outbound mark or fulfilled on SASH Inc invoices).</>} icon={<CheckIcon size={16} />} tint="inc"
                     value={formatCount(listed.data?.fulfilled ?? kpis.outbound?.count ?? 0)} detail="Delivered to Deere in full: the Orders fulfilled tab" />
         </div>
+
+        {can(me, "orders") && <FulfilmentSection />}
 
         <div className="grid gap-5 xl:grid-cols-3">
           <SaleChart points={sale.by_date} />
@@ -569,6 +569,7 @@ function DashboardSkeleton() {
 // (Qty × Unit Price ÷ 100), in total and per business in All.
 function FulfilmentSection() {
   const { data, error } = useApi<{ data: Fulfilment }>("/api/orders/fulfilment");
+  const [showTop, setShowTop] = useState(false);
   const money = moneyIn(data?.data.currency ?? null);
   if (error) return <Alert title="Could not load the fulfilment figures">{error.message}</Alert>;
   if (!data) return <Skeleton className="h-44 w-full" />;
@@ -646,11 +647,15 @@ function FulfilmentSection() {
       )}
       {f.top_parts.length > 0 && (
         <div className="mt-6">
-          <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-ink">
-            Top {f.top_parts.length} parts by value ordered
+          <div className="flex items-center gap-1.5">
+            <button type="button" onClick={() => setShowTop((v) => !v)} aria-expanded={showTop}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-sm font-semibold text-ink transition-colors hover:border-neutral-400 hover:bg-subtle">
+              <ChevronDownIcon size={15} className={`text-ink-muted transition-transform ${showTop ? "rotate-180" : ""}`} />
+              {showTop ? "Hide" : "Show"} top {f.top_parts.length} parts by value ordered
+            </button>
             <InfoTip label="About the top parts">The parts with the most Total ordered value, with the same figures as above for each.</InfoTip>
-          </h3>
-          <div className="overflow-x-auto">
+          </div>
+          {showTop && <div className="mt-3 animate-fade-in overflow-x-auto">
             <table className="w-full text-sm">
               <thead>{head("Part")}</thead>
               <tbody className="divide-y divide-neutral-100">
@@ -670,7 +675,7 @@ function FulfilmentSection() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </div>}
         </div>
       )}
     </Card>
