@@ -4,7 +4,7 @@ import { can } from "@/lib/permissions";
 import { useSession } from "@/components/session";
 import Link from "next/link";
 import { createContext, useContext, useState, type ReactNode } from "react";
-import type { DashboardOrder, DashboardOverview, DateAmount, Fulfilment, OrderRow, OrdersSummary, PipelineStatus, ProductVendor, Stats } from "@/lib/types";
+import type { DashboardOrder, DashboardOverview, DateAmount, Fulfilment, OrderRow, PartSummaryFigures, OrdersSummary, PipelineStatus, ProductVendor, Stats } from "@/lib/types";
 import { todayParam } from "@/components/age";
 import { OrderDetailPanel } from "@/components/orders/history-row";
 import { formatCount, formatDate, formatQty } from "@/lib/format";
@@ -589,54 +589,88 @@ function FulfilmentSection() {
       info: <>Pending as per SASH: Total ordered − Dispatched, per PO line (a line dispatched beyond Deere&apos;s Qty covers the next open lines of that PO line).</> },
   ];
   const several = f.by_business.length > 1;
+  // A figure's value (big) and pieces (small) from summary figures (Product summary keys).
+  const pick = (row: PartSummaryFigures, key: string) => ({
+    qty: (row as unknown as Record<string, string>)[key] ?? "0",
+    value: (row as unknown as Record<string, string | undefined>)[`revenue_${key}`],
+  });
+  const head = (first: string) => (
+    <tr className="border-b border-line text-left text-2xs font-semibold uppercase tracking-wider text-ink-faint">
+      <th className="py-2.5 pr-4 font-semibold">{first}</th>
+      {figures.map((fig) => <th key={fig.key} className="whitespace-nowrap px-4 py-2.5 text-right font-semibold">{fig.label}</th>)}
+    </tr>
+  );
+  const cells = (row: PartSummaryFigures, m: ReturnType<typeof moneyIn>) => figures.map((fig) => {
+    const c = pick(row, fig.key);
+    return (
+      <td key={fig.key} className="tabular whitespace-nowrap px-4 py-2.5 text-right">
+        <span className="block font-semibold text-ink">{c.value !== undefined ? m(c.value) : "—"}</span>
+        <span className="block text-xs text-ink-muted">{formatQty(c.qty)} pcs</span>
+      </td>
+    );
+  });
   return (
     <Card title="Fulfilment" info={<>Totals of every Firm and Order order in the current order data, as the Product and PO summaries count them. Value = Qty × Deere Unit Price ÷ 100 (each order&apos;s own price).</>}
           description={f.files.map((file) => file.name).join(" · ")}>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {figures.map((fig) => (
-          <div key={fig.key} className={`rounded-lg border border-line bg-gradient-to-b ${TINTS[fig.tint].wash} via-white to-white px-4 py-4`}>
+          <div key={fig.key} className={`rounded-lg border border-line bg-gradient-to-b ${TINTS[fig.tint].wash} via-white to-white px-5 py-5 sm:px-6`}>
             <div className="flex items-center gap-2 text-sm font-medium text-ink-muted">
               <span aria-hidden className={`flex h-7 w-7 items-center justify-center rounded-md ${TINTS[fig.tint].chip}`}>{fig.icon}</span>
               <span className="min-w-0 flex-1 leading-tight">{fig.label}</span>
               <InfoTip label={`About ${fig.label}`}>{fig.info}</InfoTip>
             </div>
-            <p className="tabular mt-3 text-2xl font-bold tracking-tight text-neutral-900">{formatQty(fig.qty)} <span className="text-sm font-medium text-ink-muted">pcs</span></p>
-            <p className="tabular mt-0.5 text-sm font-semibold text-ink">{fig.value !== undefined ? money(fig.value) : "—"}</p>
+            <p className="tabular mt-4 text-3xl font-bold tracking-tight text-neutral-900">{fig.value !== undefined ? money(fig.value) : "—"}</p>
+            <p className="tabular mt-1 text-sm text-ink-muted">{formatQty(fig.qty)} pcs</p>
           </div>
         ))}
       </div>
       {t.unpriced > 0 && <p className="mt-3 text-xs text-amber-700">{plural(t.unpriced, "order")} without a Deere price, left out of the values.</p>}
       {several && (
-        <div className="mt-5 overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-2xs font-semibold uppercase tracking-wider text-ink-faint">
-                <th className="py-2 pr-3 font-semibold">Business</th>
-                {figures.map((fig) => <th key={fig.key} className="px-3 py-2 text-right font-semibold">{fig.label}</th>)}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-100">
-              {f.by_business.map((b) => {
-                const m = moneyIn(b.currency);
-                const row = figures.map((fig) => {
-                  const qty = (b as unknown as Record<string, string>)[fig.key] ?? "0";
-                  const value = (b as unknown as Record<string, string | undefined>)[fig.key === "dispatched" ? "revenue_dispatched" : `revenue_${fig.key}`];
-                  return { key: fig.key, qty, value };
-                });
-                return (
+        <div className="mt-6">
+          <h3 className="mb-2 text-sm font-semibold text-ink">By business</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>{head("Business")}</thead>
+              <tbody className="divide-y divide-neutral-100">
+                {f.by_business.map((b) => (
                   <tr key={b.business}>
-                    <td className="py-2 pr-3 font-semibold uppercase text-ink">{b.business}</td>
-                    {row.map((c) => (
-                      <td key={c.key} className="tabular px-3 py-2 text-right">
-                        <span className="block text-ink">{formatQty(c.qty)}</span>
-                        <span className="block text-xs text-ink-muted">{c.value !== undefined ? m(c.value) : "—"}</span>
-                      </td>
-                    ))}
+                    <td className="py-2.5 pr-4 font-semibold uppercase text-ink">{b.business}</td>
+                    {cells(b, moneyIn(b.currency))}
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+      {f.top_parts.length > 0 && (
+        <div className="mt-6">
+          <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-ink">
+            Top {f.top_parts.length} parts by value ordered
+            <InfoTip label="About the top parts">The parts with the most Total ordered value, with the same figures as above for each.</InfoTip>
+          </h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>{head("Part")}</thead>
+              <tbody className="divide-y divide-neutral-100">
+                {f.top_parts.map((p, i) => (
+                  <tr key={p.part_number} className="hover:bg-neutral-50">
+                    <td className="py-2.5 pr-4">
+                      <span className="flex items-baseline gap-2">
+                        <span className="tabular w-5 shrink-0 text-xs text-ink-faint">{i + 1}</span>
+                        <span className="min-w-0">
+                          <span className="block font-semibold text-ink">{p.part_number}</span>
+                          {p.description && <span className="block max-w-56 truncate text-xs text-ink-muted" title={p.description}>{p.description}</span>}
+                        </span>
+                      </span>
+                    </td>
+                    {cells(p, money)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </Card>

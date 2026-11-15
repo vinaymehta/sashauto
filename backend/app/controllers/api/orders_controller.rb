@@ -261,8 +261,17 @@ module Api
       render json: { data: {
         currency: summary_currency, files: batches.map { |b| { business: b.business, name: b.original_filename, completed_at: b.completed_at } },
         totals: summary_figures(lines),
-        by_business: businesses.map { |b| summary_figures(by_business[b] || []).merge(business: b, currency: Business.currency(b)) }
+        by_business: businesses.map { |b| summary_figures(by_business[b] || []).merge(business: b, currency: Business.currency(b)) },
+        top_parts: top_fulfilment_parts(lines)
       } }
+    end
+
+    # The 10 parts with the most value ordered (#summary_figures per part), with their description.
+    def top_fulfilment_parts(lines)
+      parts = lines.group_by { |l| l[:row].part_number }.map { |part, list| summary_figures(list).merge(part_number: part) }
+                   .sort_by { |f| -f[:revenue_ordered].to_d }.first(10)
+      descriptions = Product.where(part_number: parts.map { |f| f[:part_number] }).pluck(:part_number, :description).to_h
+      parts.map { |f| f.merge(description: descriptions[f[:part_number]]) }
     end
 
     # Different Ship To (Orders page box): the rows of each business's latest upload shipped to an address other than its

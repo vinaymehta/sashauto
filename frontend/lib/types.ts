@@ -874,6 +874,7 @@ export interface Fulfilment {
   files: { business: string; name: string; completed_at: string }[];
   totals: PartSummaryFigures;
   by_business: (PartSummaryFigures & { business: string; currency: string })[];
+  top_parts: (PartSummaryFigures & { part_number: string; description: string | null })[]; // the 10 with the most value ordered
 }
 
 export interface PartSummary {
