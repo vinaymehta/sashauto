@@ -275,8 +275,8 @@ module Api
     end
 
     # Different Ship To (Orders page box): the rows of each business's latest upload shipped to an address other than its
-    # default (Orders::ShipTo), as the alert email lists them, with the part's description and the Qty. `format=csv` or
-    # `format=xlsx` downloads the same list.
+    # default (Orders::ShipTo), as the alert email lists them, with the part's description and the Qty. `export=csv` or
+    # `export=xlsx` downloads the same list.
     SHIP_TO_HEADERS = [ "Business", "PO Number", "PO Line", "Part Number", "Part Description", "Type", "Ship Date", "Qty", "Ship To" ].freeze
 
     def ship_to_alerts
@@ -292,7 +292,8 @@ module Api
           description: descriptions[r.part_number], order_type: r.order_type, ship_date: r.ship_date, qty: Serializers.qty(r.qty),
           ship_to: Orders::ShipTo.address(r.source_data) }
       end
-      return send_ship_to_export(list, params[:format].to_s) if %w[csv xlsx].include?(params[:format].to_s)
+      # `export`, not `format`: the API routes default format to json, which takes precedence over a format param.
+      return send_ship_to_export(list, params[:export].to_s) if %w[csv xlsx].include?(params[:export].to_s)
 
       render json: { data: { rows: list, files: batches.map { |b| { business: b.business, name: b.original_filename } },
                              defaults: batches.to_h { |b| [ b.business, AppConfig.default_ship_to(b.business) ] } } }

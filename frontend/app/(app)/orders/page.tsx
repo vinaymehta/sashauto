@@ -696,7 +696,7 @@ function ShipToSheet({ open, onClose, data, business }: { open: boolean; onClose
   const rows = term ? data.rows.filter((r) => [r.po_number, r.part_number, r.description, r.ship_to, r.order_type]
     .some((v) => v?.toLowerCase().includes(term))) : data.rows;
   const several = data.files.length > 1;
-  const href = (format: "csv" | "xlsx") => `/api/orders/ship_to_alerts?${new URLSearchParams({ format, business })}`;
+  const href = (format: "csv" | "xlsx") => `/api/orders/ship_to_alerts?${new URLSearchParams({ export: format, business })}`;
   return (
     <Sheet open={open} onClose={onClose} wide icon={<MapPinIcon size={16} />} title="Different Ship To"
            description={`${formatCount(data.rows.length)} row${data.rows.length === 1 ? "" : "s"} of ${data.files.map((f) => f.name).join(" · ")}`}>
