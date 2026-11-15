@@ -4,9 +4,10 @@ import { can } from "@/lib/permissions";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createContext, memo, Suspense, useCallback, useContext, useEffect, useMemo, useState, type DragEvent, type ReactNode } from "react";
-import { canPlaceOrder, type Dashboard, type InvoiceKind, type OrderRow, type OrdersPage, type OrdersSummary, type Role, type UploadChoice, type UploadDetail } from "@/lib/types";
+import { canPlaceOrder, type Dashboard, type InvoiceKind, type OrderRow, type OrdersPage, type OrdersSummary, type Role, type ShipToAlerts, type UploadChoice, type UploadDetail } from "@/lib/types";
 import { formatCount, formatDate, formatQty } from "@/lib/format";
-import { AlertIcon, ArrowUpDownIcon, CalendarIcon, CheckIcon, FileIcon, HistoryIcon, TableIcon, TruckIcon } from "@/components/icons";
+import { AlertIcon, ArrowUpDownIcon, CalendarIcon, CheckIcon, DownloadIcon, FileIcon, HistoryIcon, MapPinIcon, TableIcon, TruckIcon } from "@/components/icons";
+import { Sheet } from "@/components/ui/sheet";
 import { AllChangesTable } from "@/components/all-changes-table";
 import { MoqAlertsTable } from "@/components/moq-alerts-table";
 import { cell, OrderDetailPanel, PlaceOrderPanel } from "@/components/orders/history-row";
@@ -315,6 +316,9 @@ function OrdersView() {
 
   // Cards above the table (current order data only).
   const summary = useApi<OrdersSummary>(uploadId === null ? "/api/orders/summary" : null, { today: todayParam() });
+  // Different Ship To: the latest upload's rows going to another address than the default (as the alert email).
+  const shipTo = useApi<{ data: ShipToAlerts }>(uploadId === null ? "/api/orders/ship_to_alerts" : null);
+  const [shipToOpen, setShipToOpen] = useState(false);
   const reloadSummary = summary.reload;
   const refresh = useCallback(() => { reload(); reloadSummary(); }, [reload, reloadSummary]);
 
@@ -549,7 +553,7 @@ function OrdersView() {
       )}
       {/* What needs doing on the current orders; clicking a card filters the table or opens its tab. */}
       {summary.data && uploadId === null && (
-        <dl className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <dl className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-5">
           <Kpi label="Open orders" value={formatCount(summary.data.open)} hint="Firm and Order, not yet delivered to Deere" icon={<TableIcon size={16} />}
                tint="violet" onClick={() => { setTab("orders"); list.clearFilters(); list.setFilter("type", "Firm,Order"); }} />
           <Kpi label="PO to generate" value={formatCount(summary.data.po_pending)}
@@ -560,8 +564,12 @@ function OrdersView() {
                tint="dec" onClick={tabs.some((t) => t.key === "moq") ? () => setTab("moq") : undefined} />
           <Kpi label="90+ days since Effective Firm Date" value={formatCount(summary.data.aged)} hint="Open orders in the red age group" icon={<HistoryIcon size={16} />}
                tint="dec" onClick={() => { setTab("orders"); list.clearFilters(); list.setFilter("age", "red"); }} />
+          <Kpi label="Different Ship To" value={shipTo.data ? formatCount(shipTo.data.data.rows.length) : "…"}
+               hint="Rows of the latest file going to another address than the default Ship To (as in the alert email)" icon={<MapPinIcon size={16} />}
+               tint="amber" onClick={shipTo.data ? () => setShipToOpen(true) : undefined} />
         </dl>
       )}
+      {shipTo.data && <ShipToSheet open={shipToOpen} onClose={() => setShipToOpen(false)} data={shipTo.data.data} business={business} />}
 
       {/* On a phone the Order summary and Compare buttons sit above the tabs, so the tabs keep the full width. */}
       <div className="flex flex-col-reverse border-b border-line sm:flex-row sm:items-center">
@@ -676,5 +684,74 @@ function OrdersView() {
         <PlaceOrderPanel key={`${placing.manual ? "m" : "r"}${placing.id}`} row={placing} onClose={() => setPlacing(null)} onPlaced={onManualSaved} />
       )}
     </>
+  );
+}
+
+// Different Ship To: the alert email's list (rows of the latest file going to another address than the default Ship To)
+// with the part's description, and Export as .csv or .xlsx (the same list; the link carries the business, as a download
+// sends no X-Business header).
+function ShipToSheet({ open, onClose, data, business }: { open: boolean; onClose: () => void; data: ShipToAlerts; business: string }) {
+  const [query, setQuery] = useState("");
+  const term = query.trim().toLowerCase();
+  const rows = term ? data.rows.filter((r) => [r.po_number, r.part_number, r.description, r.ship_to, r.order_type]
+    .some((v) => v?.toLowerCase().includes(term))) : data.rows;
+  const several = data.files.length > 1;
+  const href = (format: "csv" | "xlsx") => `/api/orders/ship_to_alerts?${new URLSearchParams({ format, business })}`;
+  return (
+    <Sheet open={open} onClose={onClose} wide icon={<MapPinIcon size={16} />} title="Different Ship To"
+           description={`${formatCount(data.rows.length)} row${data.rows.length === 1 ? "" : "s"} of ${data.files.map((f) => f.name).join(" · ")}`}>
+      <div className="space-y-3">
+        <div className="space-y-1 text-xs text-ink-muted">
+          {Object.entries(data.defaults).map(([b, address]) => (
+            <p key={b}>Default Ship To{several ? ` (${BUSINESS_LABEL[b as keyof typeof BUSINESS_LABEL] ?? b.toUpperCase()})` : ""}: <span className="font-medium text-ink">{address}</span></p>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="min-w-48 flex-1"><SearchInput value={query} onSearch={setQuery} label="Search the Different Ship To rows" placeholder="Search PO, part, description, Ship To" /></div>
+          {(["csv", "xlsx"] as const).map((format) => (
+            <a key={format} href={href(format)} download
+               className="inline-flex h-9 items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-3 text-sm font-medium text-ink transition-colors hover:border-neutral-400 hover:bg-subtle">
+              <DownloadIcon size={15} className="text-ink-muted" />Export .{format}
+            </a>
+          ))}
+        </div>
+        {rows.length === 0 ? (
+          <p className="py-6 text-center text-sm text-ink-muted">{data.rows.length ? "No rows match the search." : "Every row goes to the default Ship To."}</p>
+        ) : (
+          <div className="overflow-x-auto rounded-md border border-line">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-neutral-50 text-left text-2xs font-semibold uppercase tracking-wider text-ink-faint">
+                  {several && <th className="px-3 py-2 font-semibold">Business</th>}
+                  <th className="px-3 py-2 font-semibold">PO Number</th>
+                  <th className="px-3 py-2 font-semibold">PO Line</th>
+                  <th className="px-3 py-2 font-semibold">Part Number</th>
+                  <th className="px-3 py-2 font-semibold">Part Description</th>
+                  <th className="px-3 py-2 font-semibold">Type</th>
+                  <th className="px-3 py-2 font-semibold">Ship Date</th>
+                  <th className="px-3 py-2 text-right font-semibold">Qty</th>
+                  <th className="px-3 py-2 font-semibold">Ship To</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100">
+                {rows.map((r, i) => (
+                  <tr key={`${r.business}|${r.po_number}|${r.po_line_number}|${r.part_number}|${r.order_type}|${r.ship_date}|${i}`} className="hover:bg-neutral-50">
+                    {several && <td className="px-3 py-2 uppercase text-ink-muted">{r.business}</td>}
+                    <td className="px-3 py-2 tabular text-ink">{r.po_number}</td>
+                    <td className="px-3 py-2 tabular text-ink-muted">{r.po_line_number}</td>
+                    <td className="px-3 py-2 font-medium text-ink">{r.part_number}</td>
+                    <td className="max-w-56 truncate px-3 py-2 text-ink-muted" title={r.description ?? undefined}>{r.description ?? "—"}</td>
+                    <td className="px-3 py-2 text-ink">{r.order_type}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-ink">{formatDate(r.ship_date)}</td>
+                    <td className="px-3 py-2 text-right tabular text-ink">{r.qty === null ? "—" : formatQty(r.qty)}</td>
+                    <td className="min-w-56 px-3 py-2 text-ink">{r.ship_to ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </Sheet>
   );
 }
