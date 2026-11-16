@@ -16,7 +16,8 @@ module Invoices
   #     invoice dispatches is left out: sent before invoices were uploaded.
   #   SASH Inc invoice (outbound): the orders of the PO + Part dispatched on SASH India invoices or the dispatched
   #     orders list, also those Deere has received and dropped from its file since (OrderRow.dropped: kept on Orders by
-  #     their mark); each takes what is still in transit (dispatched less outbound before), oldest Ship Date first.
+  #     their mark); each takes what is still in transit (dispatched less outbound before), oldest Ship Date first. A
+  #     charge (#charge?: freight, labeling) is not dispatched from India: its order takes it up to its Qty.
   #
   #   plan = Invoices::Allocator.call(invoice, view: "dtp")   # => Plan
   class Allocator
@@ -123,7 +124,8 @@ module Invoices
         order = rows[key] || india[key]&.last&.then { |a| a.order_row || a.manual_order }
         next unless order
 
-        qty = (progress[key]&.shipped || 0.to_d) + listed_qty(key, order)
+        # A charge Deere orders as a part (00010 "Air Freight Charges") is not shipped from India: its order's Qty.
+        qty = charge?(line) ? order.qty.to_d : (progress[key]&.shipped || 0.to_d) + listed_qty(key, order)
         [ key, order, qty ] if qty.positive?
       end
       if sent.empty?
@@ -162,6 +164,12 @@ module Invoices
       return lines.sum(0.to_d) { |l| l["qty"].present? ? BigDecimal(l["qty"].to_s) : order.qty.to_d } if lines
 
       legacy_orders.include?(placement_key(key)) && OrderDelivery.active.exists?(order_key: placement_key(key), kind: "dispatched") ? order.qty.to_d : 0.to_d
+    end
+
+    # A line for a charge, not goods (its description, or its part's in Products: "Air Freight Charge(s)", "Labeling
+    # Charges"): delivered without being dispatched from India first.
+    def charge?(line)
+      [ line.description, Product.find_by(part_number: line.part_number)&.description ].any? { |text| text.to_s.match?(Product::CHARGE) }
     end
 
     # [[order key, row], ...] of the line's PO + Part, oldest Ship Date first: imported Firm / Order rows of the latest

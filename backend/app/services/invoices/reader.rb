@@ -17,6 +17,7 @@ module Invoices
   #   * A cell with "PO No.5500910948 dt.02.02.2026" starts a PO group; its item rows follow.
   #   * Item row: a Part No. cell (PART, e.g. JXAW30717) and its Quantity, the last number with a unit ("192 Nos.", or
   #     192 then "Nos."), else the number under the "Quantity" header.
+  #   * Its price: the number after the Quantity's unit (the price of one piece on the invoice).
   #   * The lines' Qty is checked against the invoice's total ("… 3803  Total USD"), when the file has one.
   # Only the PDF template is verified (both sample invoices); the Excel reading follows the same template and the
   # patterns below are the place to adjust when a real .xlsx differs.
@@ -25,7 +26,7 @@ module Invoices
   class Reader
     class InvalidFile < StandardError; end
 
-    Line = Data.define(:index, :po_number, :po_date, :part_number, :description, :qty)
+    Line = Data.define(:index, :po_number, :po_date, :part_number, :description, :qty, :price)
     Result = Data.define(:kind, :exporter, :invoice_number, :invoice_date, :lines, :warnings)
 
     EXPORTER_LABEL = /\AExporter\b/i
@@ -33,9 +34,9 @@ module Invoices
     QUANTITY_LABEL = /\AQuantity\z/i
     PO_GROUP = /PO\s*No\.?\s*:?\s*(\d{6,})(?:\s*dt\.?\s*:?\s*(\d{1,2}[.\/-]\d{1,2}[.\/-]\d{4}))?/i
     PART = /\A[A-Z]{1,6}\d[A-Z0-9]{2,}\z/
-    UNIT = /\A(?:nos|pcs|sets?|ea|units?)\.?\z/i
+    UNIT = /\A(?:nos|pcs|sets?|kits?|ea|units?)\.?\z/i
     NUMBER = /\A\d{1,3}(?:,\d{3})*(?:\.\d+)?\z|\A\d+(?:\.\d+)?\z/
-    NUMBER_WITH_UNIT = /\A(\d[\d,]*(?:\.\d+)?)\s*(?:nos|pcs|sets?|ea|units?)\.?\z/i
+    NUMBER_WITH_UNIT = /\A(\d[\d,]*(?:\.\d+)?)\s*(?:nos|pcs|sets?|kits?|ea|units?)\.?\z/i
     INVOICE_NUMBER = /\A[A-Z0-9][A-Z0-9\/.\-]*\d[A-Z0-9\/.\-]*\z/i
     TOTAL = /([\d,]+(?:\.\d+)?)\s+Total\s+(?:USD|US\s*\$|INR|Amount)/i
     # A cell this many characters (PDF) or columns (Excel) left of a label still counts as below it.
@@ -201,17 +202,34 @@ module Invoices
           po = { number: group[1], date: group[2] && date(group[2]) }
         end
         part_at = texts.index { |t| PART.match?(t.upcase) && !t.match?(PO_GROUP) }
-        next unless part_at
+        if part_at
+          part = texts[part_at].upcase
+        else
+          # A line with no Part No. ("Air Freight Charge … 1 Nos."): its description in the place of the Part No., and
+          # the part Deere's orders give its PO (#po_part), so a charge Deere orders as a part (00010) is delivered too.
+          part_at = texts.index { |t| t.match?(/[a-z]{3}/i) && !t.match?(PO_GROUP) && !t.match?(/total|nos\.?\z/i) } if po
+          part = part_at && texts[part_at - 1].to_s.match?(/\A\d{1,3}\z/) && po_part(po[:number])
+          next unless part
+
+          part_at -= 1
+        end
 
         qty = quantity(cells, part_at, quantity_at&.last)
         next unless qty
 
         description = texts[part_at + 1]
-        lines << Line.new(index: lines.size, po_number: po&.dig(:number), po_date: po&.dig(:date), part_number: texts[part_at].upcase,
-                          description: description&.match?(/[a-z]/i) ? description.first(200) : nil, qty: qty)
+        lines << Line.new(index: lines.size, po_number: po&.dig(:number), po_date: po&.dig(:date), part_number: part,
+                          description: description&.match?(/[a-z]/i) ? description.first(200) : nil, qty: qty, price: price(cells, part_at))
         raise InvalidFile, "The invoice has more than #{MAX_LINES} item lines." if lines.size > MAX_LINES
       end
       lines
+    end
+
+    # The one part Deere's order files list on this PO (e.g. 00010, "Air Freight Charges", on PO 4500593651); nil when
+    # the PO is not there or has several parts.
+    def po_part(po_number)
+      parts = OrderRow.where(po_number: po_number).distinct.limit(2).pluck(:part_number)
+      parts.one? ? parts.first : nil
     end
 
     # Quantity of an item row: the last number with a unit after the Part No. ("192 Nos.", or 192 then "Nos."), else the
@@ -232,6 +250,17 @@ module Invoices
       end
       number = found && (OrderRows::Normalizer.quantity(found.is_a?(String) ? found.delete(",") : found) rescue nil)
       number&.positive? ? number : nil
+    end
+
+    # Price of an item row: the number after its Quantity's unit ("1400 Nos.  10.550  14770.00": 10.550), the price of
+    # one piece (Nos.) on the invoice; nil when the row has none.
+    def price(cells, part_at)
+      after = cells[(part_at + 1)..].map { |_, value| cell_text(value) }
+      unit_at = after.rindex { |text| UNIT.match?(text) || NUMBER_WITH_UNIT.match?(text) }
+      found = unit_at && after[(unit_at + 1)..].find { |text| NUMBER.match?(text) }
+      found && BigDecimal(found.delete(","))
+    rescue ArgumentError
+      nil
     end
 
     def number?(value)

@@ -171,7 +171,7 @@ export default function DashboardPage() {
               </Alert>
             </div>
           )}
-          <StatCard size="lg" label="Total Open Value (Sale)" info={<>Value of Deere orders <b>not yet delivered</b>: Firm and Order orders of the latest upload and manual orders, without a &quot;Delivered to Deere&quot; (Outbound) status. Value = Qty × Unit Price ÷ 100 (Deere prices are per 100 pcs), in the business&apos;s currency (Settings). Forecast is not counted.</>} icon={<BoxIcon size={16} />} tint="violet" href={OPEN_ORDERS}
+          <StatCard size="lg" label="Total Open Value (Sale)" info={<>Value of Deere orders <b>not yet delivered</b>: the Firm and Order rows the Orders page lists as open (latest upload, orders kept from an older Deere file, and manual orders), without a &quot;Delivered to Deere&quot; (Outbound) status. Value = Qty × Unit Price ÷ 100 (Deere prices are per 100 pcs), in the business&apos;s currency (Settings). Forecast is not counted.</>} icon={<BoxIcon size={16} />} tint="violet" href={OPEN_ORDERS}
                     value={usd(sale.amount)}
                     detail={`${ordersText(sale.orders, sale.without_price)} not yet delivered to Deere`} />
           <StatCard size="lg" label="Total Open Value (Supplier)" info={<>Value of the vendor POs generated in the app whose order has <b>no status yet</b> (not received at SASH Faridabad). Value = PO quantity × the vendor&apos;s unit price. Shown per currency, as there is no exchange rate.</>} icon={<TruckIcon size={16} />} tint="amber"
@@ -185,7 +185,7 @@ export default function DashboardPage() {
 
         {/* Operations (Dashboard::Overview). */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-          <StatCard label="Open orders" info={<>Firm and Order orders <b>not yet delivered to Deere</b>, counted as the Orders page lists them (a combined order counts once). The amount is their value.</>} icon={<FileIcon size={16} />} tint="neutral" href={OPEN_ORDERS}
+          <StatCard label="Open orders" info={<>Firm and Order orders <b>not yet delivered to Deere</b>, counted row by row as the Orders page lists them (each row of a combined order counts, and orders kept from an older Deere file too). The amount is their value.</>} icon={<FileIcon size={16} />} tint="neutral" href={OPEN_ORDERS}
                     value={formatCount(kpis.open.count)} detail={`${usd(kpis.open.value, true)} · Firm and Order`} />
           <StatCard label="Shipping in 30 days" href={`${OPEN_ORDERS}&timing=next30`} info={<>Open orders with a <b>ship date from today to 30 days ahead</b>, and their value. They are listed in Next shipments.</>} icon={<CalendarIcon size={16} />} tint="violet"
                     value={formatCount(kpis.due_30.count)} detail={`${usd(kpis.due_30.value, true)} due by ${formatDate(addDays(30))}`} />

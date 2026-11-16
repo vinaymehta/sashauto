@@ -3,9 +3,10 @@ require "bigdecimal"
 module Dashboard
   # Money figures of the dashboard, each with the series for its graph. Orders are counted as the Orders page lists
   # them (Dashboard::Overview): a combined order once, at the total of its rows and on its last row's ship date.
-  # - open_sale: Deere orders still to deliver, i.e. Firm and Order orders of the latest upload, and active manual
-  #   orders, without an active "Delivered to Deere" (outbound) mark. Value = Qty × Unit Price ÷ 100 (Deere prices per
-  #   100 pcs; in the business's currency, Settings). by_date: value per ship date (the graph groups it by week or month).
+  # - open_sale: Deere orders still to deliver: the open orders of Dashboard::Overview (Firm and Order rows not
+  #   delivered to Deere, as the Orders list shows them), `orders` counting their rows as the list does. Value = Qty ×
+  #   Unit Price ÷ 100 (Deere prices per 100 pcs; in the business's currency, Settings). by_date: value per ship date
+  #   (the graph groups it by week or month).
   # - open_supplier: vendor POs whose order has no status mark yet (not Received at SASH Faridabad). Value = PO qty ×
   #   the vendor's unit price, per currency (there is no exchange rate). by_vendor: value per vendor and currency.
   # - ytd_customer_spend: Deere's Firm and Order orders with a ship date from the start of the financial year
@@ -37,6 +38,7 @@ module Dashboard
     def open_sale
       open = @overview.open_orders
       totals(open.map { |o| [ o.ship_date, o.value, o.unpriced ] })
+        .merge(orders: open.sum(&:rows), without_price: open.select(&:unpriced).sum(&:rows))
     end
 
     def ytd_customer_spend

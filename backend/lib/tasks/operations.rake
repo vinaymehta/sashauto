@@ -331,3 +331,32 @@ namespace :purchases do
     end
   end
 end
+
+namespace :invoices do
+  # Adds each line's price (Invoices::Reader: the price of one piece on the invoice) to the lines of the uploaded
+  # invoices, read again from their stored file. Only lines whose Part and Qty read the same get it.
+  #   bin/rails invoices:line_prices [DRY=1]
+  desc "Add each line's price to the uploaded invoices, from their stored files"
+  task line_prices: :environment do
+    dry = ENV["DRY"] == "1"
+    done = 0
+    Invoice.active.find_each do |invoice|
+      next unless invoice.file.attached?
+
+      read = invoice.file.open { |f| Invoices::Reader.call(path: f.path, filename: invoice.original_filename) }
+      lines = invoice.lines.map do |line|
+        found = read.lines.find { |l| l.index == line["index"] && l.part_number == line["part_number"] && l.qty == BigDecimal(line["qty"].to_s) }
+        found&.price ? line.merge("price" => found.price.to_s("F")) : line
+      end
+      priced = lines.count { |l| l["price"].present? }
+      puts "#{invoice.invoice_number}: #{priced} of #{lines.size} lines with a price"
+      next if dry || lines == invoice.lines
+
+      invoice.update_columns(lines: lines)
+      done += 1
+    rescue Invoices::Reader::InvalidFile => e
+      puts "#{invoice.invoice_number}: not read again (#{e.message})"
+    end
+    puts "#{dry ? 'Would update' : 'Updated'} #{done} invoices"
+  end
+end

@@ -22,10 +22,12 @@ module Dashboard
     PIPELINE_STATUSES = %w[none received dispatched inbound delivery].freeze
     # Statuses of an order not dispatched from SASH Faridabad yet (nil: no mark and not on SASH India invoices).
     NOT_DISPATCHED = [ nil, "received" ].freeze
+    # Statuses of a row dispatched in full or further (OrdersController::MADE_STATUSES): no vendor PO is needed.
+    MADE = %w[dispatched inbound delivery outbound].freeze
     # One listed order: its anchor row (or manual order), every row's value summed, and the keys of its marks.
     # unpriced: a row of it has no Unit Price (nor a customer price), so its value leaves that row out. rows: its rows of the
     # order file (1 unless combined).
-    # members: [row key, value] of each row (a combined order's in it; a manual order's own).
+    # members: [row key, value, Qty] of each row (a combined order's in it; a manual order's own).
     Order = Data.define(:id, :manual, :key, :firm_key, :po_number, :po_line_number, :part_number, :order_type, :ship_date, :qty, :value, :unpriced,
                         :rows, :members)
 
@@ -57,13 +59,47 @@ module Dashboard
         ageing: ageing(open),
         outlook: outlook(orders),
         top_parts: top_parts(open, status, placed),
-        upcoming: upcoming(open, status, placed)
+        upcoming: upcoming(current(open), status, placed)
       }
     end
 
-    # Firm / Order orders not yet delivered to Deere, as listed (also used by Dashboard::Money).
+    # Firm / Order orders not yet delivered to Deere, as the Orders list shows them (also used by Dashboard::Money):
+    # each row by its own status (#row_status), so a combined order keeps only its rows not delivered in full (its
+    # rows, Qty and value are theirs).
     def open_orders
-      @open_orders ||= listed_orders.select { |o| TYPES.include?(o.order_type) && statuses[o.key] != "outbound" }
+      @open_orders ||= listed_orders.select { |o| TYPES.include?(o.order_type) }.filter_map do |o|
+        only(o) { |key, qty| row_status(o, key, qty) != "outbound" }
+      end
+    end
+
+    # A row's status as the Orders list shows it: its order's furthest status mark (a combined order's, unless the row
+    # shipped nothing of it: #list_lines), or further its own uploaded invoices (Invoices::Progress, by its own Qty).
+    def row_status(order, key, qty)
+      listed, named = list_lines
+      mark = order.rows > 1 && listed.include?(order.key) && !named.include?(key) ? nil : marks[order.key]
+      own = row_progress[key]&.status(qty)
+      [ mark, own ].compact.max_by { |k| STATUSES.index(k) || 0 }
+    end
+
+    # The order with only its rows for which the block is true (rows, Qty and value theirs); nil when none is.
+    def only(order, &keep)
+      rows = order.members.select { |key, _, qty| keep.(key, qty) }
+      return nil if rows.empty?
+      return order if rows.size == order.members.size
+
+      order.with(rows: rows.size, members: rows, qty: rows.sum(BigDecimal("0")) { |m| m[2] }, value: rows.sum(BigDecimal("0")) { |m| m[1] })
+    end
+
+    # The orders of Deere's latest files and manual orders: without the rows kept from earlier files, which the Orders
+    # list's Ship timing filter (Past ship date, Shipping in next 30 days) leaves out too.
+    def current(orders)
+      listed_orders
+      orders.reject { |o| !o.manual && @kept_ids.include?(o.id) }
+    end
+
+    # Row key => its uploaded invoices (Invoices::Progress), for every row of the Firm / Order orders listed.
+    def row_progress
+      @row_progress ||= Invoices::Progress.for_keys(listed_orders.select { |o| TYPES.include?(o.order_type) }.flat_map { |o| o.members.map(&:first) })
     end
 
     # order key of each row inside a combined order of the latest upload => the key of its combined order's first row.
@@ -77,7 +113,8 @@ module Dashboard
       Business.of(@view)
     end
 
-    # Every order of the current data, combined orders folded into their first order.
+    # Every order of the current data (the latest uploads, the rows kept from earlier ones as on the Orders page:
+    # OrderRow.kept, and manual orders), combined orders folded into their first order.
     def listed_orders
       @listed_orders ||= build_listed_orders
     end
@@ -86,15 +123,19 @@ module Dashboard
 
     def build_listed_orders
       @anchor_keys = {}
+      @kept_ids = Set.new
       batch_ids = UploadBatch.latest_for(@view).map(&:id)
       return manual_orders if batch_ids.empty?
 
       combined = Orders::Combiner.for_batches(batch_ids)
       anchor_of = combined.groups.values.select(&:combined?).flat_map { |g| g.members.map { |m| [ m.id, g.anchor_id ] } }.to_h
-      rows = OrderRow.where(upload_batch_id: batch_ids)
+      kept = OrderRow.kept(batch_ids, businesses).pluck(:id)
+      @kept_ids = kept.to_set
+      rows = OrderRow.where(upload_batch_id: batch_ids).or(OrderRow.where(id: kept))
                      .pluck(:id, :group_key, :po_number, :po_line_number, :part_number, :order_type, :ship_date, :qty, Arel.sql("source_data->>'Unit Price'"))
       prices = price_lookup(rows.map { |r| r[4] })
-      values = rows.to_h { |r| [ r[0], value(r[7], r[8], prices[r[4]]) ] }
+      charges = Product.charge_parts(rows.map { |r| r[4] })
+      values = rows.to_h { |r| [ r[0], value(r[7], r[8], prices[r[4]], charge: charges.include?(r[4])) ] }
       groups = rows.group_by { |r| anchor_of[r[0]] || r[0] }
       row_key = ->(r) { Digest::SHA256.hexdigest([ r[1], r[3], r[6].iso8601 ].join(OrderRows::Normalizer::KEY_SEPARATOR)) }
       groups.map do |anchor_id, members|
@@ -106,19 +147,20 @@ module Dashboard
                   ship_date: members.map { |m| m[6] }.max, # a combined order ships with its last order
                   qty: members.sum { |m| m[7].to_d }, value: members.filter_map { |m| values[m[0]] }.sum(BigDecimal("0")),
                   unpriced: members.any? { |m| values[m[0]].nil? }, rows: members.size,
-                  members: members.map { |m| [ row_key.(m), values[m[0]] || BigDecimal("0") ] })
+                  members: members.map { |m| [ row_key.(m), values[m[0]] || BigDecimal("0"), m[7].to_d ] })
       end + manual_orders
     end
 
     def manual_orders
       list = ManualOrder.active.where(business: Business.of(@view)).pluck(:id, :po_number, :po_line_number, :part_number, :order_type, :ship_date, :qty, Arel.sql("source_data->>'Unit Price'"))
       prices = price_lookup(list.map { |m| m[3] })
+      charges = Product.charge_parts(list.map { |m| m[3] })
       list.map do |id, po, line, part, type, ship, qty, price|
         key = VendorOrderPlacement.order_key(ManualOrder.new(id: id))
-        amount = value(qty, price, prices[part])
+        amount = value(qty, price, prices[part], charge: charges.include?(part))
         Order.new(id: id, manual: true, key: key, firm_key: key, po_number: po, po_line_number: line, part_number: part, order_type: type,
                   ship_date: ship, qty: qty.to_d, value: amount || BigDecimal("0"), unpriced: amount.nil?, rows: 1,
-                  members: [ [ key, amount || BigDecimal("0") ] ])
+                  members: [ [ key, amount || BigDecimal("0"), qty.to_d ] ])
       end
     end
 
@@ -144,15 +186,29 @@ module Dashboard
     # [row key, value] of the rows of the open orders past their ship date (a combined order's by its last ship date)
     # that are not dispatched yet, each row by its own status: its order's mark, or its own SASH India invoices (a
     # combined order may be dispatched in part). As the Orders list shows them (Past ship date, status none / received).
+    # A row of a combined order that no dispatched orders list line names, while its combined order's Dispatched mark
+    # came from such a list, has shipped nothing: its combined order's mark is not its own (as the Orders list,
+    # OrdersController#not_sent_ids).
     def late_rows(open)
       late = open.select { |o| o.ship_date < @today }
       progress = Invoices::Progress.for_keys(late.flat_map { |o| o.members.map(&:first) })
       kinds = OrderDelivery::KINDS
+      listed, named = list_lines
       late.flat_map do |o|
         o.members.select do |key, _|
           invoice = "dispatched" if progress[key] && (progress[key].shipped.positive? || progress[key].outbound.positive?)
-          NOT_DISPATCHED.include?([ marks[o.key], invoice ].compact.max_by { |k| kinds.index(k) })
+          mark = o.rows > 1 && listed.include?(o.key) && !named.include?(key) ? nil : marks[o.key]
+          NOT_DISPATCHED.include?([ mark, invoice ].compact.max_by { |k| kinds.index(k) })
         end
+      end
+    end
+
+    # [keys of the orders whose Dispatched mark came from a dispatched orders list, keys of the rows its lines name].
+    def list_lines
+      @list_lines ||= begin
+        marks = OrderDelivery.active.where(kind: "dispatched").where.not(invoice_lines: nil).pluck(:order_key, :invoice_lines)
+        [ marks.select { |_, lines| Array(lines).any? }.map(&:first).to_set,
+          marks.flat_map { |_, lines| Array(lines).map { |l| l["order_key"] } }.to_set ]
       end
     end
 
@@ -184,13 +240,21 @@ module Dashboard
       firm_order = listed_orders.select { |o| TYPES.include?(o.order_type) }
       {
         open: bucket(open),
-        due_30: bucket(open.select { |o| o.ship_date >= @today && o.ship_date <= @today + 30 }),
-        overdue: late_rows(open).then { |rows| { count: rows.size, value: money(rows.sum(BigDecimal("0"), &:last)) } },
+        due_30: bucket(current(open).select { |o| o.ship_date >= @today && o.ship_date <= @today + 30 }),
+        overdue: late_rows(current(open)).then { |rows| { count: rows.size, value: money(rows.sum(BigDecimal("0"), &:last)) } },
         po_coverage: { percent: total.positive? ? (covered.sum(BigDecimal("0"), &:value) / total * 100).round(1).to_f : 0.0,
-                       covered: bucket(covered), without_po: bucket(open.reject { |o| placed.include?(o.key) || o.qty.zero? }) },
+                       covered: bucket(covered), without_po: bucket(without_po(open, placed)) },
         partial_outbound: bucket(firm_order.select { |o| statuses[o.key] == "delivery" }),
         outbound: bucket(firm_order.select { |o| statuses[o.key] == "outbound" })
       }
+    end
+
+    # Open orders with no vendor PO yet, by their rows with a Qty that SASH India has not dispatched (nothing is left to
+    # make for a dispatched row), as the Orders list's Vendor PO: No PO yet.
+    def without_po(open, placed)
+      open.reject { |o| placed.include?(o.key) }.filter_map do |o|
+        only(o) { |key, qty| qty.positive? && !MADE.include?(row_status(o, key, qty)) }
+      end
     end
 
     def ageing(open)
@@ -237,10 +301,11 @@ module Dashboard
     end
 
     # Qty × price per 100 pcs ÷ 100: the order's own Unit Price, else the part's customer price; nil without either.
-    def value(qty, price_text, fallback)
+    # (A charge's Unit Price is the charge itself: Qty × price.)
+    def value(qty, price_text, fallback, charge: false)
       text = price_text.to_s.delete(",").strip
       price = text.match?(/\A\d+(\.\d+)?\z/) ? BigDecimal(text) : fallback
-      price && qty.to_d * price / 100
+      price && qty.to_d * price / (charge ? 1 : 100)
     end
 
     def price_lookup(parts)

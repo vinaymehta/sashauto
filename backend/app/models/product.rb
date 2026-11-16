@@ -38,4 +38,13 @@ class Product < ApplicationRecord
     PriceChange.create!(product: self, kind: "customer", old_amount: customer_price_before_last_save, new_amount: customer_price,
                         source: price_source || "manual", changed_by: price_changed_by, upload_batch: price_upload_batch)
   end
+
+  # A charge Deere orders as a part, not goods ("Air Freight Charges", part 00010): its Unit Price is the charge
+  # itself, not a price per 100 pieces, and it is delivered without being dispatched from India.
+  CHARGE = /\bcharges?\b/i
+
+  # The part numbers among `parts` that are charges (by their Description).
+  def self.charge_parts(parts)
+    where(part_number: parts.uniq).pluck(:part_number, :description).select { |_, text| text.to_s.match?(CHARGE) }.to_set(&:first)
+  end
 end

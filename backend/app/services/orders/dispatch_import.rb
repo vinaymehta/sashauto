@@ -24,6 +24,9 @@ module Orders
   #   Orders::DispatchImport.call(path:, user:)   # => Result
   class DispatchImport
     class InvalidFile < StandardError; end
+    # A Forecast line Deere moved is followed to a line at most this many days from it (#forecast_moved).
+    MOVE_DAYS = 31
+    MOVE_UPLOADS = 15 # … looking this many uploads ahead for where it went
 
     # po_corrected: rows matched under another PO than the file's ({ row:, part_number:, file_po:, po_number:, ... }).
     Result = Data.define(:rows, :orders_marked, :rows_marked, :skipped, :po_corrected)
@@ -133,6 +136,9 @@ module Orders
       found = on_date(dropped(po_number: row[:po_number], part_number: row[:part_number]), row, "this PO + Part in earlier order files")
       return moved_to(found) unless found.nil?
 
+      found = forecast_moved(row)
+      return found if found
+
       if lines.exists?
         found = same_qty_order(lines, row)
         return found unless found.is_a?(Symbol)
@@ -204,6 +210,42 @@ module Orders
     # (e.g. 19 Nov pulled in to 13 Sep: the list still names 19 Nov). Followed while it moves again; the current order,
     # else its last version. A delivery that ends with no Qty left (received) stays itself, even when a new one with
     # the same Qty follows. Anything else (a message, nil) is returned as it is.
+    # The row's date is one a Forecast line of its PO + Part had in earlier order files: SASH noted the order while it
+    # was still a Forecast (e.g. ship 09 Dec), and Deere then moved it (to 25 Dec, then 11 Dec) and made it Firm. The
+    # order it became, followed move by move: after the last upload where the line had a Qty on that date, the first
+    # upload (of the next MOVE_UPLOADS) with a line of the PO + Part + PO Line with a Qty on a date it did not have one
+    # before, at most MOVE_DAYS away (several: the one with the Forecast's Qty); then that line as a Firm / Order of the
+    # current order data (a dropped one followed on by #moved_to, a Forecast one by this again). nil when there was no
+    # such Forecast line or it is not clear where it went.
+    def forecast_moved(row, date = row[:date], depth = 0)
+      return nil if depth >= 5
+
+      businesses = UploadBatch.where(id: batch_ids).distinct.pluck(:business)
+      same = OrderRow.where(po_number: row[:po_number], part_number: row[:part_number])
+      old = same.where(order_type: "Forecast", ship_date: date).where("order_rows.qty > 0").joins(:upload_batch)
+                .where(upload_batches: { business: businesses, status: "completed" }).order(upload_batch_id: :desc).first
+      return nil unless old
+
+      line = same.where(po_line_number: old.po_line_number).where("order_rows.qty > 0")
+      before = line.where(upload_batch_id: old.upload_batch_id).pluck(:ship_date).to_set
+      later = UploadBatch.completed.where(business: old.upload_batch.business).where("id > ?", old.upload_batch_id).order(:id).limit(MOVE_UPLOADS).pluck(:id)
+      to = later.each do |batch_id|
+        fresh = line.where(upload_batch_id: batch_id).pluck(:ship_date, :qty).uniq.reject { |ship, _| before.include?(ship) || (ship - date).abs > MOVE_DAYS }
+        next if fresh.empty?
+
+        fresh = fresh.select { |_, qty| qty == old.qty } if fresh.size > 1
+        break fresh.one? ? fresh.first.first : nil
+      end
+      return nil unless to.is_a?(Date)
+
+      now = same.where(po_line_number: old.po_line_number, upload_batch_id: batch_ids, ship_date: to).where.not(order_type: "Forecast").to_a
+      now = distinct_orders(now.select { |r| r.qty.to_d.positive? }.presence || now)
+      return now.first if now.one?
+
+      gone = dropped(po_number: row[:po_number], part_number: row[:part_number]).find_by(po_line_number: old.po_line_number, ship_date: to)
+      gone ? moved_to(gone) : forecast_moved(row, to, depth + 1)
+    end
+
     def moved_to(order, depth = 0)
       return order unless order.is_a?(OrderRow) && depth < 5
 
@@ -274,10 +316,17 @@ module Orders
       return "the order is already marked Dispatched with this invoice" if added.empty? && lines == delivery.invoice_lines
 
       changes = { invoice_lines: lines }
+      # Invoices whose date the list corrects (see #merge_lines): in the note too, and the mark's date is its latest.
+      redated = file_rows.select { |row| row[:dated] && delivery.invoice_lines.any? { |l| same_shipment?(l, line(row)) && l["date"] != line(row)["date"] } }
+      note = redated.uniq { |row| row[:invoice_number] }.reduce(delivery.note) do |text, row|
+        text.gsub(/#{Regexp.escape(row[:invoice_number])} \(\d{2}\.\d{2}\.\d{4}/, "#{row[:invoice_number]} (#{row[:invoice_date].strftime('%d.%m.%Y')}")
+      end
+      on = redated.any? ? lines.filter_map { |l| Date.iso8601(l["date"].to_s) rescue nil }.max || delivery.delivered_on : delivery.delivered_on
+      changes.merge!(note: note, delivered_on: on) if redated.any?
       if added.any?
         changes.merge!(invoice_number: invoice_text(listed + added.map { |row| row[:invoice_number] }),
-                       note: "#{delivery.note}, #{added.map { |row| entry(row) }.join(', ')}".first(500),
-                       delivered_on: [ delivery.delivered_on, *added.map { |row| row[:invoice_date] } ].max)
+                       note: "#{note}, #{added.map { |row| entry(row) }.join(', ')}".first(500),
+                       delivered_on: [ on, *added.map { |row| row[:invoice_date] } ].max)
       end
       delivery.update!(changes)
       if added.any?
@@ -291,10 +340,15 @@ module Orders
     # whatever its date: a list without invoice dates (Book 38) dates them the import day, so importing it again, or
     # after the old list, must not count a shipment twice. The line already there keeps its date.
     def merge_lines(lines, file_rows)
-      merged = lines.dup
+      merged = lines.map(&:dup)
       # A list can name the same shipment twice for an order (same invoice and Qty, two packings): as many as it names.
       file_rows.map { |row| line(row) }.group_by { |l| l.values_at("invoice", "qty", "order_key") }.each_value do |same|
         merged.concat(same.drop(merged.count { |l| same_shipment?(l, same.first) }))
+      end
+      # The list's own Invoice Date replaces the date a shipment got without one (Book 38 has no invoice dates: the day
+      # it was uploaded).
+      file_rows.select { |row| row[:dated] }.map { |row| line(row) }.each do |fresh|
+        merged.each { |l| l["date"] = fresh["date"] if same_shipment?(l, fresh) }
       end
       merged
     end
@@ -353,7 +407,7 @@ module Orders
         next if cells.all? { |c| OrderRows::Normalizer.text(c).nil? }
         raise InvalidFile, "The file has more than #{MAX_ROWS} rows." if number - header_row > MAX_ROWS
 
-        read_row(number, index.transform_values { |i| cells[i] })
+        read_row(number, index.transform_values { |i| cells[i] }).merge(dated: true) # the list has an Invoice Date column
       end
     rescue Zip::Error, ArgumentError, Roo::Error => e
       raise InvalidFile, "The file could not be read as an .xlsx workbook (#{e.class.name.demodulize})."

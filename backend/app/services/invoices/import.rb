@@ -89,7 +89,7 @@ module Invoices
 
     def line_json(line)
       { index: line.index, po_number: line.po_number, po_date: line.po_date&.iso8601, part_number: line.part_number,
-        description: line.description, qty: Serializers.qty(line.qty) }
+        description: line.description, qty: Serializers.qty(line.qty), price: line.price&.to_s("F") }
     end
 
     # The invoice and what it does: each line with the order rows it goes to (Qty, Order Qty, dispatched / outbound

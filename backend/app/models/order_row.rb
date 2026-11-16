@@ -26,4 +26,24 @@ class OrderRow < ApplicationRecord
   def self.group_key(po_number, part_number, order_type)
     Digest::SHA256.hexdigest([ po_number, part_number, order_type ].join(OrderRows::Normalizer::KEY_SEPARATOR))
   end
+
+  # Rows kept on the Orders page though no longer in the uploads `batch_ids` (the current order data) of `businesses`:
+  # the last version of each order (PO + Part + PO Line + Ship Date) of an earlier upload with a status mark, a vendor
+  # PO or an uploaded invoice (its shipments and history), e.g. an order Deere dropped once it was dispatched.
+  def self.kept(batch_ids, businesses)
+    ids = batch_ids.map { |id| Integer(id) }.presence || [ 0 ]
+    names = businesses.map { |b| connection.quote(b) }.join(",")
+    from(<<~SQL.squish)
+      (SELECT DISTINCT ON (r.group_key, r.po_line_number, r.ship_date) r.id
+       FROM order_rows r JOIN upload_batches b ON b.id = r.upload_batch_id AND b.business IN (#{names})
+       WHERE r.upload_batch_id NOT IN (#{ids.join(',')})
+         AND r.id IN (SELECT d.order_row_id FROM order_deliveries d WHERE d.removed_at IS NULL
+                      UNION SELECT p.order_row_id FROM vendor_order_placements p
+                      UNION SELECT a.order_row_id FROM invoice_allocations a JOIN invoices i ON i.id = a.invoice_id AND i.removed_at IS NULL
+                            WHERE a.order_row_id IS NOT NULL)
+         AND NOT EXISTS (SELECT 1 FROM order_rows n WHERE n.upload_batch_id IN (#{ids.join(',')})
+                         AND n.group_key = r.group_key AND n.po_line_number = r.po_line_number AND n.ship_date = r.ship_date)
+       ORDER BY r.group_key, r.po_line_number, r.ship_date, r.upload_batch_id DESC) AS order_rows
+    SQL
+  end
 end

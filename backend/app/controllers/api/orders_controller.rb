@@ -325,6 +325,8 @@ module Api
       progress = Invoices::Progress.for_keys(own_keys)
       named = listed_marks(own_keys) # the list's mark naming each row (see #index)
       fallback = Product.where(part_number: rows.map(&:part_number).uniq).pluck(:part_number, :customer_price).to_h
+      charges = Product.charge_parts(rows.map(&:part_number))
+      invoiced = delivered_values(own_keys)
       rows.each_with_index.filter_map do |row, i|
         next if row.order_type == "Forecast"
 
@@ -349,8 +351,30 @@ module Api
         end
         text = row.source_data&.dig("Unit Price").to_s.delete(",").strip
         price = text.match?(/\A\d+(\.\d+)?\z/) ? BigDecimal(text) : fallback[row.part_number]
-        { row: row, ordered: open + delivered, open: open, shipped: shipped, delivered: delivered, price: price, status: info[:status] }
+        # Prices are per 100 pieces; a charge's Unit Price is the charge itself (Product.charge_parts).
+        price *= 100 if price && charges.include?(row.part_number)
+        # Delivered value: at the prices on its SASH Inc invoices (#delivered_values); Qty with no invoice price at the
+        # order's price.
+        on_invoices = invoiced[own_keys[i]]
+        rest = [ delivered - (on_invoices&.first || 0), 0.to_d ].max
+        delivered_value = on_invoices || price ? (on_invoices&.last || 0) + (price ? rest * price / 100 : 0) : nil
+        { row: row, ordered: open + delivered, open: open, shipped: shipped, delivered: delivered, price: price, status: info[:status],
+          delivered_value: delivered_value }
       end.then { |lines| allocate_pending(lines) }
+    end
+
+    # Order key => [Qty, value] delivered on SASH Inc invoices at each invoice line's price (Invoices::Reader: the price
+    # of one piece on the invoice); only the Qty of lines with a price.
+    def delivered_values(keys)
+      allocations = InvoiceAllocation.active.where(invoices: { kind: "inc" }, order_key: keys.uniq).pluck(:order_key, :invoice_id, :line_index, :qty)
+      prices = Invoice.where(id: allocations.map { |a| a[1] }.uniq).pluck(:id, :lines)
+                      .flat_map { |id, lines| Array(lines).filter_map { |l| [ [ id, l["index"] ], BigDecimal(l["price"].to_s) ] if l["price"].present? } }.to_h
+      allocations.each_with_object({}) do |(key, invoice, index, qty), by_key|
+        price = prices[[ invoice, index ]] or next
+        sum = by_key[key] ||= [ 0.to_d, 0.to_d ]
+        sum[0] += qty
+        sum[1] += qty * price
+      end
     end
 
     # Pending to dispatch (as per SASH) of each summary line. Dispatches are often recorded on an earlier ship date than
@@ -382,7 +406,7 @@ module Api
         open_orders: lines.count { |l| l[:pending].positive? },
         revenue_ordered: (priced.sum(0.to_d) { |l| l[:ordered] * l[:price] / 100 }).round(2).to_s("F"),
         revenue_dispatched: (priced.sum(0.to_d) { |l| l[:shipped] * l[:price] / 100 }).round(2).to_s("F"),
-        revenue_delivered: (priced.sum(0.to_d) { |l| l[:delivered] * l[:price] / 100 }).round(2).to_s("F"),
+        revenue_delivered: (lines.sum(0.to_d) { |l| l[:delivered_value] || 0 }).round(2).to_s("F"),
         revenue_in_transit: [ priced.sum(0.to_d) { |l| (l[:shipped] - l[:delivered]) * l[:price] / 100 }, 0.to_d ].max.round(2).to_s("F"),
         revenue_pending_dtp: (priced.sum(0.to_d) { |l| l[:open] * l[:price] / 100 }).round(2).to_s("F"),
         revenue_pending: (priced.sum(0.to_d) { |l| l[:pending] * l[:price] / 100 }).round(2).to_s("F"),
@@ -815,19 +839,7 @@ module Api
     # no longer in their business's latest upload: like manual orders they stay on the Orders page. One row per order (PO + Part + Type +
     # PO Line + Ship Date), its last version.
     def kept_rows(batches)
-      ids = batches.map { |b| Integer(b.id) }.presence || [ 0 ]
-      names = businesses.map { |b| OrderRow.connection.quote(b) }.join(",")
-      OrderRow.from(<<~SQL.squish)
-        (SELECT DISTINCT ON (r.group_key, r.po_line_number, r.ship_date) r.id
-         FROM order_rows r JOIN upload_batches b ON b.id = r.upload_batch_id AND b.business IN (#{names})
-         WHERE r.upload_batch_id NOT IN (#{ids.join(',')})
-           AND r.id IN (SELECT d.order_row_id FROM order_deliveries d WHERE d.removed_at IS NULL
-                        UNION SELECT p.order_row_id FROM vendor_order_placements p
-                        UNION SELECT a.order_row_id FROM #{ALLOCATIONS_SQL} WHERE a.order_row_id IS NOT NULL)
-           AND NOT EXISTS (SELECT 1 FROM order_rows n WHERE n.upload_batch_id IN (#{ids.join(',')})
-                           AND n.group_key = r.group_key AND n.po_line_number = r.po_line_number AND n.ship_date = r.ship_date)
-         ORDER BY r.group_key, r.po_line_number, r.ship_date, r.upload_batch_id DESC) AS order_rows
-      SQL
+      OrderRow.kept(batches.map(&:id), businesses)
     end
 
     # Ids of the kept rows (see #kept_rows), looked up once per request: the dataset is queried several times (page,
