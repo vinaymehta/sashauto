@@ -19,4 +19,21 @@ module Business
   def currency(business)
     AppConfig.business_currency(business)
   end
+
+  # POs left out of the Dashboard's figures, per business: GMBH's POs starting with 45.
+  DASHBOARD_EXCLUDED_PO_PREFIX = { "gmbh" => "45" }.freeze
+
+  # Whether an order of this business and PO is left out of the Dashboard.
+  def dashboard_excluded?(business, po_number)
+    prefix = DASHBOARD_EXCLUDED_PO_PREFIX[business.to_s]
+    prefix.present? && po_number.to_s.start_with?(prefix)
+  end
+
+  # SQL condition true for the orders left out of the Dashboard (`business` and `po` are the columns' SQL).
+  def dashboard_excluded_sql(business, po)
+    conditions = DASHBOARD_EXCLUDED_PO_PREFIX.map do |key, prefix|
+      "(#{business} = #{ActiveRecord::Base.connection.quote(key)} AND #{po} LIKE #{ActiveRecord::Base.connection.quote("#{prefix}%")})"
+    end
+    conditions.any? ? "(#{conditions.join(' OR ')})" : "FALSE"
+  end
 end

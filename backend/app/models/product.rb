@@ -41,7 +41,8 @@ class Product < ApplicationRecord
 
   # A charge Deere orders as a part, not goods ("Air Freight Charges", part 00010): its Unit Price is the charge
   # itself, not a price per 100 pieces, and it is delivered without being dispatched from India.
-  CHARGE = /\bcharges?\b/i
+  # (Not a part that only has the word: "Transmission Charge Pump".)
+  CHARGE = /\b(?:freight|labell?ing|packing|handling|courier|shipping|transport(?:ation)?)\s+charges?\b/i
 
   # The part numbers among `parts` that are charges (by their Description).
   def self.charge_parts(parts)

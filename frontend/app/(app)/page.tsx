@@ -105,7 +105,7 @@ export default function DashboardPage() {
   // Partial outbound / Outbound cards: counted as the Orders page lists them (its tabs), with old deliveries Deere
   // dropped since; the Dashboard's own figures when Orders cannot be read.
   const me = useSession().user;
-  const listed = useApi<OrdersSummary>(can(me, "orders") ? "/api/orders/summary" : null, { today: todayParam() });
+  const listed = useApi<OrdersSummary>(can(me, "orders") ? "/api/orders/summary" : null, { today: todayParam(), dashboard: 1 });
   // Order whose Order details panel is open (from Next shipments or a part's open orders).
   const [order, setOrder] = useState<DashboardOrder | null>(null);
 

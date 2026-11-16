@@ -50,6 +50,7 @@ module Dashboard
                        .select("order_rows.*, MAX(upload_batch_id) OVER (PARTITION BY group_key, po_line_number, ship_date) AS latest_batch_id")
       rows = OrderRow.from(latest, :order_rows).where("order_rows.upload_batch_id = order_rows.latest_batch_id")
                      .where(upload_batch_id: UploadBatch.where(business: @overview.businesses).select(:id))
+                     .where.not(Business.dashboard_excluded_sql("(SELECT b.business FROM upload_batches b WHERE b.id = order_rows.upload_batch_id)", "order_rows.po_number"))
                      .pluck(:group_key, :po_line_number, :part_number, :qty, :ship_date, Arel.sql("source_data->>'Unit Price'"))
                      .map { |g, line, part, qty, ship, price| [ order_key(g, line, ship), Sale.new(part, qty, price, ship) ] }
       sales = rows + manual_orders(ship_date: series_from..@today)
@@ -96,6 +97,7 @@ module Dashboard
     # Active manual orders of type Firm / Order: [[order key, Sale], ...].
     def manual_orders(**where)
       ManualOrder.active.where(business: @overview.businesses, order_type: TYPES, **where)
+                 .where.not(Business.dashboard_excluded_sql("manual_orders.business", "manual_orders.po_number"))
                  .pluck(:id, :part_number, :qty, Arel.sql("source_data->>'Unit Price'"), :ship_date)
                  .map { |id, part, qty, price, ship| [ VendorOrderPlacement.order_key(ManualOrder.new(id: id)), Sale.new(part, qty, price, ship) ] }
     end

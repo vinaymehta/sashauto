@@ -126,10 +126,14 @@ module Api
       # The rows the Orders list shows: the latest uploads' and the kept ones (no longer in Deere's file, kept for their
       # shipments, invoices or vendor POs: #kept_rows), so a card and the list it filters count the same rows.
       imported = OrderRow.where(upload_batch_id: batch_ids).or(OrderRow.where(id: kept_ids(batches))).where(order_type: %w[Firm Order])
-                         .pluck(:id, :group_key, :po_line_number, :ship_date, :qty)
+      # The Dashboard's cards (dashboard=1) leave out GMBH's 45… POs (Business.dashboard_excluded?).
+      imported = imported.where.not(Business.dashboard_excluded_sql("(SELECT b.business FROM upload_batches b WHERE b.id = order_rows.upload_batch_id)", "order_rows.po_number")) if dashboard?
+      imported = imported.pluck(:id, :group_key, :po_line_number, :ship_date, :qty)
       keys = imported.to_h { |id, g, line, ship, _| [ id, Digest::SHA256.hexdigest([ g, line, ship.iso8601 ].join(OrderRows::Normalizer::KEY_SEPARATOR)) ] }
       rows = imported.map { |id, *, qty| [ id, keys[anchor_of.fetch(id, id)], qty, false ] }
-      rows += manual_orders.where(order_type: %w[Firm Order]).pluck(:id, :qty)
+      manual = manual_orders.where(order_type: %w[Firm Order])
+      manual = manual.where.not(Business.dashboard_excluded_sql("manual_orders.business", "manual_orders.po_number")) if dashboard?
+      rows += manual.pluck(:id, :qty)
                          .map { |id, qty| [ id, VendorOrderPlacement.order_key(ManualOrder.new(id: id)), qty, true ] }
       delivered = OrderDelivery.active.where(kind: "outbound", order_key: rows.map { |r| r[1] }).distinct.pluck(:order_key).to_set
       # Each row's own key (the invoices are recorded per row, a combined order's rows too).
@@ -144,6 +148,7 @@ module Api
       # Delivery tabs, counted on the same rows (as the Status column): in transit (Dispatch or Dispatched from
       # Faridabad, not yet at the US warehouse) and fulfilled (delivered to Deere).
       current = dataset(UploadBatch.latest_for(current_business))
+      current = current.where.not(Business.dashboard_excluded_sql("order_rows.business", "order_rows.po_number")) if dashboard?
       statuses = current.group(Arel.sql(status_sql)).count
       made = current.where("#{status_sql} IN (?)", MADE_STATUSES).pluck(:id, :manual).to_set
       pending = open.select { |id, key, qty, manual| qty.to_d.positive? && !placed.include?(key) && !made.include?([ id, manual ]) }
@@ -256,7 +261,8 @@ module Api
     def fulfilment
       batches = UploadBatch.latest_for(current_business)
       load_combined_orders(Orders::Combiner.for_batches(batches.map(&:id)))
-      lines = summary_lines(dataset(batches).to_a)
+      # Without the orders the Dashboard leaves out (Business.dashboard_excluded?: GMBH's 45… POs).
+      lines = summary_lines(dataset(batches).where.not(Business.dashboard_excluded_sql("order_rows.business", "order_rows.po_number")).to_a)
       by_business = lines.group_by { |l| l[:row][:business] }
       render json: { data: {
         currency: summary_currency, files: batches.map { |b| { business: b.business, name: b.original_filename, completed_at: b.completed_at } },
@@ -401,13 +407,15 @@ module Api
     def summary_figures(lines)
       ordered, open, shipped, delivered, pending = %i[ordered open shipped delivered pending].map { |k| lines.sum(0.to_d) { |l| l[k] } }
       priced = lines.select { |l| l[:price] }
-      { ordered: Serializers.qty(ordered), dispatched: Serializers.qty(shipped), in_transit: Serializers.qty([ shipped - delivered, 0 ].max),
+      # In transit per order, never below 0: a charge delivered without being dispatched (freight) takes nothing off.
+      transit = lines.sum(0.to_d) { |l| [ l[:shipped] - l[:delivered], 0.to_d ].max }
+      { ordered: Serializers.qty(ordered), dispatched: Serializers.qty(shipped), in_transit: Serializers.qty(transit),
         delivered: Serializers.qty(delivered), pending: Serializers.qty(pending), pending_dtp: Serializers.qty(open), orders: lines.size,
         open_orders: lines.count { |l| l[:pending].positive? },
         revenue_ordered: (priced.sum(0.to_d) { |l| l[:ordered] * l[:price] / 100 }).round(2).to_s("F"),
         revenue_dispatched: (priced.sum(0.to_d) { |l| l[:shipped] * l[:price] / 100 }).round(2).to_s("F"),
         revenue_delivered: (lines.sum(0.to_d) { |l| l[:delivered_value] || 0 }).round(2).to_s("F"),
-        revenue_in_transit: [ priced.sum(0.to_d) { |l| (l[:shipped] - l[:delivered]) * l[:price] / 100 }, 0.to_d ].max.round(2).to_s("F"),
+        revenue_in_transit: priced.sum(0.to_d) { |l| [ l[:shipped] - l[:delivered], 0.to_d ].max * l[:price] / 100 }.round(2).to_s("F"),
         revenue_pending_dtp: (priced.sum(0.to_d) { |l| l[:open] * l[:price] / 100 }).round(2).to_s("F"),
         revenue_pending: (priced.sum(0.to_d) { |l| l[:pending] * l[:price] / 100 }).round(2).to_s("F"),
         unpriced: lines.size - priced.size }
@@ -804,6 +812,11 @@ module Api
     # the view.
     def selected_batches
       @selected_batches ||= params[:upload_id].present? ? [ UploadBatch.completed.find(params[:upload_id]) ] : UploadBatch.latest_for(current_business)
+    end
+
+    # The Dashboard asks for its cards (dashboard=1): without the orders it leaves out (Business.dashboard_excluded?).
+    def dashboard?
+      params[:dashboard] == "1"
     end
 
     # The current order data (latest uploads) includes the manual orders; an earlier upload shows only its rows.
