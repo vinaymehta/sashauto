@@ -142,9 +142,14 @@ module Orders
       if lines.exists?
         found = same_qty_order(lines, row)
         return found unless found.is_a?(Symbol)
+
+        # The list's PO has orders of the Part: one of them, not another PO's order on that date (the GMBH list gives
+        # some rows the date of a 45… PO's order while naming the 55… PO the shipment was for).
+        found = nearest_po_order(row)
+        return found if found
       end
 
-      part_lines = OrderRow.where(upload_batch_id: batch_ids, part_number: row[:part_number])
+      part_lines =OrderRow.where(upload_batch_id: batch_ids, part_number: row[:part_number])
       found = part_lines.exists? ? on_date(part_lines, row, "this Part") : nil
       found = moved_to(on_date(dropped(part_number: row[:part_number]), row, "this Part in earlier order files")) if found.nil?
       return found unless found.nil?
@@ -180,6 +185,17 @@ module Orders
 
       "#{found.size} orders of #{what} are on #{row[:date].strftime('%d %b %Y')} " \
         "(#{found.map { |line| "PO #{line.po_number} Line #{line.po_line_number}" }.join(', ')})"
+    end
+
+    # The list's PO + Part order (Firm / Order, in the current order data or dropped since) whose Ship Date is nearest the
+    # row's date, among those that had come by the invoice date; nil when there is none.
+    def nearest_po_order(row)
+      current = OrderRow.where(upload_batch_id: batch_ids, po_number: row[:po_number], part_number: row[:part_number]).where.not(order_type: "Forecast").to_a
+      gone = dropped(po_number: row[:po_number], part_number: row[:part_number]).where.not(order_type: "Forecast").to_a
+      orders = distinct_orders(current.sort_by { |line| -line.qty.to_d } + gone)
+      orders = orders.select { |line| came_by?(line, row[:invoice_date]) }.presence || orders
+      found = orders.min_by { |line| [ (line.ship_date - row[:date]).abs, line.ship_date ] }
+      found && (current.include?(found) ? found : moved_to(found))
     end
 
     # No order on the list's date (its date is not always Deere's, e.g. GMBH's Due Date moved): the one Firm / Order

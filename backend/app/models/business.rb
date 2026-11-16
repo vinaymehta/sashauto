@@ -23,16 +23,26 @@ module Business
   # POs left out of the Dashboard's figures, per business: GMBH's POs starting with 45.
   DASHBOARD_EXCLUDED_PO_PREFIX = { "gmbh" => "45" }.freeze
 
+  # Part numbers excluded from the Dashboard's figures entirely (all businesses).
+  DASHBOARD_EXCLUDED_PARTS = %w[JXAE30508 JXH213508 JXRE52020].freeze
+
   # Whether an order of this business and PO is left out of the Dashboard.
-  def dashboard_excluded?(business, po_number)
+  def dashboard_excluded?(business, po_number, part_number = nil)
+    return true if DASHBOARD_EXCLUDED_PARTS.include?(part_number.to_s.strip.upcase)
+
     prefix = DASHBOARD_EXCLUDED_PO_PREFIX[business.to_s]
     prefix.present? && po_number.to_s.start_with?(prefix)
   end
 
   # SQL condition true for the orders left out of the Dashboard (`business` and `po` are the columns' SQL).
-  def dashboard_excluded_sql(business, po)
+  # When `part` is provided, also excludes the DASHBOARD_EXCLUDED_PARTS.
+  def dashboard_excluded_sql(business, po, part = nil)
     conditions = DASHBOARD_EXCLUDED_PO_PREFIX.map do |key, prefix|
       "(#{business} = #{ActiveRecord::Base.connection.quote(key)} AND #{po} LIKE #{ActiveRecord::Base.connection.quote("#{prefix}%")})"
+    end
+    if part && DASHBOARD_EXCLUDED_PARTS.any?
+      quoted = DASHBOARD_EXCLUDED_PARTS.map { |p| ActiveRecord::Base.connection.quote(p) }.join(", ")
+      conditions << "(#{part} IN (#{quoted}))"
     end
     conditions.any? ? "(#{conditions.join(' OR ')})" : "FALSE"
   end

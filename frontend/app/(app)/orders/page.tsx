@@ -688,7 +688,7 @@ function OrdersView() {
 }
 
 // Different Ship To: the alert email's list (rows of the latest file going to another address than the default Ship To)
-// with the part's description, and Export as .csv or .xlsx (the same list; the link carries the business, as a download
+// with the part's description, and Export as .xlsx (the same list; the link carries the business, as a download
 // sends no X-Business header).
 function ShipToSheet({ open, onClose, data, business }: { open: boolean; onClose: () => void; data: ShipToAlerts; business: string }) {
   const [query, setQuery] = useState("");
@@ -696,7 +696,7 @@ function ShipToSheet({ open, onClose, data, business }: { open: boolean; onClose
   const rows = term ? data.rows.filter((r) => [r.po_number, r.part_number, r.description, r.ship_to, r.order_type]
     .some((v) => v?.toLowerCase().includes(term))) : data.rows;
   const several = data.files.length > 1;
-  const href = (format: "csv" | "xlsx") => `/api/orders/ship_to_alerts?${new URLSearchParams({ export: format, business })}`;
+  const href = `/api/orders/ship_to_alerts?${new URLSearchParams({ export: "xlsx", business })}`;
   return (
     <Sheet open={open} onClose={onClose} wide icon={<MapPinIcon size={16} />} title="Different Ship To"
            description={`${formatCount(data.rows.length)} row${data.rows.length === 1 ? "" : "s"} of ${data.files.map((f) => f.name).join(" · ")}`}>
@@ -708,12 +708,10 @@ function ShipToSheet({ open, onClose, data, business }: { open: boolean; onClose
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="min-w-48 flex-1"><SearchInput value={query} onSearch={setQuery} label="Search the Different Ship To rows" placeholder="Search PO, part, description, Ship To" /></div>
-          {(["csv", "xlsx"] as const).map((format) => (
-            <a key={format} href={href(format)} download
-               className="inline-flex h-9 items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-3 text-sm font-medium text-ink transition-colors hover:border-neutral-400 hover:bg-subtle">
-              <DownloadIcon size={15} className="text-ink-muted" />Export .{format}
-            </a>
-          ))}
+          <a href={href} download
+             className="inline-flex h-9 items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-3 text-sm font-medium text-ink transition-colors hover:border-neutral-400 hover:bg-subtle">
+            <DownloadIcon size={15} className="text-ink-muted" />Export
+          </a>
         </div>
         {rows.length === 0 ? (
           <p className="py-6 text-center text-sm text-ink-muted">{data.rows.length ? "No rows match the search." : "Every row goes to the default Ship To."}</p>

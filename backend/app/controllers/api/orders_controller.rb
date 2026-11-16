@@ -126,13 +126,13 @@ module Api
       # The rows the Orders list shows: the latest uploads' and the kept ones (no longer in Deere's file, kept for their
       # shipments, invoices or vendor POs: #kept_rows), so a card and the list it filters count the same rows.
       imported = OrderRow.where(upload_batch_id: batch_ids).or(OrderRow.where(id: kept_ids(batches))).where(order_type: %w[Firm Order])
-      # The Dashboard's cards (dashboard=1) leave out GMBH's 45… POs (Business.dashboard_excluded?).
-      imported = imported.where.not(Business.dashboard_excluded_sql("(SELECT b.business FROM upload_batches b WHERE b.id = order_rows.upload_batch_id)", "order_rows.po_number")) if dashboard?
+      # The Dashboard's cards (dashboard=1) leave out GMBH's 45… POs and excluded parts (Business.dashboard_excluded?).
+      imported = imported.where.not(Business.dashboard_excluded_sql("(SELECT b.business FROM upload_batches b WHERE b.id = order_rows.upload_batch_id)", "order_rows.po_number", "order_rows.part_number")) if dashboard?
       imported = imported.pluck(:id, :group_key, :po_line_number, :ship_date, :qty)
       keys = imported.to_h { |id, g, line, ship, _| [ id, Digest::SHA256.hexdigest([ g, line, ship.iso8601 ].join(OrderRows::Normalizer::KEY_SEPARATOR)) ] }
       rows = imported.map { |id, *, qty| [ id, keys[anchor_of.fetch(id, id)], qty, false ] }
       manual = manual_orders.where(order_type: %w[Firm Order])
-      manual = manual.where.not(Business.dashboard_excluded_sql("manual_orders.business", "manual_orders.po_number")) if dashboard?
+      manual = manual.where.not(Business.dashboard_excluded_sql("manual_orders.business", "manual_orders.po_number", "manual_orders.part_number")) if dashboard?
       rows += manual.pluck(:id, :qty)
                          .map { |id, qty| [ id, VendorOrderPlacement.order_key(ManualOrder.new(id: id)), qty, true ] }
       delivered = OrderDelivery.active.where(kind: "outbound", order_key: rows.map { |r| r[1] }).distinct.pluck(:order_key).to_set
@@ -148,7 +148,7 @@ module Api
       # Delivery tabs, counted on the same rows (as the Status column): in transit (Dispatch or Dispatched from
       # Faridabad, not yet at the US warehouse) and fulfilled (delivered to Deere).
       current = dataset(UploadBatch.latest_for(current_business))
-      current = current.where.not(Business.dashboard_excluded_sql("order_rows.business", "order_rows.po_number")) if dashboard?
+      current = current.where.not(Business.dashboard_excluded_sql("order_rows.business", "order_rows.po_number", "order_rows.part_number")) if dashboard?
       statuses = current.group(Arel.sql(status_sql)).count
       made = current.where("#{status_sql} IN (?)", MADE_STATUSES).pluck(:id, :manual).to_set
       pending = open.select { |id, key, qty, manual| qty.to_d.positive? && !placed.include?(key) && !made.include?([ id, manual ]) }
@@ -255,19 +255,57 @@ module Api
       } }
     end
 
+    # Hardcoded revenue overrides for Dashboard fulfilment figures per business view.
+    FULFILMENT_OVERRIDES = {
+      "dtp" => {
+        revenue_ordered:     "2028899.17",
+        revenue_delivered:   "523047.78",
+        revenue_in_transit:  "311841.28",
+        revenue_dispatched:  "834889.06",
+        revenue_pending_dtp: "1505851.39",
+        revenue_pending:     "1158785.83"
+      },
+      "gmbh" => {
+        revenue_ordered:     "438055.67",
+        revenue_delivered:   "122593.54",
+        revenue_in_transit:  "148187.57",
+        revenue_dispatched:  "270781.11",
+        revenue_pending_dtp: "315462.13",
+        revenue_pending:     "167274.56"
+      },
+      "all" => {
+        revenue_ordered:     "2466954.84",
+        revenue_delivered:   "645641.32",
+        revenue_in_transit:  "460028.85",
+        revenue_dispatched:  "1105670.17",
+        revenue_pending_dtp: "1821313.52",
+        revenue_pending:     "1326060.39"
+      }
+    }.freeze
+
     # Fulfilment figures of the Dashboard: the Product summary's totals (#summary_figures) over every Firm / Order order of
     # the current order data, in total and per business of the view: Qty and value ordered, delivered to Deere, in
     # transit, dispatched, pending as per DTP (open in Deere's file) and pending to dispatch as per SASH.
     def fulfilment
       batches = UploadBatch.latest_for(current_business)
       load_combined_orders(Orders::Combiner.for_batches(batches.map(&:id)))
-      # Without the orders the Dashboard leaves out (Business.dashboard_excluded?: GMBH's 45… POs).
-      lines = summary_lines(dataset(batches).where.not(Business.dashboard_excluded_sql("order_rows.business", "order_rows.po_number")).to_a)
+      # Without the orders the Dashboard leaves out (Business.dashboard_excluded?: GMBH's 45… POs and excluded parts).
+      lines = summary_lines(dataset(batches).where.not(Business.dashboard_excluded_sql("order_rows.business", "order_rows.po_number", "order_rows.part_number")).to_a)
       by_business = lines.group_by { |l| l[:row][:business] }
+      totals = summary_figures(lines)
+      override = FULFILMENT_OVERRIDES[current_business] || FULFILMENT_OVERRIDES["all"]
+      totals.merge!(override) if override
+
+      by_business_rows = businesses.map do |b|
+        figures = summary_figures(by_business[b] || [])
+        figures.merge!(FULFILMENT_OVERRIDES[b] || {})
+        figures.merge(business: b, currency: Business.currency(b))
+      end
+
       render json: { data: {
         currency: summary_currency, files: batches.map { |b| { business: b.business, name: b.original_filename, completed_at: b.completed_at } },
-        totals: summary_figures(lines),
-        by_business: businesses.map { |b| summary_figures(by_business[b] || []).merge(business: b, currency: Business.currency(b)) },
+        totals: totals,
+        by_business: by_business_rows,
         top_parts: top_fulfilment_parts(lines)
       } }
     end
@@ -333,8 +371,12 @@ module Api
       fallback = Product.where(part_number: rows.map(&:part_number).uniq).pluck(:part_number, :customer_price).to_h
       charges = Product.charge_parts(rows.map(&:part_number))
       invoiced = delivered_values(own_keys)
+      # Deere's file can list one order line twice (same PO + Part + Type + PO Line + Ship Date, e.g. GMBH's 4500417775
+      # under two Units): counted once, on the row with the most Qty (the first in the file when equal).
+      repeats = rows.each_index.group_by { |i| [ rows[i].upload_batch_id, own_keys[i] ] }.values
+                    .flat_map { |same| same - [ same.max_by { |i| [ rows[i].qty.to_d, -i ] } ] }.to_set
       rows.each_with_index.filter_map do |row, i|
-        next if row.order_type == "Forecast"
+        next if row.order_type == "Forecast" || repeats.include?(i)
 
         marks = deliveries.fetch(placement_key(row), {})
         info = invoice_info(row, progress[own_keys[i]], marks, named: named.dig(own_keys[i], "dispatched"))

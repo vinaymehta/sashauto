@@ -17,6 +17,8 @@ module Dashboard
   #              orders (for the part's detail panel)
   #   upcoming   the next open orders to ship (overdue first), with their status and whether a PO exists
   class Overview
+    attr_reader :view
+
     TYPES = %w[Firm Order].freeze
     STATUSES = %w[none received dispatch dispatched inbound delivery outbound].freeze
     PIPELINE_STATUSES = %w[none received dispatched inbound delivery].freeze
@@ -135,7 +137,7 @@ module Dashboard
                      .pluck(:id, :group_key, :po_number, :po_line_number, :part_number, :order_type, :ship_date, :qty, Arel.sql("source_data->>'Unit Price'"), :upload_batch_id)
       # Orders the Dashboard leaves out (Business.dashboard_excluded?: GMBH's 45… POs).
       business_of = UploadBatch.where(id: rows.map(&:last).uniq).pluck(:id, :business).to_h
-      rows.reject! { |r| Business.dashboard_excluded?(business_of[r[9]], r[2]) }
+      rows.reject! { |r| Business.dashboard_excluded?(business_of[r[9]], r[2], r[4]) }
       prices = price_lookup(rows.map { |r| r[4] })
       charges = Product.charge_parts(rows.map { |r| r[4] })
       values = rows.to_h { |r| [ r[0], value(r[7], r[8], prices[r[4]], charge: charges.include?(r[4])) ] }
@@ -155,7 +157,7 @@ module Dashboard
     end
 
     def manual_orders
-      list = ManualOrder.active.where(business: Business.of(@view)).where.not(Business.dashboard_excluded_sql("manual_orders.business", "manual_orders.po_number"))
+      list = ManualOrder.active.where(business: Business.of(@view)).where.not(Business.dashboard_excluded_sql("manual_orders.business", "manual_orders.po_number", "manual_orders.part_number"))
                         .pluck(:id, :po_number, :po_line_number, :part_number, :order_type, :ship_date, :qty, Arel.sql("source_data->>'Unit Price'"))
       prices = price_lookup(list.map { |m| m[3] })
       charges = Product.charge_parts(list.map { |m| m[3] })

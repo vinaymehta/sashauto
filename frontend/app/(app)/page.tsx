@@ -23,17 +23,17 @@ import { formatMoq, formatPrice } from "@/components/vendors/price-format";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TINTS, type Tint } from "@/components/ui/tint";
 
-// Whole amounts with the currency sign (INR with Indian digit grouping); `compact` writes $104K / ₹51L.
+// Amounts with the currency sign (INR with Indian digit grouping), 2 decimal places; `compact` writes $104K / ₹51L.
 function formatMoney(amount: string | number, currency: string, compact = false) {
   return new Intl.NumberFormat(currency === "INR" ? "en-IN" : "en-US", {
-    style: "currency", currency, maximumFractionDigits: compact ? 1 : 0, notation: compact ? "compact" : "standard",
+    style: "currency", currency, minimumFractionDigits: compact ? 0 : 2, maximumFractionDigits: compact ? 1 : 2, notation: compact ? "compact" : "standard",
   }).format(Number(amount));
 }
 // Deere amounts in the shown business's currency (Settings). In "All" with different currencies the amounts are added
 // up as plain numbers (a notice says so). The page provides the currency; `useMoney` formats with it.
 const CurrencyContext = createContext<string | null>("USD");
 const moneyIn = (currency: string | null) => (v: string | number, compact = false) => (currency ? formatMoney(v, currency, compact)
-  : new Intl.NumberFormat("en-US", { maximumFractionDigits: compact ? 1 : 0, notation: compact ? "compact" : "standard" }).format(Number(v)));
+  : new Intl.NumberFormat("en-US", { minimumFractionDigits: compact ? 0 : 2, maximumFractionDigits: compact ? 1 : 2, notation: compact ? "compact" : "standard" }).format(Number(v)));
 const useMoney = () => moneyIn(useContext(CurrencyContext));
 // The Orders page filtered to open orders (Firm and Order; delivered ones are hidden there by default).
 const OPEN_ORDERS = "/orders?type=Firm,Order";
@@ -575,16 +575,18 @@ function FulfilmentSection() {
   if (!data) return <Skeleton className="h-44 w-full" />;
   const f = data.data;
   const t = f.totals;
+  // The business of the view in the "Pending as per …" label: DTP or GMBH; Deere when both are shown.
+  const source = f.by_business.length === 1 ? f.by_business[0].business.toUpperCase() : "Deere";
   const figures: { key: string; label: string; qty: string; value?: string; tint: Tint; icon: ReactNode; info: ReactNode }[] = [
     { key: "ordered", label: "Total ordered", qty: t.ordered, value: t.revenue_ordered, tint: "neutral", icon: <FileIcon size={16} />,
-      info: <>Delivered to Deere + Pending as per DTP: what Deere has received plus what it still lists as open in its latest file (Firm and Order).</> },
+      info: <>Delivered to Deere + Pending as per {source}: what Deere has received plus what it still lists as open in its latest file (Firm and Order).</> },
     { key: "delivered", label: "Delivered to Deere", qty: t.delivered, value: t.revenue_delivered, tint: "inc", icon: <CheckIcon size={16} />,
       info: <>Qty on SASH Inc invoices to Deere (or an Outbound mark).</> },
     { key: "in_transit", label: "In transit", qty: t.in_transit, value: t.revenue_in_transit, tint: "violet", icon: <TruckIcon size={16} />,
       info: <>Dispatched − Delivered: sent from SASH Faridabad, not yet delivered to Deere.</> },
     { key: "dispatched", label: "Dispatched", qty: t.dispatched, value: t.revenue_dispatched, tint: "violet", icon: <TruckIcon size={16} />,
       info: <>Qty dispatched from SASH Faridabad: SASH India invoices and the dispatched orders list.</> },
-    { key: "pending_dtp", label: "Pending as per DTP", qty: t.pending_dtp, value: t.revenue_pending_dtp, tint: "amber", icon: <CalendarIcon size={16} />,
+    { key: "pending_dtp", label: `Pending as per ${source}`, qty: t.pending_dtp, value: t.revenue_pending_dtp, tint: "amber", icon: <CalendarIcon size={16} />,
       info: <>Firm and Order Qty still open in Deere&apos;s latest file (the Order summary&apos;s Firm).</> },
     { key: "pending", label: "Pending to dispatch", qty: t.pending, value: t.revenue_pending, tint: "dec", icon: <AlertIcon size={16} />,
       info: <>Pending as per SASH: Total ordered − Dispatched, per PO line (a line dispatched beyond Deere&apos;s Qty covers the next open lines of that PO line).</> },

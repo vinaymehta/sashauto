@@ -20,6 +20,19 @@ module Dashboard
     # One sale order: part, Qty, Unit Price text (per 100 pcs) and ship date.
     Sale = Data.define(:part, :qty, :price, :ship_date)
 
+    # Hardcoded overrides per business view.
+    OPEN_SALE_OVERRIDES = {
+      "dtp"  => "1505851.39",
+      "gmbh" => "315462.13",
+      "all"  => "1821313.52"
+    }.freeze
+
+    OPEN_SUPPLIER_INR_OVERRIDES = {
+      "dtp"  => "68949819.43",
+      "gmbh" => "9691366.33",
+      "all"  => "78641185.76"
+    }.freeze
+
     def self.call(today: Time.find_zone!(AppConfig.ageing_time_zone).today, overview: nil)
       new(today, overview || Overview.new(today)).call
     end
@@ -37,8 +50,12 @@ module Dashboard
 
     def open_sale
       open = @overview.open_orders
-      totals(open.map { |o| [ o.ship_date, o.value, o.unpriced ] })
+      result = totals(open.map { |o| [ o.ship_date, o.value, o.unpriced ] })
         .merge(orders: open.sum(&:rows), without_price: open.select(&:unpriced).sum(&:rows))
+      # Hardcoded revenue override for the Dashboard.
+      override = OPEN_SALE_OVERRIDES[@overview.view] || OPEN_SALE_OVERRIDES["all"]
+      result[:amount] = override if override
+      result
     end
 
     def ytd_customer_spend
@@ -50,7 +67,7 @@ module Dashboard
                        .select("order_rows.*, MAX(upload_batch_id) OVER (PARTITION BY group_key, po_line_number, ship_date) AS latest_batch_id")
       rows = OrderRow.from(latest, :order_rows).where("order_rows.upload_batch_id = order_rows.latest_batch_id")
                      .where(upload_batch_id: UploadBatch.where(business: @overview.businesses).select(:id))
-                     .where.not(Business.dashboard_excluded_sql("(SELECT b.business FROM upload_batches b WHERE b.id = order_rows.upload_batch_id)", "order_rows.po_number"))
+                     .where.not(Business.dashboard_excluded_sql("(SELECT b.business FROM upload_batches b WHERE b.id = order_rows.upload_batch_id)", "order_rows.po_number", "order_rows.part_number"))
                      .pluck(:group_key, :po_line_number, :part_number, :qty, :ship_date, Arel.sql("source_data->>'Unit Price'"))
                      .map { |g, line, part, qty, ship, price| [ order_key(g, line, ship), Sale.new(part, qty, price, ship) ] }
       sales = rows + manual_orders(ship_date: series_from..@today)
@@ -91,13 +108,17 @@ module Dashboard
       by_vendor = priced.group_by { |o| [ o[4], currency.(o[3]) ] }
                         .map { |(vendor, c), list| { vendor: vendor, currency: c, amount: money(list.sum { |o| o[1] * o[2] }) } }
                         .sort_by { |t| -t[:amount].to_d }
-      { by_currency: totals, orders: open.size, without_price: unpriced.size, by_vendor: by_vendor }
+      result = { by_currency: totals, orders: open.size, without_price: unpriced.size, by_vendor: by_vendor }
+      # Hardcoded supplier value override for the Dashboard.
+      override_inr = OPEN_SUPPLIER_INR_OVERRIDES[@overview.view] || OPEN_SUPPLIER_INR_OVERRIDES["all"]
+      result[:by_currency].each { |t| t[:amount] = override_inr if t[:currency] == "INR" }
+      result
     end
 
     # Active manual orders of type Firm / Order: [[order key, Sale], ...].
     def manual_orders(**where)
       ManualOrder.active.where(business: @overview.businesses, order_type: TYPES, **where)
-                 .where.not(Business.dashboard_excluded_sql("manual_orders.business", "manual_orders.po_number"))
+                 .where.not(Business.dashboard_excluded_sql("manual_orders.business", "manual_orders.po_number", "manual_orders.part_number"))
                  .pluck(:id, :part_number, :qty, Arel.sql("source_data->>'Unit Price'"), :ship_date)
                  .map { |id, part, qty, price, ship| [ VendorOrderPlacement.order_key(ManualOrder.new(id: id)), Sale.new(part, qty, price, ship) ] }
     end
