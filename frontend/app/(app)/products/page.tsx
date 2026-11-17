@@ -8,7 +8,8 @@ import { formatCount } from "@/lib/format";
 import { formatAmount, formatCustomer, formatMoq } from "@/components/vendors/price-format";
 import { ProductPanel } from "@/components/products/product-panel";
 import { AddPartPanel } from "@/components/products/add-part-panel";
-import { ImageOffIcon, PencilIcon, PlusIcon } from "@/components/icons";
+import { PartThumbnail } from "@/components/products/part-thumbnail";
+import { PencilIcon, PlusIcon } from "@/components/icons";
 import { DtpImportButton } from "@/components/vendors/dtp-import";
 import { ImportIssuesPanel, useOpenImportIssues } from "@/components/vendors/import-issues";
 import { AvailablePartsPanel } from "@/components/products/available-parts";
@@ -196,14 +197,13 @@ function ProductRow({ product, active, canEdit, onOpen }: { product: Product; ac
         className={`cursor-pointer align-middle transition-colors duration-150 hover:bg-neutral-50 [&>td]:h-14 [&>td]:py-2 ${active ? "shadow-[inset_3px_0_0_var(--color-accent)]" : ""}`}>
       <Td>
         <span className="flex items-center gap-2 font-medium">
-          {product.images?.[0] ? (
-            // eslint-disable-next-line @next/next/no-img-element -- served by the API behind the session
-            <img src={product.images[0].url} alt="" loading="lazy" className="h-8 w-8 shrink-0 rounded border border-line object-cover" />
-          ) : (
-            <span title="No image" className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-dashed border-line bg-neutral-50 text-ink-faint">
-              <ImageOffIcon size={14} />
-            </span>
-          )}
+          <PartThumbnail
+            imageUrl={product.images?.[0]?.url}
+            images={product.images}
+            alt={product.part_number}
+            size="sm"
+            showFallback
+          />
           {product.part_number}
           {product.open_conflicts.length > 0 && <Badge tone="warn">Conflict</Badge>}
           {product.discontinued && <span title="No more vendor POs for this part"><Badge tone="dark">Discontinued</Badge></span>}

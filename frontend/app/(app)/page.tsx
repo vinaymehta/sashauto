@@ -3,10 +3,16 @@
 import { can } from "@/lib/permissions";
 import { useSession } from "@/components/session";
 import Link from "next/link";
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
 import type { DashboardOrder, DashboardOverview, DateAmount, Fulfilment, OrderRow, PartSummaryFigures, OrdersSummary, PipelineStatus, ProductVendor, Stats } from "@/lib/types";
 import { todayParam } from "@/components/age";
 import { OrderDetailPanel } from "@/components/orders/history-row";
+import { OrdersSlider, type OrdersSliderConfig } from "@/components/orders/orders-slider";
+import { RelatedLink } from "@/components/orders/related-popover";
+import { PartThumbnail } from "@/components/products/part-thumbnail";
+import { StatusPill } from "@/components/orders/delivery-cell";
+import { Badge } from "@/components/ui/badge";
+import { SortTh, type SortDirection } from "@/components/ui/sort-header";
 import { formatCount, formatDate, formatQty } from "@/lib/format";
 import { groupByPeriod, PeriodToggle, type Period } from "@/components/charts/month-bars";
 import { TimeChart } from "@/components/charts/time-chart";
@@ -35,10 +41,6 @@ const CurrencyContext = createContext<string | null>("USD");
 const moneyIn = (currency: string | null) => (v: string | number, compact = false) => (currency ? formatMoney(v, currency, compact)
   : new Intl.NumberFormat("en-US", { minimumFractionDigits: compact ? 0 : 2, maximumFractionDigits: compact ? 1 : 2, notation: compact ? "compact" : "standard" }).format(Number(v)));
 const useMoney = () => moneyIn(useContext(CurrencyContext));
-// The Orders page filtered to open orders (Firm and Order; delivered ones are hidden there by default).
-const OPEN_ORDERS = "/orders?type=Firm,Order";
-// Past ship date: late open orders not dispatched yet (no status, or received at SASH Faridabad), as the card counts them.
-const LATE_ORDERS = `${OPEN_ORDERS}&timing=overdue&status=none,received`;
 const plural = (n: number, word: string) => `${formatCount(n)} ${word}${n === 1 ? "" : "s"}`;
 const ordersText = (n: number, missing: number) => `${plural(n, "order")}${missing ? ` · ${formatCount(missing)} without a price` : ""}`;
 
@@ -77,9 +79,9 @@ function Card({ title, description, info, action, children, className = "" }: {
 
 // A figure card: tinted icon and label, the value (`extra`: amounts in other currencies), a detail line and, below,
 // optional content (e.g. a progress bar). `size="lg"` for the three money figures. `href` makes it a link.
-function StatCard({ label, value, extra, detail, icon, tint, href, size = "md", tone, info, children }: {
+function StatCard({ label, value, extra, detail, icon, tint, href, onClick, size = "md", tone, info, children }: {
   label: string; value: string; extra?: string; detail?: ReactNode; icon: ReactNode; tint: Tint; href?: string;
-  size?: "md" | "lg"; tone?: "bad"; info?: ReactNode; children?: ReactNode;
+  onClick?: () => void; size?: "md" | "lg"; tone?: "bad"; info?: ReactNode; children?: ReactNode;
 }) {
   const body = (
     <>
@@ -94,7 +96,15 @@ function StatCard({ label, value, extra, detail, icon, tint, href, size = "md", 
       {children}
     </>
   );
-  const className = `block rounded-lg border border-line bg-gradient-to-b ${TINTS[tint].wash} via-white to-white px-5 py-5 shadow-card sm:px-6`;
+  const className = `block w-full text-left rounded-lg border border-line bg-gradient-to-b ${TINTS[tint].wash} via-white to-white px-5 py-5 shadow-card sm:px-6`;
+  if (onClick) {
+    // A div acting as a button: the card holds its InfoTip, itself a <button>.
+    return (
+      <div role="button" tabIndex={0} onClick={onClick}
+           onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onClick(); } }}
+           className={`${className} cursor-pointer transition-all duration-200 hover:-translate-y-0.5 hover:border-neutral-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40`}>{body}</div>
+    );
+  }
   return href
     ? <Link href={href} className={`${className} transition-all duration-200 hover:-translate-y-0.5 hover:border-neutral-300`}>{body}</Link>
     : <div className={className}>{body}</div>;
@@ -108,6 +118,8 @@ export default function DashboardPage() {
   const listed = useApi<OrdersSummary>(can(me, "orders") ? "/api/orders/summary" : null, { today: todayParam(), dashboard: 1 });
   // Order whose Order details panel is open (from Next shipments or a part's open orders).
   const [order, setOrder] = useState<DashboardOrder | null>(null);
+  // Slider of orders matching a clicked KPI card or pipeline step.
+  const [ordersSlider, setOrdersSlider] = useState<OrdersSliderConfig | null>(null);
 
   const canUpload = can(me, "orders", "edit");
   const header = (
@@ -138,10 +150,13 @@ export default function DashboardPage() {
   }
 
   const attention = [
-    overview.kpis.overdue.count > 0 && { text: `${plural(overview.kpis.overdue.count, "order")} past the ship date and not dispatched yet`, href: LATE_ORDERS },
+    overview.kpis.overdue.count > 0 && {
+      text: `${plural(overview.kpis.overdue.count, "order")} past the ship date and not dispatched yet`,
+      onClick: () => setOrdersSlider({ title: "Past ship date", description: "Late open orders not dispatched yet", filters: { type: "Firm,Order", timing: "overdue", status: "none,received" }, icon: <AlertIcon size={18} /> }),
+    },
     totals.open_conflicts > 0 && { text: `${totals.open_conflicts} Commodity Type conflict${totals.open_conflicts === 1 ? "" : "s"} to review`, href: "/products?conflicts=open" },
     totals.in_progress > 0 && { text: `${totals.in_progress} upload${totals.in_progress === 1 ? " is" : "s are"} processing`, href: "/orders" },
-  ].filter(Boolean) as { text: string; href: string }[];
+  ].filter(Boolean) as ({ text: string; href: string; onClick?: undefined } | { text: string; onClick: () => void; href?: undefined })[];
 
   const { kpis } = overview;
   const usd = moneyIn(money.open_sale.currency);
@@ -157,7 +172,11 @@ export default function DashboardPage() {
           <div className="flex animate-fade-in flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border border-neutral-300 border-l-4 border-l-neutral-900 bg-white px-6 py-4 text-sm shadow-card">
             <span className="inline-flex items-center gap-2 font-semibold text-neutral-900"><AlertIcon size={15} />Needs attention</span>
             {attention.map((a) => (
-              <Link key={a.text} href={a.href} className="text-neutral-700 underline decoration-neutral-300 underline-offset-2 hover:text-neutral-900 hover:decoration-neutral-900">{a.text}</Link>
+              a.onClick ? (
+                <button key={a.text} type="button" onClick={a.onClick} className="cursor-pointer text-neutral-700 underline decoration-neutral-300 underline-offset-2 hover:text-neutral-900 hover:decoration-neutral-900">{a.text}</button>
+              ) : (
+                <Link key={a.text} href={a.href!} className="text-neutral-700 underline decoration-neutral-300 underline-offset-2 hover:text-neutral-900 hover:decoration-neutral-900">{a.text}</Link>
+              )
             ))}
           </div>
         )}
@@ -171,38 +190,57 @@ export default function DashboardPage() {
               </Alert>
             </div>
           )}
-          <StatCard size="lg" label="Total Open Value (Sale)" info={<>Value of Deere orders <b>not yet delivered</b>: the Firm and Order rows the Orders page lists as open (latest upload, orders kept from an older Deere file, and manual orders), without a &quot;Delivered to Deere&quot; (Outbound) status. Value = Qty × Unit Price ÷ 100 (Deere prices are per 100 pcs), in the business&apos;s currency (Settings). Forecast is not counted.</>} icon={<BoxIcon size={16} />} tint="violet" href={OPEN_ORDERS}
+          <StatCard size="lg" label="Total Open Value (Sale)" info={<>Value of Deere orders <b>not yet delivered</b>: the Firm and Order rows the Orders page lists as open (latest upload, orders kept from an older Deere file, and manual orders), without a &quot;Delivered to Deere&quot; (Outbound) status. Value = Qty × Unit Price ÷ 100 (Deere prices are per 100 pcs), in the business&apos;s currency (Settings). Forecast is not counted.</>} icon={<BoxIcon size={16} />} tint="violet"
+                    onClick={() => setOrdersSlider({ title: "Open orders (Sale)", description: "Firm and Order orders not yet delivered to Deere", filters: { type: "Firm,Order" }, icon: <BoxIcon size={18} /> })}
                     value={usd(sale.amount)}
                     detail={`${ordersText(sale.orders, sale.without_price)} not yet delivered to Deere`} />
           <StatCard size="lg" label="Total Open Value (Supplier)" info={<>Value of the vendor POs generated in the app whose order has <b>no status yet</b> (not received at SASH Faridabad). Value = PO quantity × the vendor&apos;s unit price. Shown per currency, as there is no exchange rate.</>} icon={<TruckIcon size={16} />} tint="amber"
+                    onClick={() => setOrdersSlider({
+                      title: "Total Open Value (Supplier)",
+                      description: "Vendor POs generated whose order has not yet been received at SASH Faridabad",
+                      filters: { type: "Firm,Order", po: "generated", status: "none" },
+                      icon: <TruckIcon size={18} />,
+                    })}
                     value={supplier.by_currency.length ? formatMoney(supplier.by_currency[0]!.amount, supplier.by_currency[0]!.currency) : "—"}
                     extra={supplier.by_currency.slice(1).map((c) => formatMoney(c.amount, c.currency)).join(" + ") || undefined}
                     detail={`${ordersText(supplier.orders, supplier.without_price)} not yet received`} />
           <StatCard size="lg" label="YTD Customer Spend with SASH" info={<>Value of Deere&apos;s Firm and Order orders with a <b>ship date from 1 April</b> (start of the financial year) to today, from every upload (the latest version of each order) and manual orders. Value = Qty × Unit Price ÷ 100, in the business&apos;s currency (Settings).</>} icon={<CalendarIcon size={16} />} tint="aqua"
+                    onClick={() => setOrdersSlider({
+                      title: "YTD Customer Spend with SASH",
+                      description: `Deere's Firm and Order orders shipping from ${formatDate(ytd.from)} to ${formatDate(ytd.to)}`,
+                      filters: { type: "Firm,Order", ship_date_from: ytd.from, ship_date_to: ytd.to },
+                      icon: <CalendarIcon size={18} />,
+                    })}
                     value={usd(ytd.amount)}
                     detail={`${formatDate(ytd.from)} – ${formatDate(ytd.to)} · ${ordersText(ytd.orders, ytd.without_price)}`} />
         </div>
 
         {/* Operations (Dashboard::Overview). */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-          <StatCard label="Open orders" info={<>Firm and Order orders <b>not yet delivered to Deere</b>, counted row by row as the Orders page lists them (each row of a combined order counts, and orders kept from an older Deere file too). The amount is their value.</>} icon={<FileIcon size={16} />} tint="neutral" href={OPEN_ORDERS}
+          <StatCard label="Open orders" info={<>Firm and Order orders <b>not yet delivered to Deere</b>, counted row by row as the Orders page lists them (each row of a combined order counts, and orders kept from an older Deere file too). The amount is their value.</>} icon={<FileIcon size={16} />} tint="neutral"
+                    onClick={() => setOrdersSlider({ title: "Open orders", description: "Firm and Order orders not yet delivered to Deere", filters: { type: "Firm,Order" }, icon: <FileIcon size={18} /> })}
                     value={formatCount(kpis.open.count)} detail={`${usd(kpis.open.value, true)} · Firm and Order`} />
-          <StatCard label="Shipping in 30 days" href={`${OPEN_ORDERS}&timing=next30`} info={<>Open orders with a <b>ship date from today to 30 days ahead</b>, and their value. They are listed in Next shipments.</>} icon={<CalendarIcon size={16} />} tint="violet"
+          <StatCard label="Shipping in 30 days" info={<>Open orders with a <b>ship date from today to 30 days ahead</b>, and their value. They are listed in Next shipments.</>} icon={<CalendarIcon size={16} />} tint="violet"
+                    onClick={() => setOrdersSlider({ title: "Shipping in 30 days", description: `Open orders due by ${formatDate(addDays(30))}`, filters: { type: "Firm,Order", timing: "next30" }, icon: <CalendarIcon size={18} /> })}
                     value={formatCount(kpis.due_30.count)} detail={`${usd(kpis.due_30.value, true)} due by ${formatDate(addDays(30))}`} />
-          <StatCard label="Past ship date" href={LATE_ORDERS} info={<>Orders whose <b>ship date has passed</b> and that are <b>not dispatched yet</b> (still with SASH India or the vendor): the late orders that still need action, and their value. Dispatched orders are on Orders → Dispatched. A combined order counts by its last ship date.</>} icon={<AlertIcon size={16} />} tint="dec" tone={kpis.overdue.count ? "bad" : undefined}
+          <StatCard label="Past ship date" info={<>Orders whose <b>ship date has passed</b> and that are <b>not dispatched yet</b> (still with SASH India or the vendor): the late orders that still need action, and their value. Dispatched orders are on Orders → Dispatched. A combined order counts by its last ship date.</>} icon={<AlertIcon size={16} />} tint="dec" tone={kpis.overdue.count ? "bad" : undefined}
+                    onClick={() => setOrdersSlider({ title: "Past ship date", description: "Late open orders not dispatched yet", filters: { type: "Firm,Order", timing: "overdue", status: "none,received" }, icon: <AlertIcon size={18} /> })}
                     value={formatCount(kpis.overdue.count)} detail={`${usd(kpis.overdue.value, true)} not dispatched yet`} />
-          <StatCard label="PO coverage" href={`${OPEN_ORDERS}&po=none`} info={<>Share of the <b>open order value that already has a vendor PO</b> (Generate PO). Below: open orders with a Qty and no PO yet.</>} icon={<CheckIcon size={16} />} tint="aqua"
+          <StatCard label="PO coverage" info={<>Share of the <b>open order value that already has a vendor PO</b> (Generate PO). Below: open orders with a Qty and no PO yet.</>} icon={<CheckIcon size={16} />} tint="aqua"
+                    onClick={() => setOrdersSlider({ title: "Orders without vendor PO", description: "Open orders without a vendor PO generated yet", filters: { type: "Firm,Order", po: "none" }, icon: <CheckIcon size={18} /> })}
                     value={`${kpis.po_coverage.percent.toLocaleString("en-US", { maximumFractionDigits: 1 })}%`}
                     detail={`${plural(kpis.po_coverage.without_po.count, "open order")} without a vendor PO`}>
             <Progress percent={kpis.po_coverage.percent} />
           </StatCard>
-          <StatCard label="Partial outbound" href="/orders?status=delivery" info={<>Firm and Order orders with <b>part of the quantity delivered to Deere</b> on SASH Inc invoices. The remaining balance is still to deliver.</>} icon={<TruckIcon size={16} />} tint="amber"
+          <StatCard label="Partial outbound" info={<>Firm and Order orders with <b>part of the quantity delivered to Deere</b> on SASH Inc invoices. The remaining balance is still to deliver.</>} icon={<TruckIcon size={16} />} tint="amber"
+                    onClick={() => setOrdersSlider({ title: "Partial outbound", description: "Orders with part of the quantity delivered to Deere", filters: { status: "delivery" }, icon: <TruckIcon size={18} /> })}
                     value={formatCount(listed.data?.partial_outbound ?? kpis.partial_outbound?.count ?? 0)} detail="Part delivered to Deere, as listed on Orders" />
-          <StatCard label="Outbound (fulfilled)" href="/orders?status=outbound" info={<>Orders <b>delivered to Deere in full</b> (Outbound mark or fulfilled on SASH Inc invoices).</>} icon={<CheckIcon size={16} />} tint="inc"
+          <StatCard label="Outbound (fulfilled)" info={<>Orders <b>delivered to Deere in full</b> (Outbound mark or fulfilled on SASH Inc invoices).</>} icon={<CheckIcon size={16} />} tint="inc"
+                    onClick={() => setOrdersSlider({ title: "Outbound (fulfilled)", description: "Orders delivered to Deere in full", filters: { status: "outbound" }, icon: <CheckIcon size={18} /> })}
                     value={formatCount(listed.data?.fulfilled ?? kpis.outbound?.count ?? 0)} detail="Delivered to Deere in full: the Orders fulfilled tab" />
         </div>
 
-        {can(me, "orders") && <FulfilmentSection />}
+        {can(me, "orders") && <FulfilmentSection onSelectFigure={setOrdersSlider} />}
 
         <div className="grid gap-5 xl:grid-cols-3">
           <SaleChart points={sale.by_date} />
@@ -222,10 +260,10 @@ export default function DashboardPage() {
 
         <div className="grid gap-5 lg:grid-cols-2 xl:grid-cols-3">
           <Card title="Order pipeline" info={<>Open orders by their <b>latest status</b>: No status → Received (at SASH Faridabad) → Dispatched (from Faridabad) → Inbound (at SASH US) → Partial outbound (part delivered to Deere). Orders delivered to Deere (Outbound) are no longer open.</>} description="Open orders by their latest status">
-            <Pipeline items={overview.pipeline} />
+            <Pipeline items={overview.pipeline} onSelect={(status) => setOrdersSlider({ title: `Pipeline: ${STATUS[status].label}`, description: STATUS[status].hint, filters: status === "outbound" ? { status: "outbound" } : { type: "Firm,Order", status }, icon: <TruckIcon size={18} /> })} />
           </Card>
           <Card title="Ageing since Effective Firm Date" info={<>Open orders by <b>days since their Effective Firm Date</b>: 90+ red, 60–89 yellow, 30–59 green; under 30 days or no Effective Firm Date grey. The same colours as on the Orders page.</>} description="Open orders by days since their Effective Firm Date">
-            <Ageing items={overview.ageing} />
+            <Ageing items={overview.ageing} onSelect={(band) => setOrdersSlider({ title: `Ageing: ${AGE[band].label}`, description: `Open orders aged ${AGE[band].label} since Effective Firm Date`, filters: { type: "Firm,Order", age: band }, icon: <CalendarIcon size={18} /> })} />
           </Card>
           <OutlookChart points={overview.outlook} />
         </div>
@@ -235,18 +273,22 @@ export default function DashboardPage() {
             <TopParts items={overview.top_parts} total={Number(kpis.open.value)} onOpenOrder={setOrder} />
           </Card>
           <Card title="Next shipments" info={<>The next <b>8 open orders to ship</b> within 30 days, overdue first, with their status and whether a vendor PO has been generated.</>} description="Open orders shipping in the next 30 days, overdue first"
-                action={<Link href={`${OPEN_ORDERS}&timing=overdue,next30`} className="shrink-0 text-sm text-ink-muted hover:text-ink">All orders →</Link>}>
+                action={<button type="button" onClick={() => setOrdersSlider({ title: "Next shipments", description: "Open orders shipping in the next 30 days, overdue first", filters: { type: "Firm,Order", timing: "overdue,next30" }, icon: <CalendarIcon size={18} /> })} className="shrink-0 text-sm text-ink-muted hover:text-ink cursor-pointer">All orders →</button>}>
             <Upcoming items={overview.upcoming} onOpenOrder={setOrder} />
           </Card>
         </div>
 
         <SpendChart points={ytd.by_date} yearStart={ytd.from} />
       </div>
+      {ordersSlider && (
+        <OrdersSlider config={ordersSlider} onClose={() => setOrdersSlider(null)} onOpenOrder={(o) => setOrder(o as DashboardOrder)} />
+      )}
       {order && (
         // The Orders page's panel; it loads the order itself (only these fields are needed to start).
         <OrderDetailPanel key={`${order.manual ? "m" : "r"}${order.id}`} onClose={() => setOrder(null)} onPlaced={reload} onDeleted={() => { setOrder(null); reload(); }}
                           row={{ id: order.id, manual: order.manual, po_number: order.po_number, po_line_number: order.po_line_number,
-                                 part_number: order.part_number, order_type: order.order_type, ship_date: order.ship_date, qty: order.qty } as OrderRow} />
+                                 part_number: order.part_number, order_type: order.order_type, ship_date: order.ship_date, qty: order.qty,
+                                 image_url: order.image_url, images: order.images } as OrderRow} />
       )}
     </CurrencyContext.Provider>
   );
@@ -331,15 +373,15 @@ function Progress({ percent }: { percent: number }) {
 }
 
 // Each status step with its number of open orders, their value and a bar against the largest step; a step opens its
-// orders on the Orders page.
-function Pipeline({ items }: { items: DashboardOverview["pipeline"] }) {
+// orders in the orders slider.
+function Pipeline({ items, onSelect }: { items: DashboardOverview["pipeline"]; onSelect: (status: PipelineStatus) => void }) {
   const usd = useMoney();
   const max = Math.max(1, ...items.map((i) => i.count));
   return (
     <ol className="-mx-2 space-y-1">
       {items.map((item, i) => (
         <li key={item.status}>
-          <Link href={item.status === "outbound" ? "/orders?status=outbound" : `${OPEN_ORDERS}&status=${item.status}`} className="block rounded-md px-2 py-1.5 transition-colors hover:bg-neutral-50">
+          <button type="button" onClick={() => onSelect(item.status)} className="block w-full text-left rounded-md px-2 py-1.5 transition-colors hover:bg-neutral-50 cursor-pointer">
           <div className="mb-1.5 flex items-baseline justify-between gap-3 text-sm">
             <span className="flex min-w-0 items-center gap-2">
               <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-2xs font-semibold text-ink-muted">{i + 1}</span>
@@ -352,7 +394,7 @@ function Pipeline({ items }: { items: DashboardOverview["pipeline"] }) {
                  style={{ width: `${Math.max((item.count / max) * 100, item.count ? 2 : 0)}%` }} />
           </div>
           <p className="mt-1 text-xs text-ink-faint">{STATUS[item.status].hint}</p>
-          </Link>
+          </button>
         </li>
       ))}
     </ol>
@@ -360,7 +402,7 @@ function Pipeline({ items }: { items: DashboardOverview["pipeline"] }) {
 }
 
 // One stacked bar of the age groups (share of open orders), then each group with its orders and value.
-function Ageing({ items }: { items: DashboardOverview["ageing"] }) {
+function Ageing({ items, onSelect }: { items: DashboardOverview["ageing"]; onSelect: (band: "red" | "yellow" | "green") => void }) {
   const usd = useMoney();
   const total = items.reduce((a, i) => a + i.count, 0);
   return (
@@ -387,7 +429,7 @@ function Ageing({ items }: { items: DashboardOverview["ageing"] }) {
             <li key={item.band}>
               {item.band === "none"
                 ? <span className="flex items-center gap-3 px-2 py-2.5 text-sm">{row}</span>
-                : <Link href={`${OPEN_ORDERS}&age=${item.band}`} className="-mx-0 flex items-center gap-3 rounded-md px-2 py-2.5 text-sm transition-colors hover:bg-neutral-50">{row}</Link>}
+                : <button type="button" onClick={() => onSelect(item.band as "red" | "yellow" | "green")} className="-mx-0 flex w-full text-left items-center gap-3 rounded-md px-2 py-2.5 text-sm transition-colors hover:bg-neutral-50 cursor-pointer">{row}</button>}
             </li>
           );
         })}
@@ -408,8 +450,9 @@ function TopParts({ items, total, onOpenOrder }: { items: DashboardOverview["top
         {items.map((p, i) => (
           <li key={p.part_number}>
             <button type="button" onClick={() => setOpen(p)} aria-haspopup="dialog"
-                    className={`flex w-full items-center gap-4 px-4 py-3 text-left transition-colors hover:bg-neutral-50 sm:px-6 ${open?.part_number === p.part_number ? "bg-tint-violet/40" : ""}`}>
+                    className={`flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-neutral-50 sm:px-6 ${open?.part_number === p.part_number ? "bg-tint-violet/40" : ""}`}>
               <span className="tabular w-5 shrink-0 text-xs font-semibold text-ink-faint">{i + 1}</span>
+              <PartThumbnail imageUrl={p.image_url} images={p.images} alt={p.part_number} size="md" />
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-medium text-ink">{p.part_number}</span>
                 <span className="block truncate text-xs text-ink-muted" title={p.description ?? undefined}>
@@ -440,6 +483,50 @@ function PartPanel({ part, total, onClose, onOpenOrder }: {
   const usd = useMoney();
   const vendors = useApi<{ data: ProductVendor[] }>(part.product_id ? `/api/products/${part.product_id}/vendors` : null);
   const overdue = part.open_orders.filter((o) => o.overdue);
+  const [orderSort, setOrderSort] = useState<string>("ship_date");
+  const [orderDir, setOrderDir] = useState<SortDirection>("asc");
+  const [vendorSort, setVendorSort] = useState<string>("vendor_name");
+  const [vendorDir, setVendorDir] = useState<SortDirection>("asc");
+
+  const toggleOrderSort = (key: string) => {
+    if (orderSort === key) setOrderDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setOrderSort(key);
+      setOrderDir(key === "qty" || key === "value" ? "desc" : "asc");
+    }
+  };
+
+  const toggleVendorSort = (key: string) => {
+    if (vendorSort === key) setVendorDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setVendorSort(key);
+      setVendorDir(key === "moq" || key === "price" ? "desc" : "asc");
+    }
+  };
+
+  const sortedOrders = [...part.open_orders].sort((a, b) => {
+    let cmp = 0;
+    if (orderSort === "ship_date") cmp = a.ship_date.localeCompare(b.ship_date);
+    else if (orderSort === "po_number") cmp = `${a.po_number}/${a.po_line_number}`.localeCompare(`${b.po_number}/${b.po_line_number}`);
+    else if (orderSort === "qty") cmp = Number(a.qty) - Number(b.qty);
+    else if (orderSort === "value") cmp = Number(a.value) - Number(b.value);
+    else if (orderSort === "status") cmp = (a.status || "").localeCompare(b.status || "");
+    else if (orderSort === "vendor_po") {
+      const va = a.order_placed ? 2 : a.po ? 1 : 0;
+      const vb = b.order_placed ? 2 : b.po ? 1 : 0;
+      cmp = va - vb;
+    }
+    return orderDir === "desc" ? -cmp : cmp;
+  });
+
+  const sortedVendors = [...(vendors.data?.data ?? [])].sort((a, b) => {
+    let cmp = 0;
+    if (vendorSort === "vendor_name") cmp = a.vendor_name.localeCompare(b.vendor_name);
+    else if (vendorSort === "moq") cmp = (Number(a.moq) || 0) - (Number(b.moq) || 0);
+    else if (vendorSort === "price") cmp = (Number(a.price_amount) || 0) - (Number(b.price_amount) || 0);
+    return vendorDir === "desc" ? -cmp : cmp;
+  });
+
   const stats: [string, ReactNode][] = [
     ["Open value", <>{usd(part.value)}<span className="ml-1 text-xs font-normal text-ink-muted">{total ? Math.round((Number(part.value) / total) * 100) : 0}% of all open</span></>],
     ["Open orders", <>{formatCount(part.orders)}{overdue.length > 0 && <span className="ml-1 text-xs font-medium text-age-red-ink">{formatCount(overdue.length)} overdue</span>}</>],
@@ -448,7 +535,8 @@ function PartPanel({ part, total, onClose, onOpenOrder }: {
     ["Deere price", part.customer_price ? <>{usd(Number(part.customer_price))}<span className="ml-1 text-xs font-normal text-ink-muted">/ 100 pcs</span></> : "—"],
   ];
   return (
-    <Sheet open wide onClose={onClose} title={part.part_number} description={part.description ?? "Part details"} icon={<BoxIcon size={18} />}>
+    <Sheet open wide onClose={onClose} title={part.part_number} description={part.description ?? "Part details"}
+           icon={<PartThumbnail imageUrl={part.image_url} images={part.images} alt={part.part_number} size="md" fallbackIcon={<BoxIcon size={18} />} />}>
       <div className="space-y-4">
         <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line shadow-card sm:grid-cols-3 lg:grid-cols-5">
           {stats.map(([label, value]) => (
@@ -462,9 +550,49 @@ function PartPanel({ part, total, onClose, onOpenOrder }: {
         <section className="overflow-hidden rounded-lg border border-line bg-white shadow-card">
           <header className="flex items-center justify-between border-b border-neutral-100 px-5 py-3">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-muted">Open orders</h3>
-            <span className="text-xs text-ink-muted">{plural(part.open_orders.length, "order")} · ship date order</span>
+            <span className="text-xs text-ink-muted">{plural(part.open_orders.length, "order")}</span>
           </header>
-          <OrderList items={part.open_orders} showPart={false} onOpen={onOpenOrder} />
+          {sortedOrders.length === 0 ? (
+            <p className="px-5 py-6 text-center text-sm text-ink-muted">No open orders.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-line bg-neutral-50/75 text-2xs font-semibold uppercase tracking-wider text-ink-muted">
+                    <SortTh label="PO & Line" sortKey="po_number" sort={orderSort} direction={orderDir} onSort={toggleOrderSort} className="py-2.5 pl-5 pr-3" />
+                    <SortTh label="Ship Date" sortKey="ship_date" sort={orderSort} direction={orderDir} onSort={toggleOrderSort} className="px-3 py-2.5" />
+                    <SortTh label="Qty" sortKey="qty" align="right" sort={orderSort} direction={orderDir} onSort={toggleOrderSort} className="px-3 py-2.5" />
+                    <SortTh label="Value" sortKey="value" align="right" sort={orderSort} direction={orderDir} onSort={toggleOrderSort} className="px-3 py-2.5" />
+                    <SortTh label="Status" sortKey="status" sort={orderSort} direction={orderDir} onSort={toggleOrderSort} className="px-3 py-2.5" />
+                    <SortTh label="Vendor PO" sortKey="vendor_po" sort={orderSort} direction={orderDir} onSort={toggleOrderSort} className="py-2.5 pl-3 pr-5" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-100">
+                  {sortedOrders.map((o) => {
+                    const overdue = o.overdue;
+                    return (
+                      <tr key={`${o.manual ? "m" : "r"}${o.id}`} onClick={() => onOpenOrder(o)} className="cursor-pointer transition-colors hover:bg-neutral-50/80">
+                        <td className="whitespace-nowrap py-2.5 pl-5 pr-3">
+                          <span className="font-medium text-ink">PO {o.po_number}/{o.po_line_number}</span>
+                          <span className="block text-2xs text-ink-muted">{o.order_type}{o.manual && " · Manual"}</span>
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2.5">
+                          <span className={`tabular block font-medium ${overdue ? "text-age-red-ink font-semibold" : "text-ink"}`}>{formatDate(o.ship_date)}</span>
+                          {overdue && <span className="block text-2xs font-semibold uppercase text-age-red-ink">Overdue</span>}
+                        </td>
+                        <td className="tabular whitespace-nowrap px-3 py-2.5 text-right font-medium text-ink">{formatQty(o.qty)} pcs</td>
+                        <td className="tabular whitespace-nowrap px-3 py-2.5 text-right font-medium text-ink">{usd(o.value, true)}</td>
+                        <td className="whitespace-nowrap px-3 py-2.5"><StatusPill kind={o.status} /></td>
+                        <td className="whitespace-nowrap py-2.5 pl-3 pr-5">
+                          {o.order_placed ? <Badge tone="dark">Order placed</Badge> : o.po ? <Badge tone="up">PO generated</Badge> : <Badge tone="warn">No vendor PO</Badge>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
 
         <section className="overflow-hidden rounded-lg border border-line bg-white shadow-card">
@@ -481,15 +609,26 @@ function PartPanel({ part, total, onClose, onOpenOrder }: {
           ) : vendors.data.data.length === 0 ? (
             <p className="px-5 py-6 text-center text-sm text-ink-muted">No vendor is linked to this part yet.</p>
           ) : (
-            <ul className="divide-y divide-neutral-100">
-              {vendors.data.data.map((v) => (
-                <li key={v.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-5 py-3 text-sm">
-                  <span className="min-w-0 flex-1 font-medium text-ink">{v.vendor_name}</span>
-                  <span className="text-ink-muted">MOQ <span className="tabular font-medium text-ink">{formatMoq(v) ?? "—"}</span></span>
-                  <span className="tabular font-semibold text-ink">{formatPrice(v) ?? "No price"}</span>
-                </li>
-              ))}
-            </ul>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-line bg-neutral-50/75 text-2xs font-semibold uppercase tracking-wider text-ink-muted">
+                    <SortTh label="Vendor" sortKey="vendor_name" sort={vendorSort} direction={vendorDir} onSort={toggleVendorSort} className="py-2.5 pl-5 pr-3" />
+                    <SortTh label="MOQ" sortKey="moq" align="right" sort={vendorSort} direction={vendorDir} onSort={toggleVendorSort} className="px-3 py-2.5" />
+                    <SortTh label="Price" sortKey="price" align="right" sort={vendorSort} direction={vendorDir} onSort={toggleVendorSort} className="py-2.5 pl-3 pr-5" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-100">
+                  {sortedVendors.map((v) => (
+                    <tr key={v.id} className="hover:bg-neutral-50/80">
+                      <td className="py-2.5 pl-5 pr-3 font-medium text-ink">{v.vendor_name}</td>
+                      <td className="tabular px-3 py-2.5 text-right text-ink-muted">{formatMoq(v) ?? "—"}</td>
+                      <td className="tabular py-2.5 pl-3 pr-5 text-right font-semibold text-ink">{formatPrice(v) ?? "No price"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </section>
       </div>
@@ -567,9 +706,41 @@ function DashboardSkeleton() {
 
 // Fulfilment: the Product summary's figures over every Firm / Order order of the current order data, Qty and Deere value
 // (Qty × Unit Price ÷ 100), in total and per business in All.
-function FulfilmentSection() {
+function FulfilmentSection({ onSelectFigure }: { onSelectFigure?: (config: OrdersSliderConfig) => void }) {
   const { data, error } = useApi<{ data: Fulfilment }>("/api/orders/fulfilment");
   const [showTop, setShowTop] = useState(false);
+  const [topSort, setTopSort] = useState<string>("ordered");
+  const [topDir, setTopDir] = useState<SortDirection>("desc");
+
+  const topParts = data?.data.top_parts;
+  const sortedTopParts = useMemo(() => {
+    if (!topParts) return [];
+    return [...topParts].sort((a, b) => {
+      let cmp = 0;
+      if (topSort === "part_number") {
+        cmp = a.part_number.localeCompare(b.part_number);
+      } else {
+        const valA = Number((a as unknown as Record<string, string | undefined>)[`revenue_${topSort}`] ?? 0);
+        const valB = Number((b as unknown as Record<string, string | undefined>)[`revenue_${topSort}`] ?? 0);
+        cmp = valA - valB;
+        if (cmp === 0) {
+          const qtyA = Number((a as unknown as Record<string, string>)[topSort] ?? 0);
+          const qtyB = Number((b as unknown as Record<string, string>)[topSort] ?? 0);
+          cmp = qtyA - qtyB;
+        }
+      }
+      return topDir === "desc" ? -cmp : cmp;
+    });
+  }, [topParts, topSort, topDir]);
+
+  const toggleTopSort = (key: string) => {
+    if (topSort === key) setTopDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setTopSort(key);
+      setTopDir(key === "part_number" ? "asc" : "desc");
+    }
+  };
+
   const money = moneyIn(data?.data.currency ?? null);
   if (error) return <Alert title="Could not load the fulfilment figures">{error.message}</Alert>;
   if (!data) return <Skeleton className="h-44 w-full" />;
@@ -577,6 +748,61 @@ function FulfilmentSection() {
   const t = f.totals;
   // The business of the view in the "Pending as per …" label: DTP or GMBH; Deere when both are shown.
   const source = f.by_business.length === 1 ? f.by_business[0].business.toUpperCase() : "Deere";
+
+  const getFilter = (key: string): OrdersSliderConfig => {
+    switch (key) {
+      case "ordered":
+        return {
+          title: "Total ordered",
+          description: "Totals of every Firm and Order order in the current order data",
+          filters: { type: "Firm,Order" },
+          icon: <FileIcon size={18} />,
+        };
+      case "delivered":
+        return {
+          title: "Delivered to Deere",
+          description: "Orders delivered to Deere in full or on SASH Inc invoices",
+          filters: { status: "outbound" },
+          icon: <CheckIcon size={18} />,
+        };
+      case "in_transit":
+        return {
+          title: "In transit",
+          description: "Orders dispatched from SASH Faridabad, not yet delivered to Deere",
+          filters: { status: "dispatch,dispatched" },
+          icon: <TruckIcon size={18} />,
+        };
+      case "dispatched":
+        return {
+          title: "Dispatched",
+          description: "Orders dispatched from SASH Faridabad",
+          filters: { status: "dispatch,dispatched" },
+          icon: <TruckIcon size={18} />,
+        };
+      case "pending_dtp":
+        return {
+          title: `Pending as per ${source}`,
+          description: `Firm and Order orders open in Deere's latest file`,
+          filters: { type: "Firm,Order" },
+          icon: <CalendarIcon size={18} />,
+        };
+      case "pending":
+        return {
+          title: "Pending to dispatch",
+          description: "Orders not yet dispatched from SASH Faridabad",
+          filters: { type: "Firm,Order", status: "none,received" },
+          icon: <AlertIcon size={18} />,
+        };
+      default:
+        return {
+          title: "Orders",
+          description: "Filtered orders",
+          filters: { type: "Firm,Order" },
+          icon: <FileIcon size={18} />,
+        };
+    }
+  };
+
   const figures: { key: string; label: string; qty: string; value?: string; tint: Tint; icon: ReactNode; info: ReactNode }[] = [
     { key: "ordered", label: "Total ordered", qty: t.ordered, value: t.revenue_ordered, tint: "neutral", icon: <FileIcon size={16} />,
       info: <>Delivered to Deere + Pending as per {source}: what Deere has received plus what it still lists as open in its latest file (Firm and Order).</> },
@@ -592,6 +818,7 @@ function FulfilmentSection() {
       info: <>Pending as per SASH: Total ordered − Dispatched, per PO line (a line dispatched beyond Deere&apos;s Qty covers the next open lines of that PO line).</> },
   ];
   const several = f.by_business.length > 1;
+
   // A figure's value (big) and pieces (small) from summary figures (Product summary keys).
   const pick = (row: PartSummaryFigures, key: string) => ({
     qty: (row as unknown as Record<string, string>)[key] ?? "0",
@@ -603,12 +830,29 @@ function FulfilmentSection() {
       {figures.map((fig) => <th key={fig.key} className="whitespace-nowrap px-4 py-2.5 text-right font-semibold">{fig.label}</th>)}
     </tr>
   );
-  const cells = (row: PartSummaryFigures, m: ReturnType<typeof moneyIn>) => figures.map((fig) => {
+  const cells = (row: PartSummaryFigures, m: ReturnType<typeof moneyIn>, b?: string, partNumber?: string) => figures.map((fig) => {
     const c = pick(row, fig.key);
+    const config = getFilter(fig.key);
     return (
       <td key={fig.key} className="tabular whitespace-nowrap px-4 py-2.5 text-right">
-        <span className="block font-semibold text-ink">{c.value !== undefined ? m(c.value) : "—"}</span>
-        <span className="block text-xs text-ink-muted">{formatQty(c.qty)} pcs</span>
+        <button
+          type="button"
+          onClick={() => onSelectFigure?.({
+            ...config,
+            title: partNumber
+              ? `${config.title} · ${partNumber}`
+              : b ? `${config.title} (${b.toUpperCase()})` : config.title,
+            filters: {
+              ...config.filters,
+              ...(b ? { business: b } : {}),
+              ...(partNumber ? { part_number: partNumber } : {}),
+            },
+          })}
+          className="text-right hover:underline cursor-pointer group"
+        >
+          <span className="block font-semibold text-ink group-hover:text-accent">{c.value !== undefined ? m(c.value) : "—"}</span>
+          <span className="block text-xs text-ink-muted">{formatQty(c.qty)} pcs</span>
+        </button>
       </td>
     );
   });
@@ -616,17 +860,32 @@ function FulfilmentSection() {
     <Card title="Fulfilment" info={<>Totals of every Firm and Order order in the current order data, as the Product and PO summaries count them. Value = Qty × Deere Unit Price ÷ 100 (each order&apos;s own price).</>}
           description={f.files.map((file) => file.name).join(" · ")}>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {figures.map((fig) => (
-          <div key={fig.key} className={`rounded-lg border border-line bg-gradient-to-b ${TINTS[fig.tint].wash} via-white to-white px-5 py-5 sm:px-6`}>
-            <div className="flex items-center gap-2 text-sm font-medium text-ink-muted">
-              <span aria-hidden className={`flex h-7 w-7 items-center justify-center rounded-md ${TINTS[fig.tint].chip}`}>{fig.icon}</span>
-              <span className="min-w-0 flex-1 leading-tight">{fig.label}</span>
-              <InfoTip label={`About ${fig.label}`}>{fig.info}</InfoTip>
+        {figures.map((fig) => {
+          const config = getFilter(fig.key);
+          return (
+            <div
+              key={fig.key}
+              role="button"
+              tabIndex={0}
+              onClick={() => onSelectFigure?.(config)}
+              onKeyDown={(e) => {
+                if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+                  e.preventDefault();
+                  onSelectFigure?.(config);
+                }
+              }}
+              className={`block w-full text-left rounded-lg border border-line bg-gradient-to-b ${TINTS[fig.tint].wash} via-white to-white px-5 py-5 sm:px-6 shadow-card transition-all duration-200 hover:-translate-y-0.5 hover:border-neutral-300 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40`}
+            >
+              <div className="flex items-center gap-2 text-sm font-medium text-ink-muted">
+                <span aria-hidden className={`flex h-7 w-7 items-center justify-center rounded-md ${TINTS[fig.tint].chip}`}>{fig.icon}</span>
+                <span className="min-w-0 flex-1 leading-tight">{fig.label}</span>
+                <InfoTip label={`About ${fig.label}`}>{fig.info}</InfoTip>
+              </div>
+              <p className="tabular mt-4 text-3xl font-bold tracking-tight text-neutral-900">{fig.value !== undefined ? money(fig.value) : "—"}</p>
+              <p className="tabular mt-1 text-sm text-ink-muted">{formatQty(fig.qty)} pcs</p>
             </div>
-            <p className="tabular mt-4 text-3xl font-bold tracking-tight text-neutral-900">{fig.value !== undefined ? money(fig.value) : "—"}</p>
-            <p className="tabular mt-1 text-sm text-ink-muted">{formatQty(fig.qty)} pcs</p>
-          </div>
-        ))}
+          );
+        })}
       </div>
       {t.unpriced > 0 && <p className="mt-3 text-xs text-amber-700">{plural(t.unpriced, "order")} without a Deere price, left out of the values.</p>}
       {several && (
@@ -639,7 +898,7 @@ function FulfilmentSection() {
                 {f.by_business.map((b) => (
                   <tr key={b.business}>
                     <td className="py-2.5 pr-4 font-semibold uppercase text-ink">{b.business}</td>
-                    {cells(b, moneyIn(b.currency))}
+                    {cells(b, moneyIn(b.currency), b.business)}
                   </tr>
                 ))}
               </tbody>
@@ -659,20 +918,39 @@ function FulfilmentSection() {
           </div>
           {showTop && <div className="mt-3 animate-fade-in overflow-x-auto">
             <table className="w-full text-sm">
-              <thead>{head("Part")}</thead>
+              <thead>
+                <tr className="border-b border-line bg-neutral-50/75 text-2xs font-semibold uppercase tracking-wider text-ink-muted">
+                  <SortTh label="Part" sortKey="part_number" sort={topSort} direction={topDir} onSort={toggleTopSort} className="py-2.5 pl-4 pr-3" />
+                  {figures.map((fig) => (
+                    <SortTh
+                      key={fig.key}
+                      label={fig.label}
+                      sortKey={fig.key}
+                      align="right"
+                      sort={topSort}
+                      direction={topDir}
+                      onSort={toggleTopSort}
+                      className="whitespace-nowrap px-4 py-2.5"
+                    />
+                  ))}
+                </tr>
+              </thead>
               <tbody className="divide-y divide-neutral-100">
-                {f.top_parts.map((p, i) => (
+                {sortedTopParts.map((p, i) => (
                   <tr key={p.part_number} className="hover:bg-neutral-50">
-                    <td className="py-2.5 pr-4">
-                      <span className="flex items-baseline gap-2">
+                    <td className="py-2.5 pr-4 pl-4">
+                      <span className="flex items-center gap-2.5">
                         <span className="tabular w-5 shrink-0 text-xs text-ink-faint">{i + 1}</span>
+                        <PartThumbnail imageUrl={p.image_url} images={p.images} alt={p.part_number} size="sm" showFallback />
                         <span className="min-w-0">
-                          <span className="block font-semibold text-ink">{p.part_number}</span>
+                          <RelatedLink kind="part" value={p.part_number}>
+                            <span className="block font-semibold text-ink hover:text-accent">{p.part_number}</span>
+                          </RelatedLink>
                           {p.description && <span className="block max-w-56 truncate text-xs text-ink-muted" title={p.description}>{p.description}</span>}
                         </span>
                       </span>
                     </td>
-                    {cells(p, money)}
+                    {cells(p, money, undefined, p.part_number)}
                   </tr>
                 ))}
               </tbody>

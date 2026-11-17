@@ -50,6 +50,22 @@ module Api
                      meta: meta, customer_currency: AppConfig.business_currency("dtp"), facets: { commodity_types: Product.where.not(commodity_type: nil).distinct.order(:commodity_type).pluck(:commodity_type) } }
     end
 
+    # GET /api/products/thumbnails?parts=JXAW30717,JXN283804,...
+    def thumbnails
+      parts = params[:parts].to_s.split(",").map { |p| OrderRows::Normalizer.part_number(p) }.reject(&:blank?).uniq
+      products = Product.with_attached_images.where(part_number: parts).index_by(&:part_number)
+      data = products.transform_values do |p|
+        first_img = p.images.first
+        {
+          id: p.id,
+          part_number: p.part_number,
+          images: Serializers.product_images(p),
+          image_url: first_img ? "/api/products/#{p.id}/images/#{first_img.id}" : nil
+        }
+      end
+      render json: { data: data }
+    end
+
     # The part panel: the product, the vendors supplying it with each vendor's price, MOQ and Current Inventory, the
     # customer price and the price history (customer and vendor prices, newest first).
     def vendors

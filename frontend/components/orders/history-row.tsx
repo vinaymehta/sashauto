@@ -15,10 +15,9 @@ import { Alert } from "../ui/feedback";
 import { Skeleton } from "../ui/skeleton";
 import { Sheet } from "../ui/sheet";
 import { InvoiceMoves, OrderDetailsBody } from "./order-details-modal";
-import { ThisOrder } from "./order-detail-this";
-import { Tabs } from "../ui/tabs";
 import { VendorOrderSection } from "./vendor-order-section";
 import { FileIcon, PencilIcon, TrashIcon, TruckIcon } from "../icons";
+import { PartThumbnail } from "../products/part-thumbnail";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const dash = <span className="text-neutral-300">—</span>;
@@ -48,8 +47,6 @@ export function OrderDetailPanel({ row, onClose, onEdit, onDeleted, onPlaced }: 
   const [busy, setBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [placing, setPlacing] = useState(false);
-  // Tabs: the PO + Part with its Schedule (as before), and everything about the one order opened.
-  const [tab, setTab] = useState<"overview" | "order">("overview");
 
   async function remove() {
     setBusy(true);
@@ -74,7 +71,7 @@ export function OrderDetailPanel({ row, onClose, onEdit, onDeleted, onPlaced }: 
       onClose={onClose}
       title="Order details"
       description={<>PO <span className="font-medium text-ink">{row.po_number}</span> · {row.part_number} · {row.order_type}{row.manual && <> · <Badge>Manual</Badge></>}</>}
-      icon={<FileIcon size={18} />}
+      icon={<PartThumbnail imageUrl={row.image_url} images={row.images} alt={row.part_number} size="md" fallbackIcon={<FileIcon size={18} />} />}
     >
       {admin && (
         <div className="mb-4 flex justify-end gap-2">
@@ -90,29 +87,21 @@ export function OrderDetailPanel({ row, onClose, onEdit, onDeleted, onPlaced }: 
           </>}
         </div>
       )}
-      <div className="mb-4 border-b border-line">
-        <Tabs active={tab} onChange={setTab} tabs={[
-          { key: "overview" as const, label: "PO & schedule" },
-          { key: "order" as const, label: "This order" },
-        ]} />
-      </div>
       {error ? (
         <Alert title="Could not load the order">{error.message}</Alert>
       ) : loading && !data ? (
         <Skeleton className="h-64 w-full" />
-      ) : tab === "order" ? (
-        <ThisOrder row={row} file={data?.file} />
       ) : (
-        <OrderDetailsBody row={row} rows={data?.data ?? [row]} description={data?.group.description ?? null} combined={data?.combined}
-                          group={data?.group} file={data?.file}
-                          onChanged={() => { reload(); onPlaced?.(); }} />
+        <>
+          <OrderDetailsBody row={row} rows={data?.data ?? [row]} description={data?.group.description ?? null} combined={data?.combined}
+                            group={data?.group} file={data?.file}
+                            onChanged={() => { reload(); onPlaced?.(); }} />
+          {/* Removing a wrong mark: not for the Warehouse Manager. */}
+          <DeliveryMarks row={row} admin={admin && me?.role !== "warehouse_manager"} onChanged={onPlaced} />
+          {/* Last: every dispatch and delivery of the order on uploaded invoices. */}
+          {data && <InvoiceMoves row={row} moves={data.invoices ?? []} onChanged={() => { reload(); onPlaced?.(); }} />}
+        </>
       )}
-      {tab === "overview" && <>
-        {/* Removing a wrong mark: not for the Warehouse Manager. */}
-        <DeliveryMarks row={row} admin={admin && me?.role !== "warehouse_manager"} onChanged={onPlaced} />
-        {/* Last: every dispatch and delivery of the order on uploaded invoices. */}
-        {data && <InvoiceMoves row={row} moves={data.invoices ?? []} onChanged={() => { reload(); onPlaced?.(); }} />}
-      </>}
       {deleting && (
         <ConfirmDialog title={`Delete order PO ${row.po_number}?`} busy={busy} error={deleteError}
                        onConfirm={remove} onCancel={() => setDeleting(false)}>

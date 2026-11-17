@@ -8,6 +8,7 @@ import { useApi, useDebounced } from "../use-api";
 import { Alert } from "../ui/feedback";
 import { SearchInput } from "../ui/search-input";
 import { Skeleton } from "../ui/skeleton";
+import { SortTh, type SortDirection } from "../ui/sort-header";
 import { formatAmount } from "./price-format";
 import { VendorDetails } from "./vendor-details-panel";
 
@@ -17,6 +18,17 @@ import { VendorDetails } from "./vendor-details-panel";
 export function VendorSummaryPanel({ vendorId, uploadId }: { vendorId: number; uploadId?: number }) {
   const vendor = useApi<{ data: Vendor }>(`/api/vendors/${vendorId}`);
   const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<string>("part_number");
+  const [direction, setDirection] = useState<SortDirection>("asc");
+
+  const toggleSort = (key: string) => {
+    if (sort === key) setDirection((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSort(key);
+      setDirection(key === "price" || key === "moq" || key === "inventory" ? "desc" : "asc");
+    }
+  };
+
   const q = useDebounced(search.trim());
   const parts = useApi<{ data: VendorProduct[] }>(`/api/vendors/${vendorId}/products`, { q });
   if (vendor.error) return <Alert title="Could not load the vendor">{vendor.error.message}</Alert>;
@@ -24,6 +36,18 @@ export function VendorSummaryPanel({ vendorId, uploadId }: { vendorId: number; u
   const v = vendor.data.data;
   const items = parts.data?.data ?? [];
   const dash = <span className="text-ink-faint">—</span>;
+
+  const sortedItems = (() => {
+    return [...items].sort((a, b) => {
+      let cmp = 0;
+      if (sort === "part_number") cmp = a.part_number.localeCompare(b.part_number);
+      else if (sort === "description") cmp = (a.description || "").localeCompare(b.description || "");
+      else if (sort === "price") cmp = (Number(a.price_amount) || 0) - (Number(b.price_amount) || 0);
+      else if (sort === "moq") cmp = (Number(a.moq) || 0) - (Number(b.moq) || 0);
+      else if (sort === "inventory") cmp = (Number(a.available_qty) || 0) - (Number(b.available_qty) || 0);
+      return direction === "desc" ? -cmp : cmp;
+    });
+  })();
 
   return (
     <div className="space-y-4">
@@ -52,15 +76,15 @@ export function VendorSummaryPanel({ vendorId, uploadId }: { vendorId: number; u
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-2xs font-semibold uppercase tracking-wider text-ink-faint">
-                  <th className="px-5 py-2 font-semibold">Part Number</th>
-                  <th className="px-3 py-2 font-semibold">Description</th>
-                  <th className="px-3 py-2 text-right font-semibold">Price per piece</th>
-                  <th className="px-3 py-2 text-right font-semibold">MOQ (pcs)</th>
-                  <th className="px-5 py-2 text-right font-semibold">Current Inventory</th>
+                  <SortTh label="Part Number" sortKey="part_number" sort={sort} direction={direction} onSort={toggleSort} className="px-5 py-2 font-semibold" />
+                  <SortTh label="Description" sortKey="description" sort={sort} direction={direction} onSort={toggleSort} className="px-3 py-2 font-semibold" />
+                  <SortTh label="Price per piece" sortKey="price" align="right" sort={sort} direction={direction} onSort={toggleSort} className="px-3 py-2 text-right font-semibold" />
+                  <SortTh label="MOQ (pcs)" sortKey="moq" align="right" sort={sort} direction={direction} onSort={toggleSort} className="px-3 py-2 text-right font-semibold" />
+                  <SortTh label="Current Inventory" sortKey="inventory" align="right" sort={sort} direction={direction} onSort={toggleSort} className="px-5 py-2 text-right font-semibold" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
-                {items.map((item) => (
+                {sortedItems.map((item) => (
                   <tr key={item.id} className="hover:bg-neutral-50">
                     <td className="px-5 py-2"><RelatedLink kind="part" value={item.part_number} uploadId={uploadId} /></td>
                     <td className="max-w-64 truncate px-3 py-2 text-ink-muted" title={item.description ?? undefined}>{item.description ?? dash}</td>

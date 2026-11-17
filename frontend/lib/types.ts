@@ -397,6 +397,7 @@ export interface OrderBucket { count: number; value: string }
 export interface DashboardOrder {
   id: number; manual: boolean; po_number: string; po_line_number: string; part_number: string; order_type: OrderType;
   ship_date: string; qty: string; value: string; status: PipelineStatus; po: boolean; order_placed: boolean; overdue: boolean;
+  image_url?: string | null; images?: ProductImage[];
 }
 export type PipelineStatus = "none" | "received" | "dispatched" | "inbound" | "delivery" | "outbound";
 export interface DashboardOverview {
@@ -408,7 +409,8 @@ export interface DashboardOverview {
   outlook: { date: string; firm: string; forecast: string }[];
   // product_id / moq (sets) / customer_price (per 100 pcs): the part on the Products page; open_orders: its open orders.
   top_parts: { part_number: string; description: string | null; orders: number; qty: string; value: string;
-               product_id: number | null; moq: string | null; customer_price: string | null; open_orders: DashboardOrder[] }[];
+               product_id: number | null; moq: string | null; customer_price: string | null; open_orders: DashboardOrder[];
+               image_url?: string | null; images?: ProductImage[] }[];
   upcoming: DashboardOrder[];
 }
 export interface DateAmount { date: string; amount: string }
@@ -416,6 +418,8 @@ export interface DateAmount { date: string; amount: string }
 export interface OrderRow {
   id: number;
   part_description?: string | null; // the product's Description (Products), Orders list only
+  image_url?: string | null;
+  images?: ProductImage[];
   discontinued?: boolean; // Orders list: the part is discontinued (no vendor PO can be placed)
   order_type: OrderType;
   due_date: string | null;
@@ -503,7 +507,7 @@ export interface OrderHistory {
   data: OrderRow[];
   headers: string[];
   // moq: the part's MOQ in sets (order Qty counts sets); moq_pcs: in pieces; pack_size: pieces per set.
-  group: { po_number: string; part_number: string; order_type: OrderType; description: string | null; moq: string | null; moq_pcs: string | null; pack_size: number };
+  group: { po_number: string; part_number: string; order_type: OrderType; description: string | null; moq: string | null; moq_pcs: string | null; pack_size: number; image_url?: string | null; images?: ProductImage[] };
   combined?: ScheduleGroup[]; // combined orders among the rows (imported orders only)
   invoices?: InvoiceAllocationInfo[]; // every dispatch and outbound of the rows on uploaded invoices, oldest first
   // The Deere file the order and its Schedule come from; latest false: an old file (the order is kept for its history),
@@ -874,12 +878,15 @@ export interface Fulfilment {
   files: { business: string; name: string; completed_at: string }[];
   totals: PartSummaryFigures;
   by_business: (PartSummaryFigures & { business: string; currency: string })[];
-  top_parts: (PartSummaryFigures & { part_number: string; description: string | null })[]; // the 10 with the most value ordered
+  top_parts: (PartSummaryFigures & { part_number: string; description: string | null; product_id?: number | null; image_url?: string | null; images?: ProductImage[] })[]; // the 10 with the most value ordered
 }
 
 export interface PartSummary {
   part_number: string;
   description: string | null;
+  product_id?: number | null;
+  image_url?: string | null;
+  images?: ProductImage[];
   moq: string | null;
   pack_size: number | null;
   discontinued: boolean;

@@ -118,7 +118,7 @@ export function ProductImages({ product, canEdit, onSaved }: { product: Product;
 }
 
 // One image large, over the app, with previous / next; closes on ✕, Escape or a click outside.
-function ImageViewer({ images, index, onIndex, onClose }: { images: ProductImage[]; index: number; onIndex: (i: number) => void; onClose: () => void }) {
+export function ImageViewer({ images, index, onIndex, onClose }: { images: ProductImage[]; index: number; onIndex: (i: number) => void; onClose: () => void }) {
   const image = images[index]!;
   const step = (d: number) => onIndex((index + d + images.length) % images.length);
   useEffect(() => {

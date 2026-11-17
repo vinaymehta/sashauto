@@ -110,6 +110,7 @@ Rails.application.routes.draw do
       collection do
         get :order_summary
         get "order_summary/export", action: :order_summary_export
+        get :thumbnails
       end
       # Photos of the part: upload (several files), view one, remove one.
       resources :images, only: %i[create show destroy], controller: :product_images

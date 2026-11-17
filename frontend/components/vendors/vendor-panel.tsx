@@ -12,6 +12,7 @@ import { Button } from "../ui/button";
 import { Alert, Spinner } from "../ui/feedback";
 import { SearchInput } from "../ui/search-input";
 import { Sheet } from "../ui/sheet";
+import { SortTh, type SortDirection } from "../ui/sort-header";
 import { Tabs } from "../ui/tabs";
 import { formatAmount } from "./price-format";
 import { VendorDetails } from "./vendor-details-panel";
@@ -50,10 +51,33 @@ export function VendorPanel({ vendor, canEdit, onClose, onEdit, onChanged }: {
 // The vendor's parts: Part Number, description, price per piece, MOQ and Current Inventory. A row opens the part panel.
 function VendorParts({ vendor, canEdit, onOpen, onChanged }: { vendor: Vendor; canEdit: boolean; onOpen: (productId: number) => void; onChanged: () => void }) {
   const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<string>("part_number");
+  const [direction, setDirection] = useState<SortDirection>("asc");
+
+  const toggleSort = (key: string) => {
+    if (sort === key) setDirection((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSort(key);
+      setDirection(key === "price" || key === "moq" || key === "inventory" ? "desc" : "asc");
+    }
+  };
+
   const q = useDebounced(search.trim());
   const { data, error, loading, reload } = useApi<{ data: VendorProduct[] }>(`/api/vendors/${vendor.id}/products`, { q });
   const [adding, setAdding] = useState(false);
   const items = data?.data ?? [];
+
+  const sortedItems = (() => {
+    return [...items].sort((a, b) => {
+      let cmp = 0;
+      if (sort === "part_number") cmp = a.part_number.localeCompare(b.part_number);
+      else if (sort === "description") cmp = (a.description || "").localeCompare(b.description || "");
+      else if (sort === "price") cmp = (Number(a.price_amount) || 0) - (Number(b.price_amount) || 0);
+      else if (sort === "moq") cmp = (Number(a.moq) || 0) - (Number(b.moq) || 0);
+      else if (sort === "inventory") cmp = (Number(a.available_qty) || 0) - (Number(b.available_qty) || 0);
+      return direction === "desc" ? -cmp : cmp;
+    });
+  })();
 
   return (
     <section className="overflow-hidden rounded-lg border border-line bg-white shadow-card">
@@ -71,15 +95,15 @@ function VendorParts({ vendor, canEdit, onOpen, onChanged }: { vendor: Vendor; c
           <table className="w-full min-w-[640px] border-collapse text-sm">
             <thead>
               <tr className="text-2xs font-bold uppercase tracking-wider text-neutral-600">
-                <th className="h-9 border-b border-neutral-100 bg-neutral-50 px-5 text-left">Part Number</th>
-                <th className="h-9 border-b border-neutral-100 bg-neutral-50 px-3 text-left">Description</th>
-                <th className="h-9 border-b border-neutral-100 bg-neutral-50 px-3 text-right">Price per piece</th>
-                <th className="h-9 border-b border-neutral-100 bg-neutral-50 px-3 text-right">MOQ (pcs)</th>
-                <th className="h-9 border-b border-neutral-100 bg-neutral-50 px-5 text-right">Current Inventory</th>
+                <SortTh label="Part Number" sortKey="part_number" sort={sort} direction={direction} onSort={toggleSort} className="h-9 border-b border-neutral-100 bg-neutral-50 px-5 text-left" />
+                <SortTh label="Description" sortKey="description" sort={sort} direction={direction} onSort={toggleSort} className="h-9 border-b border-neutral-100 bg-neutral-50 px-3 text-left" />
+                <SortTh label="Price per piece" sortKey="price" align="right" sort={sort} direction={direction} onSort={toggleSort} className="h-9 border-b border-neutral-100 bg-neutral-50 px-3 text-right" />
+                <SortTh label="MOQ (pcs)" sortKey="moq" align="right" sort={sort} direction={direction} onSort={toggleSort} className="h-9 border-b border-neutral-100 bg-neutral-50 px-3 text-right" />
+                <SortTh label="Current Inventory" sortKey="inventory" align="right" sort={sort} direction={direction} onSort={toggleSort} className="h-9 border-b border-neutral-100 bg-neutral-50 px-5 text-right" />
               </tr>
             </thead>
             <tbody>
-              {items.map((item) => (
+              {sortedItems.map((item) => (
                 <tr key={item.id} onClick={() => onOpen(item.product_id)} aria-haspopup="dialog" title="Open the part to see or edit its prices"
                     className="cursor-pointer transition-colors hover:bg-neutral-50">
                   <td className="h-11 border-b border-neutral-100 px-5 font-medium text-ink">{item.part_number}</td>

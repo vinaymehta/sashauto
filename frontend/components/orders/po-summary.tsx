@@ -1,11 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import type { PoSummary, PoSummaryLine } from "@/lib/types";
 import { formatCount, formatDate, formatQty } from "@/lib/format";
 import { useApi } from "../use-api";
 import { formatCustomer } from "../vendors/price-format";
 import { Alert } from "../ui/feedback";
 import { Skeleton } from "../ui/skeleton";
+import { SortTh, type SortDirection } from "../ui/sort-header";
 import { StatusPill } from "./delivery-cell";
 import { RelatedLink } from "./related-popover";
 
@@ -15,9 +17,39 @@ import { RelatedLink } from "./related-popover";
 // summary in the same panel.
 export function PoSummaryPanel({ po, uploadId }: { po: string; uploadId?: number }) {
   const { data, error, loading } = useApi<{ data: PoSummary }>("/api/orders/po_summary", { po, upload_id: uploadId });
+  const [lineSort, setLineSort] = useState<string>("po_line_number");
+  const [lineDir, setLineDir] = useState<SortDirection>("asc");
+
+  const toggleSort = (key: string) => {
+    if (lineSort === key) setLineDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setLineSort(key);
+      setLineDir(key === "ordered" || key === "pending" || key === "dispatched" || key === "delivered" || key === "revenue" ? "desc" : "asc");
+    }
+  };
+
+  const s = data?.data;
+  const sortedLines = (() => {
+    if (!s?.lines) return [];
+    return [...s.lines].sort((a, b) => {
+      let cmp = 0;
+      if (lineSort === "po_line_number") cmp = a.po_line_number.localeCompare(b.po_line_number, undefined, { numeric: true });
+      else if (lineSort === "part_number") cmp = a.part_number.localeCompare(b.part_number);
+      else if (lineSort === "order_type") cmp = a.order_type.localeCompare(b.order_type);
+      else if (lineSort === "file") cmp = String(a.file_day || (a.manual ? "manual" : "latest")).localeCompare(String(b.file_day || (b.manual ? "manual" : "latest")));
+      else if (lineSort === "ship_date") cmp = a.ship_date.localeCompare(b.ship_date);
+      else if (lineSort === "status") cmp = (a.status || "").localeCompare(b.status || "");
+      else if (lineSort === "ordered") cmp = Number(a.ordered) - Number(b.ordered);
+      else if (lineSort === "pending") cmp = Number(a.pending) - Number(b.pending);
+      else if (lineSort === "dispatched") cmp = Number(a.dispatched) - Number(b.dispatched);
+      else if (lineSort === "delivered") cmp = Number(a.delivered) - Number(b.delivered);
+      else if (lineSort === "revenue") cmp = Number(a.revenue_ordered) - Number(b.revenue_ordered);
+      return lineDir === "desc" ? -cmp : cmp;
+    });
+  })();
+
   if (error) return <Alert title="Could not load the PO summary">{error.message}</Alert>;
-  if (loading || !data) return <Skeleton className="h-96 w-full" />;
-  const s = data.data;
+  if (loading || !data || !s) return <Skeleton className="h-96 w-full" />;
   const t = s.totals;
   const ordered = Number(t.ordered);
   const pct = (v: string) => (ordered > 0 ? Math.min((Number(v) / ordered) * 100, 100) : 0);
@@ -77,21 +109,21 @@ export function PoSummaryPanel({ po, uploadId }: { po: string; uploadId?: number
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-2xs font-semibold uppercase tracking-wider text-ink-faint">
-                  <th className="px-5 py-2 font-semibold">Line</th>
-                  <th className="px-3 py-2 font-semibold">Part Number</th>
-                  <th className="px-3 py-2 font-semibold">Type</th>
-                  <th className="px-3 py-2 font-semibold">File</th>
-                  <th className="px-3 py-2 font-semibold">Ship date</th>
-                  <th className="px-3 py-2 font-semibold">Status</th>
-                  <th className="px-2 py-2 text-right font-semibold">Ordered</th>
-                  <th className="px-2 py-2 text-right font-semibold">Pending</th>
-                  <th className="px-2 py-2 text-right font-semibold">Dispatched</th>
-                  <th className="px-2 py-2 text-right font-semibold">Delivered</th>
-                  <th className="px-5 py-2 text-right font-semibold">Revenue</th>
+                  <SortTh label="Line" sortKey="po_line_number" sort={lineSort} direction={lineDir} onSort={toggleSort} className="px-5 py-2 font-semibold" />
+                  <SortTh label="Part Number" sortKey="part_number" sort={lineSort} direction={lineDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
+                  <SortTh label="Type" sortKey="order_type" sort={lineSort} direction={lineDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
+                  <SortTh label="File" sortKey="file" sort={lineSort} direction={lineDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
+                  <SortTh label="Ship date" sortKey="ship_date" sort={lineSort} direction={lineDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
+                  <SortTh label="Status" sortKey="status" sort={lineSort} direction={lineDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
+                  <SortTh label="Ordered" sortKey="ordered" align="right" sort={lineSort} direction={lineDir} onSort={toggleSort} className="px-2 py-2 text-right font-semibold" />
+                  <SortTh label="Pending" sortKey="pending" align="right" sort={lineSort} direction={lineDir} onSort={toggleSort} className="px-2 py-2 text-right font-semibold" />
+                  <SortTh label="Dispatched" sortKey="dispatched" align="right" sort={lineSort} direction={lineDir} onSort={toggleSort} className="px-2 py-2 text-right font-semibold" />
+                  <SortTh label="Delivered" sortKey="delivered" align="right" sort={lineSort} direction={lineDir} onSort={toggleSort} className="px-2 py-2 text-right font-semibold" />
+                  <SortTh label="Revenue" sortKey="revenue" align="right" sort={lineSort} direction={lineDir} onSort={toggleSort} className="px-5 py-2 text-right font-semibold" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
-                {s.lines.map((l) => (
+                {sortedLines.map((l) => (
                   <tr key={`${l.po_line_number}|${l.part_number}|${l.ship_date}|${l.order_type}`} className="hover:bg-neutral-50">
                     <td className="px-5 py-2 tabular text-ink-muted">{l.po_line_number}</td>
                     <td className="px-3 py-2">

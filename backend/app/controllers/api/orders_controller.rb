@@ -55,7 +55,14 @@ module Api
       load_combined_orders(combined)
       @moq_parts = Orders::MoqBalance.needs(batches.map(&:id))
       scope = filter(search(dataset, (params[:search].presence || params[:q]).to_s.strip.first(100)), combined)
-      scope, sort, direction = apply_sort(scope, sorts_for(columns).merge("firm_date" => firm_date_sql), default: DEFAULT_SORT)
+      extra_sorts = {
+        "firm_date" => firm_date_sql,
+        "status" => status_sql,
+        "vendor_po" => "EXISTS (SELECT 1 FROM vendor_order_placements p WHERE p.order_key = #{order_key_sql})",
+        "unit_price" => "NULLIF(regexp_replace(order_rows.source_data->>'Unit Price', '[^0-9.]', '', 'g'), '')::numeric",
+        "price" => "NULLIF(regexp_replace(order_rows.source_data->>'Unit Price', '[^0-9.]', '', 'g'), '')::numeric"
+      }
+      scope, sort, direction = apply_sort(scope, sorts_for(columns).merge(extra_sorts), default: DEFAULT_SORT)
       # Manual orders are always listed first; each part keeps the chosen sort.
       scope = scope.reorder(Arel.sql("order_rows.manual DESC"), *scope.order_values)
 
@@ -83,13 +90,15 @@ module Api
       firm_keys = rows.map { |row| firm_key(row) }
       firm_dates = Orders::FirmDates.for_keys(firm_keys)
       came = came_firm_dates(rows)
-      products = Product.where(part_number: rows.map(&:part_number).uniq).pluck(:part_number, :description, :discontinued)
-      descriptions = products.to_h { |part, description, _| [ part, description ] }
-      discontinued = products.filter_map { |part, _, off| part if off }.to_set
+      products = Product.with_attached_images.where(part_number: rows.map(&:part_number).uniq).index_by(&:part_number)
+      descriptions = products.transform_values(&:description)
+      discontinued = products.values.select(&:discontinued).to_set(&:part_number)
       render json: {
         data: rows.each_with_index.map do |row, i|
           # The order's PO and status (a combined order's on each of its rows).
           key = placement_key(row)
+          prod = products[row.part_number]
+          img = prod&.images&.first
           Serializers.order_row(row, source: true).merge(placed: ordered.key?(key), order_placed: order_placed.include?(key),
                                                          ordered_qty: Serializers.qty(ordered[key]),
                                                          deliveries: deliveries.fetch(key, {}),
@@ -98,6 +107,8 @@ module Api
                                                          firm_date: firm_dates[firm_keys[i]], came_firm_date: came[i], business: row[:business],
                                                          part_description: descriptions[row.part_number],
                                                          discontinued: discontinued.include?(row.part_number),
+                                                         image_url: img ? "/api/products/#{prod.id}/images/#{img.id}" : nil,
+                                                         images: prod ? Serializers.product_images(prod) : [],
                                                          **combined_info(row, combined))
         end,
         meta: meta.merge(sort: sort, direction: direction),
@@ -211,10 +222,14 @@ module Api
       rows = dataset(batches).where(part_number: part).to_a
       lines = summary_lines(rows)
       placed = ordered_by_key(rows)
-      product = Product.includes(vendor_products: :vendor).find_by(part_number: part)
+      product = Product.with_attached_images.includes(vendor_products: :vendor).find_by(part_number: part)
+      first_img = product&.images&.first
       render json: { data: {
         part_number: part, description: product&.description, moq: Serializers.qty(product && (product.moq_sets || product.moq)),
         pack_size: product&.pack_size, discontinued: product&.discontinued? || false, currency: summary_currency,
+        product_id: product&.id,
+        image_url: first_img ? "/api/products/#{product.id}/images/#{first_img.id}" : nil,
+        images: product ? Serializers.product_images(product) : [],
         vendors: (product&.vendor_products || []).sort_by { |vp| vp.vendor.name }.map do |vp|
           { vendor_id: vp.vendor_id, name: vp.vendor.name, price: Serializers.qty(vp.price_amount), set_price: Serializers.qty(vp.set_price_amount), currency: vp.price_currency,
             price_text: vp.price_text, note: vp.price_note, pack_size: vp.pack_size, moq: vp.moq_text.presence || Serializers.qty(vp.moq_sets) }
@@ -314,8 +329,17 @@ module Api
     def top_fulfilment_parts(lines)
       parts = lines.group_by { |l| l[:row].part_number }.map { |part, list| summary_figures(list).merge(part_number: part) }
                    .sort_by { |f| -f[:revenue_ordered].to_d }.first(10)
-      descriptions = Product.where(part_number: parts.map { |f| f[:part_number] }).pluck(:part_number, :description).to_h
-      parts.map { |f| f.merge(description: descriptions[f[:part_number]]) }
+      products = Product.with_attached_images.where(part_number: parts.map { |f| f[:part_number] }).index_by(&:part_number)
+      parts.map do |f|
+        p = products[f[:part_number]]
+        img = p&.images&.first
+        f.merge(
+          description: p&.description,
+          product_id: p&.id,
+          image_url: img ? "/api/products/#{p.id}/images/#{img.id}" : nil,
+          images: p ? Serializers.product_images(p) : []
+        )
+      end
     end
 
     # Different Ship To (Orders page box): the rows of each business's latest upload shipped to an address other than its
@@ -607,11 +631,14 @@ module Api
     end
 
     def group_info(row)
-      product = Product.find_by(part_number: row.part_number)
+      product = Product.with_attached_images.find_by(part_number: row.part_number)
+      first_img = product&.images&.first
       from_file = row.source_data.find { |label, value| label.strip.casecmp?("description") && value.to_s.strip.present? }&.last.to_s.squish
       { po_number: row.po_number, part_number: row.part_number, order_type: row.order_type, description: from_file.presence || product&.description,
         moq: Serializers.qty(product && (product.moq_sets || product.moq)), moq_pcs: Serializers.qty(product&.moq),
-        pack_size: product&.pack_size || 1 }
+        pack_size: product&.pack_size || 1,
+        image_url: first_img ? "/api/products/#{product.id}/images/#{first_img.id}" : nil,
+        images: product ? Serializers.product_images(product) : [] }
     end
 
     # A combined order in the Order details Schedule. PO generated (placed): its orders can no longer change.
@@ -921,8 +948,8 @@ module Api
         params[:status].present? ||
         (params[:search].presence || params[:q].presence).present? ||
         params[:type].present? || params[:ship_to].present? || params[:commodity_type].present? ||
-        params[:ship_date_from].present? || params[:ship_date_to].present? || params[:age].present? || params[:po].present? || params[:combined].present? ||
-        %i[moq timing source vendor firm_date_from firm_date_to].any? { |k| params[k].present? }
+        dashboard? || params[:ship_date_from].present? || params[:ship_date_to].present? || params[:age].present? || params[:po].present? || params[:combined].present? ||
+        %i[moq timing source vendor firm_date_from firm_date_to part_number].any? { |k| params[k].present? }
     end
 
     # SORTS plus the Excel columns without a typed column, sorted by their imported value
@@ -952,9 +979,13 @@ module Api
       types = multi_param(:type, OrderRows::Normalizer::ORDER_TYPES)
       ship_tos = multi_param(:ship_to)
       commodities = multi_param(:commodity_type)
+      parts = multi_param(:part_number)
       scope = scope.where(order_type: types) if types.any?
       scope = scope.where(ship_to_location: ship_tos) if ship_tos.any?
       scope = scope.where(commodity_type: commodities) if commodities.any?
+      scope = scope.where(part_number: parts) if parts.any?
+      # The Dashboard's lists (dashboard=1) leave out its orders (Business.dashboard_excluded?), as its cards count.
+      scope = scope.where.not(Business.dashboard_excluded_sql("order_rows.business", "order_rows.po_number", "order_rows.part_number")) if dashboard?
       ages = multi_param(:age, AGE_GROUPS)
       scope = Ageing::Rules.in_bands(scope, ages, request_today, firm_key: firm_key_sql) if ages.any?
       scope = filter_by_status(scope)

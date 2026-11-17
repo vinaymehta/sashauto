@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { Paginated, PriceChange, Product, ProductConflict, ProductVendor, Vendor } from "@/lib/types";
 import { formatDateTime, formatQty } from "@/lib/format";
@@ -12,8 +12,10 @@ import { Button } from "../ui/button";
 import { ConfirmDialog } from "../ui/confirm-dialog";
 import { Alert, Spinner } from "../ui/feedback";
 import { Sheet } from "../ui/sheet";
+import { SortTh, type SortDirection } from "../ui/sort-header";
 import { formatAmount, formatCustomer } from "../vendors/price-format";
 import { ProductImages } from "./product-images";
+import { PartThumbnail } from "./part-thumbnail";
 
 type PartResponse = { product: Product; data: ProductVendor[]; customer_price: string | null; history: PriceChange[] };
 const NUMBER = /^\d+(\.\d{1,4})?$/;
@@ -34,7 +36,8 @@ export function ProductPanel({ productId, canEdit, edit = false, onClose, onSave
   const changed = () => { reload(); onSaved?.(); };
 
   return (
-    <Sheet open wide onClose={onClose} title={product?.part_number ?? "Part"} icon={<BoxIcon size={18} />}
+    <Sheet open wide onClose={onClose} title={product?.part_number ?? "Part"}
+           icon={<PartThumbnail imageUrl={product?.images?.[0]?.url} images={product?.images} alt={product?.part_number} size="md" fallbackIcon={<BoxIcon size={18} />} />}
            description={product ? (product.description ?? "No description") : "Loading…"}>
       {error ? <Alert title="Could not load the part">{error.message}</Alert> : loading && !data ? (
         <div className="flex justify-center py-12"><Spinner /></div>
@@ -237,10 +240,32 @@ function Vendors({ product, items, canEdit, onSaved }: { product: Product; items
   const [editing, setEditing] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<ProductVendor | null>(null);
+  const [sort, setSort] = useState<string>("vendor_name");
+  const [direction, setDirection] = useState<SortDirection>("asc");
+
+  const toggleSort = (key: string) => {
+    if (sort === key) setDirection((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSort(key);
+      setDirection(key === "price" || key === "moq" || key === "inventory" ? "desc" : "asc");
+    }
+  };
+
   const notify = useToast();
   const [busy, setBusy] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
   const cheapest = items.filter((v) => v.price_amount !== null).sort((a, b) => Number(a.price_amount) - Number(b.price_amount))[0];
+
+  const sortedItems = useMemo(() => {
+    return [...items].sort((a, b) => {
+      let cmp = 0;
+      if (sort === "vendor_name") cmp = a.vendor_name.localeCompare(b.vendor_name);
+      else if (sort === "price") cmp = (Number(a.price_amount) || 0) - (Number(b.price_amount) || 0);
+      else if (sort === "moq") cmp = (Number(a.moq) || 0) - (Number(b.moq) || 0);
+      else if (sort === "inventory") cmp = (Number(a.available_qty) || 0) - (Number(b.available_qty) || 0);
+      return direction === "desc" ? -cmp : cmp;
+    });
+  }, [items, sort, direction]);
 
   async function remove() {
     if (!removing) return;
@@ -266,15 +291,15 @@ function Vendors({ product, items, canEdit, onSaved }: { product: Product; items
         <table className="w-full min-w-[640px] border-collapse text-sm">
           <thead>
             <tr className="text-2xs font-bold uppercase tracking-wider text-neutral-600">
-              <th className="h-9 border-b border-neutral-100 bg-neutral-50 px-5 text-left">Vendor</th>
-              <th className="h-9 border-b border-neutral-100 bg-neutral-50 px-3 text-right">Price per piece</th>
-              <th className="h-9 border-b border-neutral-100 bg-neutral-50 px-3 text-right">MOQ (pcs)</th>
-              <th className="h-9 border-b border-neutral-100 bg-neutral-50 px-3 text-right">Current Inventory</th>
+              <SortTh label="Vendor" sortKey="vendor_name" sort={sort} direction={direction} onSort={toggleSort} className="h-9 border-b border-neutral-100 bg-neutral-50 px-5 text-left" />
+              <SortTh label="Price per piece" sortKey="price" align="right" sort={sort} direction={direction} onSort={toggleSort} className="h-9 border-b border-neutral-100 bg-neutral-50 px-3 text-right" />
+              <SortTh label="MOQ (pcs)" sortKey="moq" align="right" sort={sort} direction={direction} onSort={toggleSort} className="h-9 border-b border-neutral-100 bg-neutral-50 px-3 text-right" />
+              <SortTh label="Current Inventory" sortKey="inventory" align="right" sort={sort} direction={direction} onSort={toggleSort} className="h-9 border-b border-neutral-100 bg-neutral-50 px-5 text-right" />
               {canEdit && <th className="h-9 w-32 border-b border-neutral-100 bg-neutral-50 px-5 text-right" />}
             </tr>
           </thead>
           <tbody>
-            {items.map((v) => editing === v.id
+            {sortedItems.map((v) => editing === v.id
               ? <VendorEditRow key={v.id} product={product} item={v} onDone={(saved) => { setEditing(null); if (saved) onSaved(); }} />
               : (
                 <tr key={v.id} className="hover:bg-neutral-50/60">

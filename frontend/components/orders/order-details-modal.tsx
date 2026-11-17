@@ -13,6 +13,7 @@ import { Button } from "../ui/button";
 import { ConfirmDialog } from "../ui/confirm-dialog";
 import { RelatedLink } from "./related-popover";
 import { Sheet } from "../ui/sheet";
+import { PartThumbnail } from "../products/part-thumbnail";
 
 type Source = OrderRow["source_data"];
 
@@ -105,9 +106,17 @@ export function OrderDetailsBody({ row, rows, description, combined = [], onChan
       {/* Order: part details, with Ship To below them in the same card */}
       <section className="overflow-hidden rounded-lg border border-line bg-gradient-to-br from-tint-violet/70 via-white to-white shadow-card">
         <div className="flex min-w-0 items-start gap-4 px-5 py-5">
-          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white text-tint-violet-ink shadow-card ring-1 ring-tint-violet-ink/15">
-            <BoxIcon size={22} />
-          </span>
+          <PartThumbnail
+            imageUrl={group?.image_url ?? row.image_url}
+            images={group?.images ?? row.images}
+            alt={row.part_number}
+            size="lg"
+            fallbackIcon={
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white text-tint-violet-ink shadow-card ring-1 ring-tint-violet-ink/15">
+                <BoxIcon size={22} />
+              </span>
+            }
+          />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-xl font-semibold tracking-tight text-ink"><RelatedLink kind="part" value={row.part_number} /></h3>

@@ -279,27 +279,36 @@ module Dashboard
 
     def top_parts(open, status, placed)
       top = open.group_by(&:part_number).sort_by { |_, list| -list.sum(BigDecimal("0"), &:value) }.first(8)
-      products = Product.where(part_number: top.map(&:first)).index_by(&:part_number)
+      products = Product.with_attached_images.where(part_number: top.map(&:first)).index_by(&:part_number)
       top.map do |part, list|
         product = products[part]
+        img = product&.images&.first
         { part_number: part, description: product&.description, orders: list.size,
           qty: Serializers.qty(list.sum(BigDecimal("0"), &:qty)), value: money(list.sum(BigDecimal("0"), &:value)),
           product_id: product&.id, moq: Serializers.qty(product && (product.moq_sets || product.moq)),
           customer_price: Serializers.qty(product&.customer_price),
-          open_orders: list.sort_by { |o| [ o.ship_date, o.po_number ] }.map { |o| order_json(o, status, placed) } }
+          image_url: img ? "/api/products/#{product.id}/images/#{img.id}" : nil,
+          images: product ? Serializers.product_images(product) : [],
+          open_orders: list.sort_by { |o| [ o.ship_date, o.po_number ] }.map { |o| order_json(o, status, placed, products) } }
       end
     end
 
     def upcoming(open, status, placed)
-      open.select { |o| o.ship_date <= @today + 30 && o.qty.positive? }.sort_by { |o| [ o.ship_date, o.po_number ] }.first(8)
-          .map { |o| order_json(o, status, placed) }
+      orders = open.select { |o| o.ship_date <= @today + 30 && o.qty.positive? }.sort_by { |o| [ o.ship_date, o.po_number ] }.first(8)
+      products = Product.with_attached_images.where(part_number: orders.map(&:part_number).uniq).index_by(&:part_number)
+      orders.map { |o| order_json(o, status, placed, products) }
     end
 
-    def order_json(order, status, placed)
+    def order_json(order, status, placed, products = {})
+      prod = products[order.part_number]
+      img = prod&.images&.first
       { id: order.id, manual: order.manual, po_number: order.po_number, po_line_number: order.po_line_number,
         part_number: order.part_number, order_type: order.order_type, ship_date: order.ship_date, qty: Serializers.qty(order.qty),
         value: money(order.value), status: status[order.key] || "none", po: placed.include?(order.key),
-        order_placed: @order_placed.include?(order.key), overdue: order.ship_date < @today }
+        order_placed: @order_placed.include?(order.key), overdue: order.ship_date < @today,
+        product_id: prod&.id,
+        image_url: img ? "/api/products/#{prod.id}/images/#{img.id}" : nil,
+        images: prod ? Serializers.product_images(prod) : [] }
     end
 
     def bucket(list)

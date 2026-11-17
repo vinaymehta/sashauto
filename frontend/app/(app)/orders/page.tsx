@@ -692,9 +692,37 @@ function OrdersView() {
 // sends no X-Business header).
 function ShipToSheet({ open, onClose, data, business }: { open: boolean; onClose: () => void; data: ShipToAlerts; business: string }) {
   const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<string>("ship_date");
+  const [direction, setDirection] = useState<"asc" | "desc">("asc");
+
+  const toggleSort = (key: string) => {
+    if (sort === key) setDirection((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSort(key);
+      setDirection(key === "qty" ? "desc" : "asc");
+    }
+  };
+
   const term = query.trim().toLowerCase();
   const rows = term ? data.rows.filter((r) => [r.po_number, r.part_number, r.description, r.ship_to, r.order_type]
     .some((v) => v?.toLowerCase().includes(term))) : data.rows;
+
+  const sortedRows = useMemo(() => {
+    return [...rows].sort((a, b) => {
+      let cmp = 0;
+      if (sort === "business") cmp = (a.business || "").localeCompare(b.business || "");
+      else if (sort === "po_number") cmp = a.po_number.localeCompare(b.po_number, undefined, { numeric: true });
+      else if (sort === "po_line_number") cmp = a.po_line_number.localeCompare(b.po_line_number, undefined, { numeric: true });
+      else if (sort === "part_number") cmp = a.part_number.localeCompare(b.part_number);
+      else if (sort === "description") cmp = (a.description || "").localeCompare(b.description || "");
+      else if (sort === "order_type") cmp = a.order_type.localeCompare(b.order_type);
+      else if (sort === "ship_date") cmp = a.ship_date.localeCompare(b.ship_date);
+      else if (sort === "qty") cmp = (Number(a.qty) || 0) - (Number(b.qty) || 0);
+      else if (sort === "ship_to") cmp = (a.ship_to || "").localeCompare(b.ship_to || "");
+      return direction === "desc" ? -cmp : cmp;
+    });
+  }, [rows, sort, direction]);
+
   const several = data.files.length > 1;
   const href = `/api/orders/ship_to_alerts?${new URLSearchParams({ export: "xlsx", business })}`;
   return (
@@ -720,19 +748,19 @@ function ShipToSheet({ open, onClose, data, business }: { open: boolean; onClose
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-neutral-50 text-left text-2xs font-semibold uppercase tracking-wider text-ink-faint">
-                  {several && <th className="px-3 py-2 font-semibold">Business</th>}
-                  <th className="px-3 py-2 font-semibold">PO Number</th>
-                  <th className="px-3 py-2 font-semibold">PO Line</th>
-                  <th className="px-3 py-2 font-semibold">Part Number</th>
-                  <th className="px-3 py-2 font-semibold">Part Description</th>
-                  <th className="px-3 py-2 font-semibold">Type</th>
-                  <th className="px-3 py-2 font-semibold">Ship Date</th>
-                  <th className="px-3 py-2 text-right font-semibold">Qty</th>
-                  <th className="px-3 py-2 font-semibold">Ship To</th>
+                  {several && <SortTh label="Business" sortKey="business" sort={sort} direction={direction} onSort={toggleSort} className="px-3 py-2 font-semibold" />}
+                  <SortTh label="PO Number" sortKey="po_number" sort={sort} direction={direction} onSort={toggleSort} className="px-3 py-2 font-semibold" />
+                  <SortTh label="PO Line" sortKey="po_line_number" sort={sort} direction={direction} onSort={toggleSort} className="px-3 py-2 font-semibold" />
+                  <SortTh label="Part Number" sortKey="part_number" sort={sort} direction={direction} onSort={toggleSort} className="px-3 py-2 font-semibold" />
+                  <SortTh label="Part Description" sortKey="description" sort={sort} direction={direction} onSort={toggleSort} className="px-3 py-2 font-semibold" />
+                  <SortTh label="Type" sortKey="order_type" sort={sort} direction={direction} onSort={toggleSort} className="px-3 py-2 font-semibold" />
+                  <SortTh label="Ship Date" sortKey="ship_date" sort={sort} direction={direction} onSort={toggleSort} className="px-3 py-2 font-semibold" />
+                  <SortTh label="Qty" sortKey="qty" align="right" sort={sort} direction={direction} onSort={toggleSort} className="px-3 py-2 text-right font-semibold" />
+                  <SortTh label="Ship To" sortKey="ship_to" sort={sort} direction={direction} onSort={toggleSort} className="px-3 py-2 font-semibold" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
-                {rows.map((r, i) => (
+                {sortedRows.map((r, i) => (
                   <tr key={`${r.business}|${r.po_number}|${r.po_line_number}|${r.part_number}|${r.order_type}|${r.ship_date}|${i}`} className="hover:bg-neutral-50">
                     {several && <td className="px-3 py-2 uppercase text-ink-muted">{r.business}</td>}
                     <td className="px-3 py-2 tabular text-ink">{r.po_number}</td>
