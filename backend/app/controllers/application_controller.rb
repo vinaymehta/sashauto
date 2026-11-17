@@ -185,6 +185,24 @@ class ApplicationController < ActionController::Base
     [ scope.offset((page - 1) * per_page).limit(per_page), meta ]
   end
 
+  # An in-memory list of row hashes searched (`q`: any of the `search` keys contains it), sorted (`sort`: a key of the
+  # rows, `direction`; `numeric` keys compare as numbers, blanks last) and paged like #paginate_array:
+  # [rows found (all pages), this page's rows, meta].
+  def search_sort_page(rows, search:, numeric:, default_sort:, default_direction: "desc")
+    term = params[:q].to_s.strip.downcase
+    rows = rows.select { |r| search.any? { |k| r[k].to_s.downcase.include?(term) } } if term.present?
+    key = params[:sort].to_s
+    key = default_sort unless rows.first.nil? || rows.first.key?(key.to_sym)
+    key = key.to_sym
+    direction = %w[asc desc].include?(params[:direction]) ? params[:direction] : default_direction
+    present, blank = rows.partition { |r| r[key].present? }
+    present = present.sort_by { |r| numeric.include?(key) ? r[key].to_d : r[key].to_s.downcase }
+    present.reverse! if direction == "desc"
+    found = present + blank
+    page, meta = paginate_array(found)
+    [ found, page, meta.merge(sort: key.to_s, direction: direction) ]
+  end
+
   # Same pagination contract for an in-memory array (e.g. stored validation errors).
   def paginate_array(items)
     page, per_page, meta = pagination_meta(items.size)

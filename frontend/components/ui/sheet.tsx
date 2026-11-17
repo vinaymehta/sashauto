@@ -12,6 +12,26 @@ import { useDismiss } from "../use-dismiss";
 // clicked, and only the close button or Escape closes the panel. Text styles are reset (left-aligned, wrapping), so
 // a panel opened from a table cell does not inherit the cell's alignment or no-wrap. `floating`: the panel is opened
 // over another one (rendered on <body>); clicks in it then do not close the panel below.
+// Open overlay panels, and the body style to restore when the last one closes.
+let locks = 0;
+let saved = { overflow: "", paddingRight: "" };
+
+function lockScroll() {
+  const { body, documentElement } = document;
+  if (locks++ > 0) return;
+  saved = { overflow: body.style.overflow, paddingRight: body.style.paddingRight };
+  const scrollbar = window.innerWidth - documentElement.clientWidth;
+  body.style.overflow = "hidden";
+  if (scrollbar > 0) body.style.paddingRight = `${scrollbar}px`;
+}
+
+function unlockScroll() {
+  if (--locks > 0) return;
+  locks = 0;
+  document.body.style.overflow = saved.overflow;
+  document.body.style.paddingRight = saved.paddingRight;
+}
+
 export function Sheet({ open, title, description, icon, onClose, children, footer, wide = false, overlay = true, floating = false }: {
   open: boolean; title: ReactNode; description?: ReactNode; icon?: ReactNode; onClose: () => void; children: ReactNode; footer?: ReactNode;
   wide?: boolean; overlay?: boolean; floating?: boolean;
@@ -28,17 +48,13 @@ export function Sheet({ open, title, description, icon, onClose, children, foote
 
   // The page behind the panel must not scroll. The scrollbar's width is replaced with padding so
   // the layout does not shift sideways and the panel reaches the window edge.
+  // Panels can be stacked (an order opened from a Dashboard list) and close in any order: the first one to open
+  // locks the page and the last one to close unlocks it (a count, not each panel's saved style, which would leave
+  // the page locked when the lower panel closes first).
   useEffect(() => {
     if (!open || !overlay) return;
-    const { body, documentElement } = document;
-    const previous = { overflow: body.style.overflow, paddingRight: body.style.paddingRight };
-    const scrollbar = window.innerWidth - documentElement.clientWidth;
-    body.style.overflow = "hidden";
-    if (scrollbar > 0) body.style.paddingRight = `${scrollbar}px`;
-    return () => {
-      body.style.overflow = previous.overflow;
-      body.style.paddingRight = previous.paddingRight;
-    };
+    lockScroll();
+    return unlockScroll;
   }, [open, overlay]);
 
   if (!open) return null;

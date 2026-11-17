@@ -16,7 +16,10 @@ Rails.application.routes.draw do
       post :reset_password, on: :member
     end
     resource :dashboard, only: :show, controller: :dashboard
-    resource :stats, only: :show, controller: :stats
+    resource :stats, only: :show, controller: :stats do
+      get :supplier_orders
+      get :ytd_orders
+    end
     resource :activity, only: :show, controller: :activity do
       post :read
     end
@@ -53,6 +56,7 @@ Rails.application.routes.draw do
         get :part_summary
         get :parts_summary
         get :fulfilment
+        get :fulfilment_lines
         get :ship_to_alerts
       end
     end

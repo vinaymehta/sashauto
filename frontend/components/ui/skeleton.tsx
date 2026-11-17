@@ -4,6 +4,25 @@ export function Skeleton({ className = "" }: { className?: string }) {
   return <div aria-hidden className={`animate-shimmer rounded bg-subtle ${className}`} />;
 }
 
+// Placeholder rows inside a table body while its next page, sort or search loads (the header and totals stay).
+export function SkeletonRows({ columns, rows = 10 }: { columns: number; rows?: number }) {
+  return (
+    <>
+      {Array.from({ length: rows }, (_, r) => (
+        <tr key={`skeleton-${r}`} aria-hidden>
+          {Array.from({ length: columns }, (_, c) => (
+            <td key={c} className="px-3 py-3.5">
+              {c === 0
+                ? <span className="flex items-center gap-2.5"><Skeleton className="h-7 w-7 shrink-0" /><span className="flex-1 space-y-1.5"><Skeleton className="h-3.5 w-24" /><Skeleton className="h-3 w-36" /></span></span>
+                : <Skeleton className={`h-3.5 ${(r + c) % 3 === 0 ? "w-14" : "w-20"} ${c > 2 ? "ml-auto" : ""}`} />}
+            </td>
+          ))}
+        </tr>
+      ))}
+    </>
+  );
+}
+
 export function TableSkeleton({ rows = 8, columns = 6 }: { rows?: number; columns?: number }) {
   return (
     <div role="status" aria-label="Loading" className="animate-fade-in">

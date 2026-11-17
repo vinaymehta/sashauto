@@ -59,26 +59,51 @@ module Dashboard
     end
 
     def ytd_customer_spend
-      from = @today.month >= 4 ? Date.new(@today.year, 4, 1) : Date.new(@today.year - 1, 4, 1)
-      series_from = [ from, (@today << 5).beginning_of_month ].min
-      # Every row of each order's last version (the latest upload that has it); an order the file lists twice (e.g. once
-      # without a Qty) counts once, with all of its rows.
-      latest = OrderRow.where(order_type: TYPES, ship_date: series_from..@today)
-                       .select("order_rows.*, MAX(upload_batch_id) OVER (PARTITION BY group_key, po_line_number, ship_date) AS latest_batch_id")
-      rows = OrderRow.from(latest, :order_rows).where("order_rows.upload_batch_id = order_rows.latest_batch_id")
-                     .where(upload_batch_id: UploadBatch.where(business: @overview.businesses).select(:id))
-                     .where.not(Business.dashboard_excluded_sql("(SELECT b.business FROM upload_batches b WHERE b.id = order_rows.upload_batch_id)", "order_rows.po_number", "order_rows.part_number"))
-                     .pluck(:group_key, :po_line_number, :part_number, :qty, :ship_date, Arel.sql("source_data->>'Unit Price'"))
-                     .map { |g, line, part, qty, ship, price| [ order_key(g, line, ship), Sale.new(part, qty, price, ship) ] }
-      sales = rows + manual_orders(ship_date: series_from..@today)
-      values = values_of(sales.map(&:last))
-      # Rows of one combined order count as one order: its last ship date, the total value.
-      anchors = @overview.anchor_keys
-      orders = sales.zip(values).group_by { |(key, _), _| anchors[key] || key }.values.map do |list|
-        [ list.map { |(_, sale), _| sale.ship_date }.max, list.sum(BigDecimal("0")) { |_, v| v || 0 }, list.any? { |_, v| v.nil? } ]
+      from, orders = ytd_orders
+      ytd = orders.select { |o| o[:ship] >= from }.map { |o| [ o[:ship], o[:value], o[:unpriced] ] }
+      totals(ytd).merge(from: from, to: @today, series_from: from_series(from), by_date: by_date(orders.map { |o| [ o[:ship], o[:value], o[:unpriced] ] }))
+    end
+
+    # The order rows behind ytd_customer_spend: every row of the orders shipping from 1 April to today (a combined
+    # order by its last ship date), with Qty, Unit Price (per 100 pcs) and value.
+    def ytd_rows
+      from, orders = ytd_orders
+      orders.select { |o| o[:ship] >= from }.flat_map { |o| o[:rows] }
+    end
+
+    def from_series(from)
+      [ from, (@today << 5).beginning_of_month ].min
+    end
+
+    # [1 April of the financial year, orders shipping from the series start to today: { ship, value, unpriced, rows }].
+    def ytd_orders
+      @ytd_orders ||= begin
+        from = @today.month >= 4 ? Date.new(@today.year, 4, 1) : Date.new(@today.year - 1, 4, 1)
+        series_from = from_series(from)
+        # Every row of each order's last version (the latest upload that has it); an order the file lists twice (e.g. once
+        # without a Qty) counts once, with all of its rows.
+        latest = OrderRow.where(order_type: TYPES, ship_date: series_from..@today)
+                         .select("order_rows.*, MAX(upload_batch_id) OVER (PARTITION BY group_key, po_line_number, ship_date) AS latest_batch_id")
+        rows = OrderRow.from(latest, :order_rows).where("order_rows.upload_batch_id = order_rows.latest_batch_id")
+                       .where(upload_batch_id: UploadBatch.where(business: @overview.businesses).select(:id))
+                       .where.not(Business.dashboard_excluded_sql("(SELECT b.business FROM upload_batches b WHERE b.id = order_rows.upload_batch_id)", "order_rows.po_number", "order_rows.part_number"))
+                       .pluck(:group_key, :po_line_number, :part_number, :qty, :ship_date, Arel.sql("source_data->>'Unit Price'"), :id, :po_number, :order_type)
+                       .map { |g, line, part, qty, ship, price, id, po, type| [ order_key(g, line, ship), Sale.new(part, qty, price, ship), { id: id, manual: false, po_number: po, po_line_number: line, order_type: type } ] }
+        manual = ManualOrder.active.where(business: @overview.businesses, order_type: TYPES, ship_date: series_from..@today)
+                            .where.not(Business.dashboard_excluded_sql("manual_orders.business", "manual_orders.po_number", "manual_orders.part_number"))
+                            .pluck(:id, :part_number, :qty, Arel.sql("source_data->>'Unit Price'"), :ship_date, :po_number, :po_line_number, :order_type)
+                            .map { |id, part, qty, price, ship, po, line, type| [ VendorOrderPlacement.order_key(ManualOrder.new(id: id)), Sale.new(part, qty, price, ship), { id: id, manual: true, po_number: po, po_line_number: line, order_type: type } ] }
+        sales = rows + manual
+        values = values_of(sales.map { |s| s[1] })
+        descriptions = Product.where(part_number: sales.map { |s| s[1].part }.uniq).pluck(:part_number, :description).to_h
+        # Rows of one combined order count as one order: its last ship date, the total value.
+        anchors = @overview.anchor_keys
+        orders = sales.zip(values).group_by { |(key, *), _| anchors[key] || key }.values.map do |list|
+          { ship: list.map { |(_, sale, _), _| sale.ship_date }.max, value: list.sum(BigDecimal("0")) { |_, v| v || 0 }, unpriced: list.any? { |_, v| v.nil? },
+            rows: list.map { |(_, sale, info), v| info.merge(part_number: sale.part, description: descriptions[sale.part], ship_date: sale.ship_date, qty: sale.qty, price: number(sale.price), value: v) } }
+        end
+        [ from, orders ]
       end
-      ytd = orders.select { |ship, *| ship >= from }
-      totals(ytd).merge(from: from, to: @today, series_from: series_from, by_date: by_date(orders))
     end
 
     # { amount, orders, without_price, currency, by_date } of [ship date, value, unpriced] orders.
@@ -93,34 +118,60 @@ module Dashboard
     end
 
     def open_supplier
-      # POs of the view's businesses: placed for one of their uploads' rows or manual orders.
-      own = VendorOrderPlacement.where(upload_batch_id: UploadBatch.where(business: @overview.businesses).select(:id))
-                                .or(VendorOrderPlacement.where(manual_order_id: ManualOrder.where(business: @overview.businesses).select(:id)))
-      orders = VendorOrder.joins(:vendor_order_placement, :vendor).where(vendor_order_placement_id: own.select(:id))
-                          .pluck("vendor_order_placements.order_key", :qty, :unit_price, :price_currency, "vendors.name")
-      marked = OrderDelivery.active.where(order_key: orders.map(&:first).uniq).distinct.pluck(:order_key).to_set
-      open = orders.reject { |key, *| marked.include?(key) }
-      priced, unpriced = open.partition { |_, _, price, _, _| price }
-      currency = ->(c) { c.presence || "INR" }
-      totals = priced.group_by { |o| currency.(o[3]) }
-                     .map { |c, list| { currency: c, amount: money(list.sum { |o| o[1] * o[2] }) } }
+      rows = supplier_rows
+      priced, unpriced = rows.partition { |r| r[:price] }
+      totals = priced.group_by { |r| r[:currency] }
+                     .map { |c, list| { currency: c, amount: money(list.sum { |r| r[:value] }) } }
                      .sort_by { |t| -t[:amount].to_d }
-      by_vendor = priced.group_by { |o| [ o[4], currency.(o[3]) ] }
-                        .map { |(vendor, c), list| { vendor: vendor, currency: c, amount: money(list.sum { |o| o[1] * o[2] }) } }
+      by_vendor = priced.group_by { |r| [ r[:vendor], r[:currency] ] }
+                        .map { |(vendor, c), list| { vendor: vendor, currency: c, amount: money(list.sum { |r| r[:value] }) } }
                         .sort_by { |t| -t[:amount].to_d }
-      result = { by_currency: totals, orders: open.size, without_price: unpriced.size, by_vendor: by_vendor }
+      # Everything in rupees (Settings exchange rates), for one total and one vendor chart.
+      rates = priced.map { |r| r[:currency] }.uniq.excluding("INR").to_h { |c| [ c, inr_rate(c) ] }
+      inr = ->(r) { r[:currency] == "INR" ? r[:value] : rates[r[:currency]] && r[:value] * rates[r[:currency]] }
+      converted = priced.select { |r| inr.(r) }
+      by_vendor_inr = converted.group_by { |r| r[:vendor] }.map do |vendor, list|
+        { vendor: vendor, amount: money(list.sum { |r| inr.(r) }),
+          foreign: list.reject { |r| r[:currency] == "INR" }.group_by { |r| r[:currency] }.map { |c, l| { currency: c, amount: money(l.sum { |r| r[:value] }) } } }
+      end.sort_by { |v| -v[:amount].to_d }
       # Hardcoded supplier value override for the Dashboard.
       override_inr = OPEN_SUPPLIER_INR_OVERRIDES[@overview.view] || OPEN_SUPPLIER_INR_OVERRIDES["all"]
-      result[:by_currency].each { |t| t[:amount] = override_inr if t[:currency] == "INR" }
-      result
+      totals.each { |t| t[:amount] = override_inr if t[:currency] == "INR" }
+      { by_currency: totals, orders: rows.size, without_price: unpriced.size, by_vendor: by_vendor,
+        in_inr: { amount: money(converted.sum(0.to_d) { |r| inr.(r) }), rates: rates.compact.transform_values { |v| v.to_s("F") },
+                  not_converted: (priced - converted).map { |r| r[:currency] }.uniq },
+        by_vendor_inr: by_vendor_inr }
     end
 
-    # Active manual orders of type Firm / Order: [[order key, Sale], ...].
-    def manual_orders(**where)
-      ManualOrder.active.where(business: @overview.businesses, order_type: TYPES, **where)
-                 .where.not(Business.dashboard_excluded_sql("manual_orders.business", "manual_orders.po_number", "manual_orders.part_number"))
-                 .pluck(:id, :part_number, :qty, Arel.sql("source_data->>'Unit Price'"), :ship_date)
-                 .map { |id, part, qty, price, ship| [ VendorOrderPlacement.order_key(ManualOrder.new(id: id)), Sale.new(part, qty, price, ship) ] }
+    # The open vendor POs behind open_supplier, one row each: vendor PO, vendor, the order it is for, Qty, the price used
+    # and where it comes from (the PO's own; else the vendor's price per piece in Products; else another vendor's price
+    # of the product; a set price is per set, not per piece: not used), and the value (nil without a price).
+    def supplier_rows
+      # POs of the view's businesses: placed for one of their uploads' rows or manual orders, with no status yet.
+      own = VendorOrderPlacement.where(upload_batch_id: UploadBatch.where(business: @overview.businesses).select(:id))
+                                .or(VendorOrderPlacement.where(manual_order_id: ManualOrder.where(business: @overview.businesses).select(:id)))
+      orders = VendorOrder.includes(:vendor, vendor_order_placement: :product).where(vendor_order_placement_id: own.select(:id)).to_a
+      marked = OrderDelivery.active.where(order_key: orders.map { |o| o.vendor_order_placement.order_key }.uniq).distinct.pluck(:order_key).to_set
+      open = orders.reject { |o| marked.include?(o.vendor_order_placement.order_key) }
+      piece = VendorProduct.includes(:vendor).where("price_amount > 0").to_a
+      vendor_price = piece.index_by { |vp| [ vp.product_id, vp.vendor_id ] }
+      by_product = piece.group_by(&:product_id)
+      open.map do |o|
+        pl = o.vendor_order_placement
+        price, currency, source = if o.unit_price.to_d.positive?
+          [ o.unit_price, o.price_currency, "PO" ]
+        elsif (vp = vendor_price[[ pl.product_id, o.vendor_id ]])
+          [ vp.price_amount, vp.price_currency, "Products" ]
+        elsif (vp = by_product[pl.product_id]&.first)
+          [ vp.price_amount, vp.price_currency, "Other vendor: #{vp.vendor.name}" ]
+        else
+          [ nil, nil, "No price" ]
+        end
+        { id: o.id, number: o.number, vendor: o.vendor.name, po_number: pl.po_number, po_line_number: pl.po_line_number,
+          part_number: pl.part_number || pl.product&.part_number, description: pl.product&.description, ship_date: pl.ship_date,
+          qty: o.qty, price: price, currency: currency.presence || "INR", price_source: source, value: price && o.qty * price,
+          order_row_id: pl.order_row_id, manual_order_id: pl.manual_order_id }
+      end
     end
 
     # Each sale's value (Qty × price per 100 pcs ÷ 100), nil without a price. Cached per list.
@@ -144,8 +195,17 @@ module Dashboard
       value.match?(/\A\d+(\.\d+)?\z/) ? BigDecimal(value) : nil
     end
 
+    # Rupees per unit of `currency` (Settings → Businesses: RATE_USD, RATE_EUR, RATE_GBP); nil when there is none.
+    def inr_rate(currency)
+      definition = AppSetting::DEFINITIONS.find { |d| d.key == "RATE_#{currency}" } or return nil
+      value = number(AppConfig.setting(definition.key, definition.default))
+      value&.positive? ? value : nil
+    end
+
     def money(value)
       value.round(2).to_s("F")
     end
+
+    public :supplier_rows, :ytd_rows
   end
 end

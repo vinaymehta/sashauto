@@ -382,7 +382,10 @@ export interface Stats {
   money: {
     open_sale: MoneyTotal & { by_date: DateAmount[] };
     open_supplier: { by_currency: { currency: string; amount: string }[]; orders: number; without_price: number;
-                     by_vendor: { vendor: string; currency: string; amount: string }[] };
+                     by_vendor: { vendor: string; currency: string; amount: string }[];
+                     // All in rupees at the Settings exchange rates (rates: ₹ per unit used; not_converted: currencies without a rate).
+                     in_inr: { amount: string; rates: Record<string, string>; not_converted: string[] };
+                     by_vendor_inr: { vendor: string; amount: string; foreign: { currency: string; amount: string }[] }[] };
     ytd_customer_spend: MoneyTotal & { from: string; to: string; series_from: string; by_date: DateAmount[] };
   };
   overview: DashboardOverview;
@@ -420,6 +423,7 @@ export interface OrderRow {
   part_description?: string | null; // the product's Description (Products), Orders list only
   image_url?: string | null;
   images?: ProductImage[];
+  revenue?: string | null; // Qty × Unit Price ÷ 100 (Orders list)
   discontinued?: boolean; // Orders list: the part is discontinued (no vendor PO can be placed)
   order_type: OrderType;
   due_date: string | null;
@@ -553,7 +557,7 @@ export interface OrdersSummary {
 
 export interface OrdersPage {
   data: OrderRow[];
-  meta: PageMeta & { sort?: string; direction?: "asc" | "desc" };
+  meta: PageMeta & { sort?: string; direction?: "asc" | "desc"; revenue?: string; kept_revenue?: string; kept_rows?: number }; // revenue (revenue=1): of every listed row; kept_*: of those from older files
   // The shown upload; `latest` = the current order data (it also lists the manual orders).
   source: { uploaded_at: string; original_filename: string; upload_id: number; latest: boolean; business?: "dtp" | "gmbh" } | null;
   facets: { ship_to_locations: string[]; commodity_types: string[]; vendors?: { id: number; name: string }[] } | null;

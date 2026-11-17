@@ -16,7 +16,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   { slug: "company", title: "Company profile", category: "Organization", group: "Company",
     description: "Name, address, GSTIN and contact details on purchase orders, letters and emails." },
   { slug: "businesses", title: "Businesses", category: "Organization", group: "Businesses",
-    description: "Currency of DTP's and GMBH's Deere prices, used on the dashboard." },
+    description: "Currency of DTP's and GMBH's Deere prices, and the exchange rates that turn USD, EUR and GBP vendor prices into rupees on the dashboard." },
   { slug: "purchase-order", title: "Purchase Order", category: "Documents", group: "Purchase Order",
     description: "India PO format, and the wording of India and overseas purchase orders: Requirements, notices, Terms and Conditions." },
   { slug: "intimation-letter", title: "Intimation Letter", category: "Documents", group: "Intimation Letter",

@@ -60,7 +60,8 @@ module Api
         "status" => status_sql,
         "vendor_po" => "EXISTS (SELECT 1 FROM vendor_order_placements p WHERE p.order_key = #{order_key_sql})",
         "unit_price" => "NULLIF(regexp_replace(order_rows.source_data->>'Unit Price', '[^0-9.]', '', 'g'), '')::numeric",
-        "price" => "NULLIF(regexp_replace(order_rows.source_data->>'Unit Price', '[^0-9.]', '', 'g'), '')::numeric"
+        "price" => "NULLIF(regexp_replace(order_rows.source_data->>'Unit Price', '[^0-9.]', '', 'g'), '')::numeric",
+        "revenue" => revenue_sql
       }
       scope, sort, direction = apply_sort(scope, sorts_for(columns).merge(extra_sorts), default: DEFAULT_SORT)
       # Manual orders are always listed first; each part keeps the chosen sort.
@@ -75,6 +76,14 @@ module Api
         paginate_with_known_total(scope, total)
       end
 
+      # Revenue of every listed row (Qty × Unit Price ÷ 100), for the Dashboard's order lists (`revenue=1`).
+      # Of it, the rows kept from older files (John Deere no longer lists them, so the Dashboard's open value leaves them out).
+      if params[:revenue] == "1"
+        all = scope.unscope(:order)
+        kept = all.where("order_rows.kept")
+        meta = meta.merge(revenue: all.sum(Arel.sql(revenue_sql)).round(2).to_s("F"),
+                          kept_revenue: kept.sum(Arel.sql(revenue_sql)).round(2).to_s("F"), kept_rows: kept.count)
+      end
       ship_to_locations, commodity_types = facets(batches)
       ordered = ordered_by_key(rows)
       order_placed = VendorOrderPlacement.order_placed_keys(ordered.keys)
@@ -109,6 +118,7 @@ module Api
                                                          discontinued: discontinued.include?(row.part_number),
                                                          image_url: img ? "/api/products/#{prod.id}/images/#{img.id}" : nil,
                                                          images: prod ? Serializers.product_images(prod) : [],
+                                                         revenue: row_revenue(row),
                                                          **combined_info(row, combined))
         end,
         meta: meta.merge(sort: sort, direction: direction),
@@ -120,6 +130,27 @@ module Api
         # Values present in the current data, for the filter panel.
         facets: { ship_to_locations: ship_to_locations, commodity_types: commodity_types, vendors: vendor_facet(dataset) }
       }
+    end
+
+    # A listed row's revenue in SQL: Qty × Unit Price ÷ 100 (Deere prices are per 100 pcs; a charge's price is the charge
+    # itself, Product.charge_parts); NULL without a Unit Price.
+    def revenue_sql
+      charges = charge_parts.map { |p| OrderRow.connection.quote(p) }
+      per = charges.any? ? "(CASE WHEN order_rows.part_number IN (#{charges.join(',')}) THEN 1 ELSE 100 END)" : "100"
+      "(COALESCE(order_rows.qty, 0) * NULLIF(regexp_replace(order_rows.source_data->>'Unit Price', '[^0-9.]', '', 'g'), '')::numeric / #{per})"
+    end
+
+    # A listed row's revenue (as #revenue_sql), nil without a Unit Price.
+    def row_revenue(row)
+      text = row.source_data&.dig("Unit Price").to_s.gsub(/[^0-9.]/, "")
+      return nil unless text.match?(/\A\d+(\.\d+)?\z/)
+
+      (row.qty.to_d * BigDecimal(text) / (charge_parts.include?(row.part_number) ? 1 : 100)).round(2).to_s("F")
+    end
+
+    # Part Numbers of charges (freight; Product.charge_parts), once per request.
+    def charge_parts
+      @charge_parts ||= Product.charge_parts(Product.pluck(:part_number))
     end
 
     # Cards above the Orders table, for the current order data (latest upload, kept rows + manual orders), counting rows of the
@@ -323,6 +354,90 @@ module Api
         by_business: by_business_rows,
         top_parts: top_fulfilment_parts(lines)
       } }
+    end
+
+    # The order lines behind one Fulfilment figure (`figure`: ordered, delivered, in_transit, dispatched, pending_dtp or
+    # pending), optionally of one `business` or `part_number`: each line with that figure's Qty and value, as
+    # #summary_figures adds them up (so the totals equal the card), largest value first.
+    FIGURES = %w[ordered delivered in_transit dispatched pending_dtp pending].freeze
+
+    def fulfilment_lines
+      figure = params[:figure].to_s
+      return render_error("Unknown figure.", :bad_request) unless FIGURES.include?(figure)
+
+      # Every figure's lines are worked out together (one pass over the order data) and kept until the data changes
+      # (#lines_version), so the next page, another sort or another figure's list comes from the cache.
+      business = params[:business] if businesses.include?(params[:business])
+      part = OrderRows::Normalizer.part_number(params[:part_number].to_s) if params[:part_number].present?
+      batches = UploadBatch.latest_for(current_business)
+      cached = Rails.cache.fetch([ "fulfilment_lines/v1", current_business, business, part, lines_version(batches) ], expires_in: 30.minutes) do
+        figure_lines(batches, business, part)
+      end
+      rows, totals = cached[figure]
+      found, page, meta = search_sort_page(rows, search: %i[part_number description po_number file], numeric: %i[qty price value],
+                                                 default_sort: "value")
+      page = page.map(&:dup)
+      images = Serializers.part_images(page.map { |row| row[:part_number] })
+      page.each { |row| row.merge!(images[row[:part_number]] || { image_url: nil, images: [] }) }
+      # Totals: the card's (all lines); with a search, those of the lines found.
+      sums = if params[:q].present?
+        { qty: Serializers.qty(found.sum(0.to_d) { |r| r[:qty].to_d }), value: found.sum(0.to_d) { |r| r[:value].to_d }.round(2).to_s("F") }
+      else
+        totals
+      end
+      render json: { data: page, meta: meta, currency: summary_currency, totals: sums }
+    end
+
+    # figure => [its lines (rows with that figure's Qty and value), its totals { qty, value }] of the order data (one
+    # business and/or part when given), as the Fulfilment cards count them.
+    def figure_lines(batches, business, part)
+      load_combined_orders(Orders::Combiner.for_batches(batches.map(&:id)))
+      scope = dataset(batches).where.not(Business.dashboard_excluded_sql("order_rows.business", "order_rows.po_number", "order_rows.part_number"))
+      scope = scope.where("order_rows.business = ?", business) if business
+      scope = scope.where(part_number: part) if part
+      lines = summary_lines(scope.to_a)
+      descriptions = Product.where(part_number: lines.map { |l| l[:row].part_number }.uniq).pluck(:part_number, :description).to_h
+      zone = Time.find_zone!(AppConfig.ageing_time_zone)
+      files = UploadBatch.where(id: lines.map { |l| l[:row].upload_batch_id }.compact.uniq).pluck(:id, :original_filename, :completed_at).to_h { |id, *v| [ id, v ] }
+      totals = summary_figures(lines)
+      FIGURES.to_h do |figure|
+        rows = lines.filter_map do |l|
+          qty, value = figure_of(l, figure)
+          next unless qty.positive? || value&.positive?
+
+          r = l[:row]
+          name, day = files[r.upload_batch_id]
+          { id: r.id, manual: r[:manual], kept: r[:kept], business: r[:business], po_number: r.po_number, po_line_number: r.po_line_number,
+            part_number: r.part_number, description: descriptions[r.part_number], order_type: r.order_type, ship_date: r.ship_date,
+            status: l[:status] || "none", file: r[:manual] ? "Manual order" : (r[:kept] ? "Old file · #{day&.in_time_zone(zone)&.to_date}" : "Latest"),
+            file_name: name, qty: Serializers.qty(qty), price: l[:price]&.to_s("F"), value: value&.round(2)&.to_s("F"), charge: l[:charge] }
+        end
+        [ figure, [ rows, { qty: totals[figure.to_sym], value: totals[:"revenue_#{figure}"] } ] ]
+      end
+    end
+
+    # Changes whenever anything the Fulfilment lines read changes: the latest uploads, status marks, invoices and their
+    # allocations, manual orders, combined orders, products (descriptions, charges, customer prices) and settings.
+    def lines_version(batches)
+      stamps = [ OrderDelivery, Invoice, ManualOrder, OrderMerge, Product, AppSetting ].map { |model| model.maximum(:updated_at)&.to_f }
+      [ batches.map(&:id), stamps, InvoiceAllocation.maximum(:id), InvoiceAllocation.count, OrderMerge.count, OrderDelivery.count ].flatten.join("-")
+    end
+
+    # [Qty, value] of one Fulfilment figure on a summary line (as #summary_figures counts it; nil value without a price;
+    # a charge counts only in pending as per DTP).
+    def figure_of(line, figure)
+      price = line[:price]
+      goods = price && !line[:charge]
+      transit = [ line[:shipped] - line[:delivered], 0.to_d ].max
+      value = ->(qty, counted = goods) { counted ? qty * price / 100 : (price ? 0.to_d : nil) }
+      case figure
+      when "ordered" then [ line[:ordered], price && (value.(line[:delivered]) + line[:open] * price / 100) ]
+      when "delivered" then [ line[:delivered], value.(line[:delivered]) ]
+      when "in_transit" then [ transit, value.(transit) ]
+      when "dispatched" then [ line[:shipped], value.(line[:shipped]) ]
+      when "pending_dtp" then [ line[:open], value.(line[:open], price) ]
+      when "pending" then [ line[:pending], value.(line[:pending]) ]
+      end
     end
 
     # The 10 parts with the most value ordered (#summary_figures per part), with their description.

@@ -8,6 +8,7 @@ import type { DashboardOrder, DashboardOverview, DateAmount, Fulfilment, OrderRo
 import { todayParam } from "@/components/age";
 import { OrderDetailPanel } from "@/components/orders/history-row";
 import { OrdersSlider, type OrdersSliderConfig } from "@/components/orders/orders-slider";
+import { FigureSlider, type FigureSliderConfig } from "@/components/orders/figure-slider";
 import { RelatedLink } from "@/components/orders/related-popover";
 import { PartThumbnail } from "@/components/products/part-thumbnail";
 import { StatusPill } from "@/components/orders/delivery-cell";
@@ -41,6 +42,12 @@ const CurrencyContext = createContext<string | null>("USD");
 const moneyIn = (currency: string | null) => (v: string | number, compact = false) => (currency ? formatMoney(v, currency, compact)
   : new Intl.NumberFormat("en-US", { minimumFractionDigits: compact ? 0 : 2, maximumFractionDigits: compact ? 1 : 2, notation: compact ? "compact" : "standard" }).format(Number(v)));
 const useMoney = () => moneyIn(useContext(CurrencyContext));
+// The supplier amounts in other currencies inside the rupee total, with the rate used (e.g. "incl. $16,746.60 at ₹88.50/USD").
+const foreignText = (s: Stats["money"]["open_supplier"]) => {
+  const parts = s.by_currency.filter((c) => c.currency !== "INR").map((c) =>
+    s.in_inr.rates[c.currency] ? `${formatMoney(c.amount, c.currency)} at ₹${s.in_inr.rates[c.currency]}/${c.currency}` : `${formatMoney(c.amount, c.currency)} (no rate, left out)`);
+  return parts.length ? `incl. ${parts.join(", ")}` : "";
+};
 const plural = (n: number, word: string) => `${formatCount(n)} ${word}${n === 1 ? "" : "s"}`;
 const ordersText = (n: number, missing: number) => `${plural(n, "order")}${missing ? ` · ${formatCount(missing)} without a price` : ""}`;
 
@@ -120,6 +127,8 @@ export default function DashboardPage() {
   const [order, setOrder] = useState<DashboardOrder | null>(null);
   // Slider of orders matching a clicked KPI card or pipeline step.
   const [ordersSlider, setOrdersSlider] = useState<OrdersSliderConfig | null>(null);
+  // Slider of the rows behind a money figure (Fulfilment, Total Open Value, YTD), adding up to the card.
+  const [figureSlider, setFigureSlider] = useState<FigureSliderConfig | null>(null);
 
   const canUpload = can(me, "orders", "edit");
   const header = (
@@ -191,26 +200,15 @@ export default function DashboardPage() {
             </div>
           )}
           <StatCard size="lg" label="Total Open Value (Sale)" info={<>Value of Deere orders <b>not yet delivered</b>: the Firm and Order rows the Orders page lists as open (latest upload, orders kept from an older Deere file, and manual orders), without a &quot;Delivered to Deere&quot; (Outbound) status. Value = Qty × Unit Price ÷ 100 (Deere prices are per 100 pcs), in the business&apos;s currency (Settings). Forecast is not counted.</>} icon={<BoxIcon size={16} />} tint="violet"
-                    onClick={() => setOrdersSlider({ title: "Open orders (Sale)", description: "Firm and Order orders not yet delivered to Deere", filters: { type: "Firm,Order" }, icon: <BoxIcon size={18} /> })}
+                    onClick={() => setFigureSlider({ kind: "lines", figure: "pending_dtp", qtyLabel: "Open Qty", title: "Total Open Value (Sale)", description: "The Qty John Deere still lists open on each order line, at its current price", icon: <BoxIcon size={18} /> })}
                     value={usd(sale.amount)}
                     detail={`${ordersText(sale.orders, sale.without_price)} not yet delivered to Deere`} />
-          <StatCard size="lg" label="Total Open Value (Supplier)" info={<>Value of the vendor POs generated in the app whose order has <b>no status yet</b> (not received at SASH Faridabad). Value = PO quantity × the vendor&apos;s unit price. Shown per currency, as there is no exchange rate.</>} icon={<TruckIcon size={16} />} tint="amber"
-                    onClick={() => setOrdersSlider({
-                      title: "Total Open Value (Supplier)",
-                      description: "Vendor POs generated whose order has not yet been received at SASH Faridabad",
-                      filters: { type: "Firm,Order", po: "generated", status: "none" },
-                      icon: <TruckIcon size={18} />,
-                    })}
-                    value={supplier.by_currency.length ? formatMoney(supplier.by_currency[0]!.amount, supplier.by_currency[0]!.currency) : "—"}
-                    extra={supplier.by_currency.slice(1).map((c) => formatMoney(c.amount, c.currency)).join(" + ") || undefined}
-                    detail={`${ordersText(supplier.orders, supplier.without_price)} not yet received`} />
+          <StatCard size="lg" label="Total Open Value (Supplier)" info={<>Value of the vendor POs generated in the app whose order has <b>no status yet</b> (not received at SASH Faridabad). Value = PO quantity × the vendor&apos;s unit price. POs priced in USD, EUR or GBP are turned into rupees at the exchange rates in Admin Settings → Businesses.</>} icon={<TruckIcon size={16} />} tint="amber"
+                    onClick={() => setFigureSlider({ kind: "supplier", title: "Total Open Value (Supplier)", description: "Vendor POs not yet received at SASH Faridabad, with the price used for each", icon: <TruckIcon size={18} /> })}
+                    value={supplier.by_currency.length ? formatMoney(supplier.in_inr.amount, "INR") : "—"}
+                    detail={<>{ordersText(supplier.orders, supplier.without_price)} not yet received{foreignText(supplier) && <span className="mt-0.5 block text-xs">{foreignText(supplier)}</span>}</>} />
           <StatCard size="lg" label="YTD Customer Spend with SASH" info={<>Value of Deere&apos;s Firm and Order orders with a <b>ship date from 1 April</b> (start of the financial year) to today, from every upload (the latest version of each order) and manual orders. Value = Qty × Unit Price ÷ 100, in the business&apos;s currency (Settings).</>} icon={<CalendarIcon size={16} />} tint="aqua"
-                    onClick={() => setOrdersSlider({
-                      title: "YTD Customer Spend with SASH",
-                      description: `Deere's Firm and Order orders shipping from ${formatDate(ytd.from)} to ${formatDate(ytd.to)}`,
-                      filters: { type: "Firm,Order", ship_date_from: ytd.from, ship_date_to: ytd.to },
-                      icon: <CalendarIcon size={18} />,
-                    })}
+                    onClick={() => setFigureSlider({ kind: "ytd", title: "YTD Customer Spend with SASH", description: `John Deere's Firm and Order orders shipping from ${formatDate(ytd.from)} to ${formatDate(ytd.to)}`, icon: <CalendarIcon size={18} /> })}
                     value={usd(ytd.amount)}
                     detail={`${formatDate(ytd.from)} – ${formatDate(ytd.to)} · ${ordersText(ytd.orders, ytd.without_price)}`} />
         </div>
@@ -240,20 +238,17 @@ export default function DashboardPage() {
                     value={formatCount(listed.data?.fulfilled ?? kpis.outbound?.count ?? 0)} detail="Delivered to Deere in full: the Orders fulfilled tab" />
         </div>
 
-        {can(me, "orders") && <FulfilmentSection onSelectFigure={setOrdersSlider} />}
+        {can(me, "orders") && <FulfilmentSection onSelectFigure={setFigureSlider} />}
 
         <div className="grid gap-5 xl:grid-cols-3">
           <SaleChart points={sale.by_date} />
-          <Card title="Open Value (Supplier) by vendor" info={<>Total Open Value (Supplier) split by <b>vendor</b>: one slice per vendor, with its amount and share. One pie per currency.</>} description="Vendor POs not yet received at SASH Faridabad">
+          <Card title="Open Value (Supplier) by vendor" info={<>Total Open Value (Supplier) split by <b>vendor</b>: one slice per vendor, with its amount and share. Amounts in other currencies are turned into rupees at the exchange rates in Admin Settings → Businesses.</>} description="Vendor POs not yet received at SASH Faridabad">
             {supplier.by_currency.length === 0 ? <Empty>No open vendor POs.</Empty> : (
-              <div className="space-y-6">
-                {supplier.by_currency.map((c) => (
-                  <PieChart key={c.currency} centerValue={formatMoney(c.amount, c.currency, true)} centerLabel={supplier.by_currency.length > 1 ? c.currency : "Total"}
-                            items={supplier.by_vendor.filter((v) => v.currency === c.currency).map((v) => ({
-                              label: v.vendor, value: Number(v.amount), display: formatMoney(v.amount, v.currency, true), hint: formatMoney(v.amount, v.currency),
-                            }))} />
-                ))}
-              </div>
+              <PieChart centerValue={formatMoney(supplier.in_inr.amount, "INR", true)} centerLabel="Total"
+                        items={supplier.by_vendor_inr.map((v) => ({
+                          label: v.vendor, value: Number(v.amount), display: formatMoney(v.amount, "INR", true),
+                          hint: [formatMoney(v.amount, "INR"), ...v.foreign.map((f) => `from ${formatMoney(f.amount, f.currency)}`)].join(" "),
+                        }))} />
             )}
           </Card>
         </div>
@@ -280,6 +275,9 @@ export default function DashboardPage() {
 
         <SpendChart points={ytd.by_date} yearStart={ytd.from} />
       </div>
+      {figureSlider && (
+        <FigureSlider config={figureSlider} onClose={() => setFigureSlider(null)} onOpenOrder={(o) => setOrder({ ...o, value: "0", status: "none", po: false, order_placed: false, overdue: false })} />
+      )}
       {ordersSlider && (
         <OrdersSlider config={ordersSlider} onClose={() => setOrdersSlider(null)} onOpenOrder={(o) => setOrder(o as DashboardOrder)} />
       )}
@@ -706,7 +704,7 @@ function DashboardSkeleton() {
 
 // Fulfilment: the Product summary's figures over every Firm / Order order of the current order data, Qty and Deere value
 // (Qty × Unit Price ÷ 100), in total and per business in All.
-function FulfilmentSection({ onSelectFigure }: { onSelectFigure?: (config: OrdersSliderConfig) => void }) {
+function FulfilmentSection({ onSelectFigure }: { onSelectFigure?: (config: FigureSliderConfig) => void }) {
   const { data, error } = useApi<{ data: Fulfilment }>("/api/orders/fulfilment");
   const [showTop, setShowTop] = useState(false);
   const [topSort, setTopSort] = useState<string>("ordered");
@@ -749,58 +747,19 @@ function FulfilmentSection({ onSelectFigure }: { onSelectFigure?: (config: Order
   // The business of the view in the "Pending as per …" label: DTP or GMBH; Deere when both are shown.
   const source = f.by_business.length === 1 ? f.by_business[0].business.toUpperCase() : "Deere";
 
-  const getFilter = (key: string): OrdersSliderConfig => {
-    switch (key) {
-      case "ordered":
-        return {
-          title: "Total ordered",
-          description: "Totals of every Firm and Order order in the current order data",
-          filters: { type: "Firm,Order" },
-          icon: <FileIcon size={18} />,
-        };
-      case "delivered":
-        return {
-          title: "Delivered to Deere",
-          description: "Orders delivered to Deere in full or on SASH Inc invoices",
-          filters: { status: "outbound" },
-          icon: <CheckIcon size={18} />,
-        };
-      case "in_transit":
-        return {
-          title: "In transit",
-          description: "Orders dispatched from SASH Faridabad, not yet delivered to Deere",
-          filters: { status: "dispatch,dispatched" },
-          icon: <TruckIcon size={18} />,
-        };
-      case "dispatched":
-        return {
-          title: "Dispatched",
-          description: "Orders dispatched from SASH Faridabad",
-          filters: { status: "dispatch,dispatched" },
-          icon: <TruckIcon size={18} />,
-        };
-      case "pending_dtp":
-        return {
-          title: `Pending as per ${source}`,
-          description: `Firm and Order orders open in Deere's latest file`,
-          filters: { type: "Firm,Order" },
-          icon: <CalendarIcon size={18} />,
-        };
-      case "pending":
-        return {
-          title: "Pending to dispatch",
-          description: "Orders not yet dispatched from SASH Faridabad",
-          filters: { type: "Firm,Order", status: "none,received" },
-          icon: <AlertIcon size={18} />,
-        };
-      default:
-        return {
-          title: "Orders",
-          description: "Filtered orders",
-          filters: { type: "Firm,Order" },
-          icon: <FileIcon size={18} />,
-        };
-    }
+  // The slider of a figure: the order lines behind it, each with its Qty and value of that figure (they add up to the card).
+  const FIGURE_SLIDER: Record<string, { title: string; qtyLabel: string; description: string; icon: ReactNode }> = {
+    ordered: { title: "Total ordered", qtyLabel: "Ordered", description: "Delivered to John Deere + still open in its latest file, per order line", icon: <FileIcon size={18} /> },
+    delivered: { title: "Delivered to John Deere", qtyLabel: "Delivered", description: "Qty delivered to John Deere on each order line", icon: <CheckIcon size={18} /> },
+    in_transit: { title: "In transit", qtyLabel: "In transit", description: "Dispatched from SASH Faridabad, not yet delivered to John Deere, per order line", icon: <TruckIcon size={18} /> },
+    dispatched: { title: "Dispatched", qtyLabel: "Dispatched", description: "Qty dispatched from SASH Faridabad on each order line", icon: <TruckIcon size={18} /> },
+    pending_dtp: { title: `Pending as per ${source}`, qtyLabel: "Open Qty", description: "Qty still open in John Deere's latest file, per order line", icon: <CalendarIcon size={18} /> },
+    pending: { title: "Pending to dispatch", qtyLabel: "To dispatch", description: "Qty still to dispatch from SASH Faridabad, per order line", icon: <AlertIcon size={18} /> },
+  };
+  const getFilter = (key: string, business?: string, part?: string): FigureSliderConfig => {
+    const f = FIGURE_SLIDER[key] ?? FIGURE_SLIDER.ordered;
+    return { kind: "lines", figure: key, qtyLabel: f.qtyLabel, description: f.description, icon: f.icon, business, part_number: part,
+             title: part ? `${f.title} · ${part}` : business ? `${f.title} (${business.toUpperCase()})` : f.title };
   };
 
   const figures: { key: string; label: string; qty: string; value?: string; tint: Tint; icon: ReactNode; info: ReactNode }[] = [
@@ -832,22 +791,11 @@ function FulfilmentSection({ onSelectFigure }: { onSelectFigure?: (config: Order
   );
   const cells = (row: PartSummaryFigures, m: ReturnType<typeof moneyIn>, b?: string, partNumber?: string) => figures.map((fig) => {
     const c = pick(row, fig.key);
-    const config = getFilter(fig.key);
     return (
       <td key={fig.key} className="tabular whitespace-nowrap px-4 py-2.5 text-right">
         <button
           type="button"
-          onClick={() => onSelectFigure?.({
-            ...config,
-            title: partNumber
-              ? `${config.title} · ${partNumber}`
-              : b ? `${config.title} (${b.toUpperCase()})` : config.title,
-            filters: {
-              ...config.filters,
-              ...(b ? { business: b } : {}),
-              ...(partNumber ? { part_number: partNumber } : {}),
-            },
-          })}
+          onClick={() => onSelectFigure?.(getFilter(fig.key, b, partNumber))}
           className="text-right hover:underline cursor-pointer group"
         >
           <span className="block font-semibold text-ink group-hover:text-accent">{c.value !== undefined ? m(c.value) : "—"}</span>

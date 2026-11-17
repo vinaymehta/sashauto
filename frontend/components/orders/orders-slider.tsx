@@ -9,7 +9,8 @@ import { Sheet } from "@/components/ui/sheet";
 import { SearchInput } from "@/components/ui/search-input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Alert, EmptyState, Spinner } from "@/components/ui/feedback";
+import { Alert, EmptyState } from "@/components/ui/feedback";
+import { SkeletonRows, TableSkeleton } from "@/components/ui/skeleton";
 import { StatusPill } from "@/components/orders/delivery-cell";
 import { RelatedLink } from "@/components/orders/related-popover";
 import { PartThumbnail } from "@/components/products/part-thumbnail";
@@ -38,6 +39,8 @@ const pricePerPiece = (r: OrderRow) => {
     : `$${(n / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
 };
 
+const dollars = (v: string) => `$${Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
 export function OrdersSlider({ config, onClose, onOpenOrder }: OrdersSliderProps) {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
@@ -62,6 +65,7 @@ export function OrdersSlider({ config, onClose, onOpenOrder }: OrdersSliderProps
     ...config?.filters,
     // The Dashboard's orders only (its cards leave out GMBH 45… POs and excluded parts), so the list matches the card.
     dashboard: 1,
+    revenue: 1,
     today,
     q: debouncedSearch || undefined,
     sort,
@@ -140,6 +144,8 @@ export function OrdersSlider({ config, onClose, onOpenOrder }: OrdersSliderProps
                 <option value="po_number:desc">PO Number (Highest first)</option>
                 <option value="qty:desc">Quantity (Highest first)</option>
                 <option value="qty:asc">Quantity (Lowest first)</option>
+                <option value="revenue:desc">Revenue (Highest first)</option>
+                <option value="revenue:asc">Revenue (Lowest first)</option>
                 <option value="unit_price:desc">Price (Highest first)</option>
                 <option value="unit_price:asc">Price (Lowest first)</option>
                 <option value="status:asc">Status (A → Z)</option>
@@ -155,6 +161,12 @@ export function OrdersSlider({ config, onClose, onOpenOrder }: OrdersSliderProps
               <span>
                 Showing <b className="text-ink">{orders.length}</b> of{" "}
                 <b className="text-ink">{total}</b> orders
+                {meta.revenue !== undefined && <> · Revenue <b className="text-ink">{dollars(meta.revenue)}</b></>}
+                {!!meta.kept_rows && Number(meta.kept_revenue) > 0 && (
+                  <span className="block text-2xs">
+                    incl. {dollars(meta.kept_revenue!)} on {meta.kept_rows} order{meta.kept_rows === 1 ? "" : "s"} from older files (John Deere no longer lists them; not in the card&apos;s open value)
+                  </span>
+                )}
               </span>
             )}
             <Link
@@ -170,9 +182,7 @@ export function OrdersSlider({ config, onClose, onOpenOrder }: OrdersSliderProps
         {error ? (
           <Alert title="Could not load orders">{error.message}</Alert>
         ) : loading && !data ? (
-          <div className="flex justify-center py-16">
-            <Spinner />
-          </div>
+          <div className="overflow-hidden rounded-lg border border-line bg-white shadow-card"><TableSkeleton rows={10} columns={8} /></div>
         ) : orders.length === 0 ? (
           <div className="rounded-lg border border-line bg-white py-12">
             <EmptyState
@@ -202,12 +212,13 @@ export function OrdersSlider({ config, onClose, onOpenOrder }: OrdersSliderProps
                     <SortTh label="Ship Date" sortKey="ship_date" sort={sort} direction={direction} onSort={toggleSort} className="px-3 py-2.5" />
                     <SortTh label="Qty" sortKey="qty" align="right" sort={sort} direction={direction} onSort={toggleSort} className="px-3 py-2.5" />
                     <SortTh label="Price" sortKey="unit_price" align="right" sort={sort} direction={direction} onSort={toggleSort} className="px-3 py-2.5" />
+                    <SortTh label="Revenue" sortKey="revenue" align="right" sort={sort} direction={direction} onSort={toggleSort} className="px-3 py-2.5" />
                     <SortTh label="Status" sortKey="status" sort={sort} direction={direction} onSort={toggleSort} className="px-3 py-2.5" />
                     <SortTh label="Vendor PO" sortKey="vendor_po" sort={sort} direction={direction} onSort={toggleSort} className="py-2.5 pl-3 pr-4" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-100">
-                  {sortedOrders.map((r) => {
+                  {loading ? <SkeletonRows columns={8} /> : sortedOrders.map((r) => {
                     const overdue = r.ship_date < today;
                     return (
                       <tr
@@ -278,6 +289,11 @@ export function OrdersSlider({ config, onClose, onOpenOrder }: OrdersSliderProps
                         {/* Price */}
                         <td className="tabular whitespace-nowrap px-3 py-2.5 text-right text-xs text-ink-muted">
                           {pricePerPiece(r)}
+                        </td>
+
+                        {/* Revenue: Qty × Unit Price ÷ 100 */}
+                        <td className="tabular whitespace-nowrap px-3 py-2.5 text-right font-semibold text-ink">
+                          {r.revenue ? dollars(r.revenue) : "—"}
                         </td>
 
                         {/* Status */}

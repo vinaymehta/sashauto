@@ -63,7 +63,12 @@ class AppSetting < ApplicationRecord
     define("CURRENCY_DTP", "DTP currency", "Businesses", kind: :select, options: CURRENCIES, hint: "Currency of DTP's Deere Unit Price",
            default: "USD"),
     define("CURRENCY_GMBH", "GMBH currency", "Businesses", kind: :select, options: CURRENCIES, hint: "Currency of GMBH's Deere Unit Price",
-           default: "USD")
+           default: "USD"),
+    # Rupees per unit of each foreign currency: vendor POs priced in USD, EUR or GBP are turned into ₹ so the Dashboard
+    # shows one supplier total and one vendor chart.
+    define("RATE_USD", "1 USD in ₹", "Businesses", hint: "Exchange rate for vendor POs priced in US dollars (Dashboard supplier value)", default: "88.50"),
+    define("RATE_EUR", "1 EUR in ₹", "Businesses", hint: "Exchange rate for vendor POs priced in euros (Dashboard supplier value)", default: "103.00"),
+    define("RATE_GBP", "1 GBP in ₹", "Businesses", hint: "Exchange rate for vendor POs priced in pounds (Dashboard supplier value)", default: "118.00")
   ].freeze
   KEYS = DEFINITIONS.map(&:key).freeze
   CACHE_KEY = "app_settings/v1".freeze

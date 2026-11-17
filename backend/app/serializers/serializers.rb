@@ -176,6 +176,14 @@ module Serializers
   end
 
   # A part's photos (oldest first): id, file name and the address that serves it (ProductImagesController#show).
+  # Part Number => { product_id, image_url (first photo), images } of the parts that have a product, for thumbnails.
+  def part_images(parts)
+    Product.with_attached_images.where(part_number: parts.compact.uniq).to_h do |product|
+      images = product_images(product)
+      [ product.part_number, { product_id: product.id, image_url: images.first&.dig(:url), images: images } ]
+    end
+  end
+
   def product_images(product)
     product.images.sort_by(&:created_at).map do |image|
       { id: image.id, filename: image.filename.to_s, url: "/api/products/#{product.id}/images/#{image.id}" }
