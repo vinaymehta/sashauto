@@ -125,7 +125,7 @@ function ProductsView() {
       ) : view === "totals" ? (
         <div className="mt-4"><ProductTotalsPanel /></div>
       ) : view === "summary" ? (
-        <div className="mt-4"><OrderSummaryPanel /></div>
+        <div className="mt-4"><OrderSummaryPanel canEdit={isAdmin} /></div>
       ) : (
       <div className="mt-4"><Panel flush>
         <ListToolbar summary={data ? `${formatCount(data.meta.total)} product${data.meta.total === 1 ? "" : "s"}` : ""}>

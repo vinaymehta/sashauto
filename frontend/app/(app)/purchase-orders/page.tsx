@@ -6,6 +6,7 @@ import { can } from "@/lib/permissions";
 import { formatCount, formatDate, formatQty } from "@/lib/format";
 import type { PurchaseOrderRow, PurchaseOrdersPage, VendorPoImportInfo } from "@/lib/types";
 import { PurchaseIssuesPanel } from "@/components/purchases/purchase-issues";
+import { RelatedLink } from "@/components/orders/related-popover";
 import { Dropdown } from "@/components/orders/orders-menu";
 import { Sheet } from "@/components/ui/sheet";
 import { BusinessPicker, useBusiness } from "@/components/business-switch";
@@ -125,9 +126,10 @@ function Row({ row, editor, onReceipts }: { row: PurchaseOrderRow; editor: boole
         <span className="block truncate font-medium" title={row.number}>{row.number}</span>
         <span className="block truncate text-xs text-ink-muted" title={row.filename ?? undefined}>{row.source === "file" ? "Uploaded list" : "Generated here"}</span>
       </Td>
-      <Td className="max-w-44 truncate" title={row.vendor_name}>{row.vendor_name}</Td>
+      {/* Vendor and part open their panels (the vendor's parts and details; the Product summary). */}
+      <Td className="max-w-44 truncate" title={row.vendor_name}><RelatedLink kind="vendor" value={row.vendor_name} id={row.vendor_id} /></Td>
       <Td className="py-2">
-        <span className="block font-medium">{row.part_number}</span>
+        <span className="block"><RelatedLink kind="part" value={row.part_number} /></span>
         <span className="block text-xs text-ink-muted">PO {row.po_number} · {row.po_line_number} · ship {formatDate(row.ship_date)}</span>
       </Td>
       {/* Order date: the day SASH received the Deere order (its first upload as Firm / Order). */}

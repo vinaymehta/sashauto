@@ -149,6 +149,8 @@ module Api
       end
       # The newest shown day over every matching part (not just this page): Firm, Qty added and taken off, parts changed.
       latest = summary.days.any? ? all_rows.map { |row| row.values.first } : []
+      # The product of each shown part, to open its panel from the row.
+      product_ids = Product.where(part_number: rows.map(&:part_number)).pluck(:part_number, :id).to_h
       added = latest.sum { |(_, addition, _)| [ addition, 0 ].max }
       reduced = latest.sum { |(_, addition, _)| [ addition, 0 ].min }
       render json: {
@@ -160,7 +162,7 @@ module Api
         available_dates: summary.all_days.map { |day| { date: day.date.iso8601, filename: day.upload.original_filename, version: day.upload.version_label } },
         first_date: summary.all_days.last&.date&.iso8601, last_date: summary.all_days.first&.date&.iso8601,
         data: rows.map do |row|
-          { serial: row.serial, part_number: row.part_number, description: row.description, moq: Serializers.qty(row.moq),
+          { serial: row.serial, part_number: row.part_number, product_id: product_ids[row.part_number], description: row.description, moq: Serializers.qty(row.moq),
             values: row.values.map { |values| values.map { |qty| Serializers.qty(qty) } } }
         end,
         meta: meta

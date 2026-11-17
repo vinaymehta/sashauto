@@ -107,7 +107,7 @@ module Api
 
     def row(order)
       placement = order.vendor_order_placement
-      { id: order.id, number: order.number, source: order.source, vendor_name: order.vendor.name, qty: Serializers.qty(order.qty), unit: order.unit,
+      { id: order.id, number: order.number, source: order.source, vendor_id: order.vendor_id, vendor_name: order.vendor.name, qty: Serializers.qty(order.qty), unit: order.unit,
         po_number: placement.po_number, po_line_number: placement.po_line_number, part_number: placement.part_number,
         order_type: placement.order_type, ship_date: placement.ship_date, business: placement.upload_batch&.business,
         placed_at: placement.placed_at, filename: placement.vendor_po_import&.original_filename,

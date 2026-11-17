@@ -13,6 +13,7 @@ import { ListToolbar } from "../ui/list-toolbar";
 import { Panel } from "../ui/panel";
 import { SearchInput } from "../ui/search-input";
 import { TableSkeleton } from "../ui/skeleton";
+import { ProductPanel } from "./product-panel";
 
 
 // Laid out like SASH's "DTP - Order Summary" Excel (in the app's font, which reads better than Excel's narrow one): its colours (light orange part columns, light blue day columns),
@@ -57,7 +58,10 @@ const RECENT_DAYS = 30;
 // Addition (Firm less the previous day's Firm) and Forecast quantity. From / To limit the days; Export downloads the
 // same as an .xlsx file. In "All" it asks to choose a business. Every part at once (no pages); From starts RECENT_DAYS
 // back (cleared, every day shows). The same on Products → Order summary and Orders → Order summary.
-export function OrderSummaryPanel() {
+// `canEdit`: the product panel a part opens (click its row) allows editing.
+export function OrderSummaryPanel({ canEdit = false }: { canEdit?: boolean }) {
+  // The product whose panel is open (clicked part).
+  const [productId, setProductId] = useState<number | null>(null);
   const { view: business } = useBusiness();
   const [search, setSearch] = useState("");
   const q = useDebounced(search.trim());
@@ -170,9 +174,11 @@ export function OrderSummaryPanel() {
                 </thead>
                 <tbody>
                   {data.data.map((row) => (
-                    <tr key={row.part_number} className="group h-7">
+                    <tr key={row.part_number} onClick={row.product_id ? () => setProductId(row.product_id!) : undefined}
+                        title={row.product_id ? `Open ${row.part_number}` : undefined}
+                        className={`group h-7 ${row.product_id ? "cursor-pointer" : ""} ${row.product_id === productId ? "[&>td]:!bg-tint-violet" : ""}`}>
                       <td className={`${COLS.serial.sticky} ${COLS.serial.width} z-[5] border-l ${GRID} ${ORANGE} ${HOVER} px-2 text-center text-neutral-600`}>{row.serial}</td>
-                      <td className={`${COLS.part.sticky} ${COLS.part.width} z-[5] ${GRID} ${ORANGE} ${HOVER} truncate px-2 font-semibold`} title={row.part_number}>{row.part_number}</td>
+                      <td className={`${COLS.part.sticky} ${COLS.part.width} z-[5] ${GRID} ${ORANGE} ${HOVER} truncate px-2 font-semibold ${row.product_id ? "text-accent underline decoration-accent/30 underline-offset-2" : ""}`} title={row.part_number}>{row.part_number}</td>
                       <td className={`${COLS.description.sticky} ${COLS.description.width} z-[5] ${GRID} ${ORANGE} ${HOVER} truncate px-2`}
                           title={row.description ?? undefined}>{row.description ?? ""}</td>
                       <td className={`${COLS.moq.sticky} ${COLS.moq.width} z-[5] ${GRID} ${PART_EDGE} ${ORANGE} ${HOVER} px-2 text-center`}>{plain(row.moq)}</td>
@@ -187,6 +193,7 @@ export function OrderSummaryPanel() {
           </div>
         ) : null}
       </>)}
+      {productId !== null && <ProductPanel key={productId} productId={productId} canEdit={canEdit} onClose={() => setProductId(null)} />}
     </Panel>
   );
 }

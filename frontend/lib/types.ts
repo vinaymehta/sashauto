@@ -639,6 +639,7 @@ export interface OrderSummaryDay {
 export interface OrderSummaryRow {
   serial: number; // S No: place among all the parts, by Part Number
   part_number: string;
+  product_id?: number | null; // the part's product (opens its panel)
   description: string | null;
   moq: string | null; // sets when the part has sets, otherwise pieces
   values: [string, string, string][];
@@ -933,7 +934,7 @@ export interface PartsSummaryRow extends PartSummaryFigures {
 
 // Purchase orders page: one vendor PO (generated here, or recorded from an uploaded vendor PO list) and its order.
 export interface PurchaseOrderRow {
-  id: number; number: string; source: "app" | "file"; vendor_name: string; qty: string; unit: OrderUnit;
+  id: number; number: string; source: "app" | "file"; vendor_id: number; vendor_name: string; qty: string; unit: OrderUnit;
   po_number: string; po_line_number: string; part_number: string; order_type: OrderType; ship_date: string; business: "dtp" | "gmbh" | null;
   placed_at: string; filename: string | null;
   order_placed_at: string | null; order_placed_by: string | null; goods_received_at: string | null; goods_received_by: string | null;
