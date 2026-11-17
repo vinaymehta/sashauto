@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import type { DashboardOrder, OrderRow, OrdersPage, OrderStatus } from "@/lib/types";
+import type { DashboardOrder, OrderRow, OrdersPage } from "@/lib/types";
 import { formatDate, formatQty } from "@/lib/format";
 import { todayParam } from "@/components/age";
 import { useApi, useDebounced } from "@/components/use-api";
@@ -11,7 +11,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, EmptyState } from "@/components/ui/feedback";
 import { SkeletonRows, TableSkeleton } from "@/components/ui/skeleton";
-import { StatusPill } from "@/components/orders/delivery-cell";
 import { RelatedLink } from "@/components/orders/related-popover";
 import { PartThumbnail } from "@/components/products/part-thumbnail";
 import { SortTh, type SortDirection } from "@/components/ui/sort-header";
@@ -22,6 +21,8 @@ export interface OrdersSliderConfig {
   title: string;
   description?: string;
   filters: Record<string, string | number | undefined>;
+  noVendorPo?: boolean; // leave out the Vendor PO column (Outbound: delivered orders need no PO)
+  shipDate?: boolean; // show the Ship date column (cards about dates: Past ship date, Shipping in 30 days, Next shipments)
   icon?: ReactNode;
 }
 
@@ -88,6 +89,10 @@ export function OrdersSlider({ config, onClose, onOpenOrder }: OrdersSliderProps
   const sortedOrders = orders;
 
   if (!config) return null;
+
+  const showShip = Boolean(config.shipDate);
+  const showVendorPo = !config.noVendorPo;
+  const columns = 5 + (showShip ? 1 : 0) + (showVendorPo ? 1 : 0);
 
   // Build link to full orders page with current filters
   const fullPageParams = new URLSearchParams();
@@ -182,7 +187,7 @@ export function OrdersSlider({ config, onClose, onOpenOrder }: OrdersSliderProps
         {error ? (
           <Alert title="Could not load orders">{error.message}</Alert>
         ) : loading && !data ? (
-          <div className="overflow-hidden rounded-lg border border-line bg-white shadow-card"><TableSkeleton rows={10} columns={8} /></div>
+          <div className="overflow-hidden rounded-lg border border-line bg-white shadow-card"><TableSkeleton rows={10} columns={columns} /></div>
         ) : orders.length === 0 ? (
           <div className="rounded-lg border border-line bg-white py-12">
             <EmptyState
@@ -208,17 +213,16 @@ export function OrdersSlider({ config, onClose, onOpenOrder }: OrdersSliderProps
                 <thead>
                   <tr className="border-b border-line bg-neutral-50/75 text-2xs font-semibold uppercase tracking-wider text-ink-muted">
                     <SortTh label="Part" sortKey="part_number" sort={sort} direction={direction} onSort={toggleSort} className="py-2.5 pl-4 pr-3" />
-                    <SortTh label="PO & Line" sortKey="po_number" sort={sort} direction={direction} onSort={toggleSort} className="px-3 py-2.5" />
-                    <SortTh label="Ship Date" sortKey="ship_date" sort={sort} direction={direction} onSort={toggleSort} className="px-3 py-2.5" />
+                    <SortTh label="PO" sortKey="po_number" sort={sort} direction={direction} onSort={toggleSort} className="px-3 py-2.5" />
+                    {showShip && <SortTh label="Ship Date" sortKey="ship_date" sort={sort} direction={direction} onSort={toggleSort} className="px-3 py-2.5" />}
                     <SortTh label="Qty" sortKey="qty" align="right" sort={sort} direction={direction} onSort={toggleSort} className="px-3 py-2.5" />
                     <SortTh label="Price" sortKey="unit_price" align="right" sort={sort} direction={direction} onSort={toggleSort} className="px-3 py-2.5" />
                     <SortTh label="Revenue" sortKey="revenue" align="right" sort={sort} direction={direction} onSort={toggleSort} className="px-3 py-2.5" />
-                    <SortTh label="Status" sortKey="status" sort={sort} direction={direction} onSort={toggleSort} className="px-3 py-2.5" />
-                    <SortTh label="Vendor PO" sortKey="vendor_po" sort={sort} direction={direction} onSort={toggleSort} className="py-2.5 pl-3 pr-4" />
+                    {showVendorPo && <SortTh label="Vendor PO" sortKey="vendor_po" sort={sort} direction={direction} onSort={toggleSort} className="py-2.5 pl-3 pr-4" />}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-100">
-                  {loading ? <SkeletonRows columns={8} /> : sortedOrders.map((r) => {
+                  {loading ? <SkeletonRows columns={columns} /> : sortedOrders.map((r) => {
                     const overdue = r.ship_date < today;
                     return (
                       <tr
@@ -257,7 +261,7 @@ export function OrdersSlider({ config, onClose, onOpenOrder }: OrdersSliderProps
                         {/* PO Number / Line */}
                         <td className="whitespace-nowrap px-3 py-2.5">
                           <span className="font-medium text-ink">
-                            PO {r.po_number}/{r.po_line_number}
+                            {r.po_number}
                           </span>
                           <span className="block text-2xs text-ink-muted">
                             {r.order_type}
@@ -266,7 +270,7 @@ export function OrdersSlider({ config, onClose, onOpenOrder }: OrdersSliderProps
                         </td>
 
                         {/* Ship Date */}
-                        <td className="whitespace-nowrap px-3 py-2.5">
+                        {showShip && <td className="whitespace-nowrap px-3 py-2.5">
                           <span
                             className={`tabular block font-medium ${
                               overdue ? "text-age-red-ink font-semibold" : "text-ink"
@@ -279,7 +283,7 @@ export function OrdersSlider({ config, onClose, onOpenOrder }: OrdersSliderProps
                               Overdue
                             </span>
                           )}
-                        </td>
+                        </td>}
 
                         {/* Quantity */}
                         <td className="tabular whitespace-nowrap px-3 py-2.5 text-right font-medium text-ink">
@@ -296,13 +300,8 @@ export function OrdersSlider({ config, onClose, onOpenOrder }: OrdersSliderProps
                           {r.revenue ? dollars(r.revenue) : "—"}
                         </td>
 
-                        {/* Status */}
-                        <td className="whitespace-nowrap px-3 py-2.5">
-                          <StatusPill kind={(r.status as OrderStatus) ?? "none"} />
-                        </td>
-
                         {/* Vendor PO Badge */}
-                        <td className="whitespace-nowrap py-2.5 pl-3 pr-4">
+                        {showVendorPo && <td className="whitespace-nowrap py-2.5 pl-3 pr-4">
                           {r.order_placed ? (
                             <Badge tone="dark">Order placed</Badge>
                           ) : r.placed ? (
@@ -310,7 +309,7 @@ export function OrdersSlider({ config, onClose, onOpenOrder }: OrdersSliderProps
                           ) : (
                             <Badge tone="warn">No vendor PO</Badge>
                           )}
-                        </td>
+                        </td>}
                       </tr>
                     );
                   })}

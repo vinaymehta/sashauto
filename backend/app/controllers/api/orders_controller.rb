@@ -81,8 +81,9 @@ module Api
       if params[:revenue] == "1"
         all = scope.unscope(:order)
         kept = all.where("order_rows.kept")
-        meta = meta.merge(revenue: all.sum(Arel.sql(revenue_sql)).round(2).to_s("F"),
-                          kept_revenue: kept.sum(Arel.sql(revenue_sql)).round(2).to_s("F"), kept_rows: kept.count)
+        # An empty sum is the Integer 0: to_d before rounding.
+        meta = meta.merge(revenue: all.sum(Arel.sql(revenue_sql)).to_d.round(2).to_s("F"),
+                          kept_revenue: kept.sum(Arel.sql(revenue_sql)).to_d.round(2).to_s("F"), kept_rows: kept.count)
       end
       ship_to_locations, commodity_types = facets(batches)
       ordered = ordered_by_key(rows)

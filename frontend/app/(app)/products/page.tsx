@@ -14,6 +14,7 @@ import { DtpImportButton } from "@/components/vendors/dtp-import";
 import { ImportIssuesPanel, useOpenImportIssues } from "@/components/vendors/import-issues";
 import { AvailablePartsPanel } from "@/components/products/available-parts";
 import { OrderSummaryPanel } from "@/components/products/order-summary";
+import { RelatedLink } from "@/components/orders/related-popover";
 import { ProductTotalsPanel } from "@/components/products/product-totals";
 import { Tabs } from "@/components/ui/tabs";
 import { useSession } from "@/components/session";
@@ -226,7 +227,10 @@ function ProductRow({ product, active, canEdit, onOpen }: { product: Product; ac
       <Td align="right" className="hidden sm:table-cell" title={best ? best.vendor : undefined}>
         {best ? <>
           <span className="block font-medium text-ink">{perPiece(best.amount, best.currency)}</span>
-          <span className="ml-auto block max-w-[9rem] truncate text-xs text-ink-muted md:max-w-[11rem]">{best.vendor}</span>
+          {/* The vendor opens its panel (parts, prices and details). */}
+          <span className="ml-auto block max-w-[9rem] truncate text-xs text-ink-muted md:max-w-[11rem]">
+            {best.vendor_id ? <RelatedLink kind="vendor" value={best.vendor} id={best.vendor_id} /> : best.vendor}
+          </span>
         </> : dash}
       </Td>
       <Td align="center" className="hidden xl:table-cell">{product.vendor_count ? formatCount(product.vendor_count) : dash}</Td>

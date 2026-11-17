@@ -172,7 +172,7 @@ module Serializers
 
     best = vendors.select(&:price_amount).min_by(&:price_amount)
     data.merge(vendor_count: vendors.size, available_qty: qty(vendors.filter_map(&:available_qty).then { |q| q.any? ? q.sum : nil }),
-               best_vendor_price: best && { amount: qty(best.price_amount), currency: best.price_currency, vendor: best.vendor.name })
+               best_vendor_price: best && { amount: qty(best.price_amount), currency: best.price_currency, vendor: best.vendor.name, vendor_id: best.vendor_id })
   end
 
   # A part's photos (oldest first): id, file name and the address that serves it (ProductImagesController#show).

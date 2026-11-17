@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import type { OrderSummaryPage } from "@/lib/types";
 import { formatCount, formatDate, formatDifference, formatQty } from "@/lib/format";
 import { useApi, useDebounced } from "../use-api";
 import { useBusiness, BusinessPicker } from "../business-switch";
-import { DownloadIcon } from "../icons";
+import { CheckIcon, DownloadIcon } from "../icons";
+import { Dropdown } from "../orders/orders-menu";
 import { Button } from "../ui/button";
 import { DatePicker } from "../ui/date-picker";
+
 import { Alert, EmptyState } from "../ui/feedback";
 import { ListToolbar } from "../ui/list-toolbar";
 import { Panel } from "../ui/panel";
@@ -59,21 +61,36 @@ const RECENT_DAYS = 30;
 // same as an .xlsx file. In "All" it asks to choose a business. Every part at once (no pages); From starts RECENT_DAYS
 // back (cleared, every day shows). The same on Products → Order summary and Orders → Order summary.
 // `canEdit`: the product panel a part opens (click its row) allows editing.
+
+// The day `days` ago (local), as yyyy-mm-dd.
+function daysAgo(days: number) {
+  const day = new Date();
+  day.setDate(day.getDate() - days);
+  return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
+}
+
+// The two ways to choose the days shown.
+const MODES = {
+  range: { label: "Date range", hint: "Every day from one date to another" },
+  compare: { label: "Compare dates", hint: "Only the dates you pick, side by side" },
+} as const;
+
+// Quick ranges for From / To (To blank = up to the newest day).
+const PRESETS = [{ label: "7 days", days: 7 }, { label: "30 days", days: 30 }, { label: "90 days", days: 90 }] as const;
+
 export function OrderSummaryPanel({ canEdit = false }: { canEdit?: boolean }) {
   // The product whose panel is open (clicked part).
   const [productId, setProductId] = useState<number | null>(null);
   const { view: business } = useBusiness();
   const [search, setSearch] = useState("");
   const q = useDebounced(search.trim());
-  const [from, setFrom] = useState(() => {
-    const day = new Date();
-    day.setDate(day.getDate() - RECENT_DAYS);
-    return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
-  });
+  const [from, setFrom] = useState(() => daysAgo(RECENT_DAYS));
   const [to, setTo] = useState("");
   // Compare dates: chosen days only (any number), side by side; Addition is then the change since the chosen day before.
   const [dates, setDates] = useState<string[]>([]);
-  const comparing = dates.length > 0;
+  // Date range (From / To) or Compare dates (chosen days side by side): one at a time.
+  const [mode, setMode] = useState<"range" | "compare">("range");
+  const comparing = mode === "compare" && dates.length > 0;
   const query = comparing ? { q, dates: [...dates].sort().join(",") } : { q, from: from || undefined, to: to || undefined };
   const { data, error, loading } = useApi<OrderSummaryPage>(business === "all" ? null : "/api/products/order_summary", {
     ...query, all: 1,
@@ -85,29 +102,57 @@ export function OrderSummaryPanel({ canEdit = false }: { canEdit?: boolean }) {
 
   return (
     <Panel flush>
-      <div className="flex flex-wrap items-end gap-3 border-b border-line px-4 py-4 sm:px-6">
-        <div className="space-y-1.5">
-          <span className="block text-sm font-medium text-ink">Business</span>
+      {/* Filters on one line: Business, Show, then From / To and quick ranges (or the dates to compare). */}
+      <div className="border-b border-line bg-neutral-50/60 px-4 py-4 sm:px-6">
+        <div className="flex flex-wrap items-end gap-3">
           <BusinessPicker alignLeft />
-        </div>
-        {business !== "all" && (<>
-          {!comparing && (<>
-            <div className="space-y-1.5">
-              <label htmlFor="order-summary-from" className="block text-sm font-medium text-ink">From</label>
-              <DatePicker id="order-summary-from" value={from} onChange={setFrom} min={data?.first_date ?? undefined}
-                          max={to || (data?.last_date ?? undefined)} placeholder="Oldest day" clearable className="w-44" />
-            </div>
-            <div className="space-y-1.5">
-              <label htmlFor="order-summary-to" className="block text-sm font-medium text-ink">To</label>
-              <DatePicker id="order-summary-to" value={to} onChange={setTo} min={from || (data?.first_date ?? undefined)}
-                          max={data?.last_date ?? undefined} placeholder="Newest day" clearable className="w-44" />
-            </div>
+          {business !== "all" && (<>
+            {/* Which days are shown: a date range or chosen dates to compare (the same dropdown as Business). */}
+            <Dropdown width="w-72" alignLeft label={<><span className="text-ink-muted">Show</span><span className="font-semibold text-ink">{MODES[mode].label}</span></>}>
+              {(close) => (
+                <div className="py-1">
+                  {(Object.keys(MODES) as (keyof typeof MODES)[]).map((key) => (
+                    <button key={key} type="button" role="menuitemradio" aria-checked={mode === key} onClick={() => { close(); setMode(key); }}
+                            className={`flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left text-sm transition-colors hover:bg-neutral-50 ${mode === key ? "font-semibold text-ink" : "text-ink-muted"}`}>
+                      <span>{MODES[key].label}<span className="block text-xs font-normal text-ink-faint">{MODES[key].hint}</span></span>
+                      {mode === key && <CheckIcon size={14} className="shrink-0 text-ink" />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </Dropdown>
+            {mode === "range" ? (<>
+              <div className="space-y-1.5">
+                <label htmlFor="order-summary-from" className="block text-sm font-medium text-ink">From</label>
+                <DatePicker id="order-summary-from" value={from} onChange={setFrom} min={data?.first_date ?? undefined}
+                            max={to || (data?.last_date ?? undefined)} placeholder="Oldest day" clearable className="w-48" />
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="order-summary-to" className="block text-sm font-medium text-ink">To</label>
+                <DatePicker id="order-summary-to" value={to} onChange={setTo} min={from || (data?.first_date ?? undefined)}
+                            max={data?.last_date ?? undefined} placeholder="Newest day" clearable className="w-48" />
+              </div>
+              {/* Quick ranges, on the same line. */}
+              <div className="flex h-10 flex-wrap items-center gap-1.5">
+                {[...PRESETS.map((p) => ({ label: `Last ${p.label}`, from: daysAgo(p.days) })), { label: "All days", from: "" }].map((p) => {
+                  const on = !to && from === p.from;
+                  return (
+                    <button key={p.label} type="button" onClick={() => { setFrom(p.from); setTo(""); }} aria-pressed={on}
+                            className={`h-8 rounded-full border px-3 text-xs font-medium transition-colors ${
+                              on ? "border-accent/40 bg-accent/10 text-accent" : "border-line bg-white text-ink-muted hover:border-neutral-300 hover:text-ink"}`}>
+                      {p.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </>) : (
+              <div className="space-y-1.5">
+                <span className="block text-sm font-medium text-ink">Dates to compare</span>
+                <CompareDates options={data?.available_dates ?? []} value={dates} onChange={setDates} />
+              </div>
+            )}
           </>)}
-          <div className="space-y-1.5">
-            <span className="block text-sm font-medium text-ink">Compare dates</span>
-            <CompareDates options={data?.available_dates ?? []} value={dates} onChange={setDates} />
-          </div>
-        </>)}
+        </div>
       </div>
 
       {business === "all" ? (
@@ -245,46 +290,26 @@ function LatestDay({ latest }: { latest: NonNullable<OrderSummaryPage["latest"]>
   );
 }
 
-// Compare dates: tick any days with an upload (newest first) to show only those side by side. "Clear" goes back to
-// From / To.
+// Compare dates: pick days on a calendar (only days with an upload can be picked); each chosen day shows as a chip with
+// its own ✕, and "Clear all" goes back to From / To.
 function CompareDates({ options, value, onChange }: {
   options: { date: string; filename: string; version: string | null }[]; value: string[]; onChange: (dates: string[]) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const close = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, [open]);
-  const toggle = (date: string) => onChange(value.includes(date) ? value.filter((d) => d !== date) : [...value, date]);
-
+  const days = options.map((o) => o.date);
+  const add = (date: string) => { if (date && !value.includes(date)) onChange([...value, date]); };
   return (
-    <div ref={box} className="relative">
-      <Button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="w-44 justify-between">
-        <span className="truncate">{value.length === 0 ? "Choose dates" : `${value.length} date${value.length === 1 ? "" : "s"} chosen`}</span>
-        <span aria-hidden className="text-ink-muted">▾</span>
-      </Button>
-      {open && (
-        <div className="absolute left-0 z-[60] mt-1 w-72 overflow-hidden rounded-lg border border-line bg-white shadow-xl ring-1 ring-black/5">
-          <div className="flex items-center justify-between border-b border-line px-3 py-2 text-xs text-ink-muted">
-            <span>Tick the days to compare</span>
-            {value.length > 0 && <button type="button" onClick={() => onChange([])} className="font-medium text-accent hover:underline">Clear</button>}
-          </div>
-          <ul className="max-h-80 overflow-y-auto overscroll-contain py-1">
-            {options.length === 0 && <li className="px-3 py-2 text-sm text-ink-muted">No uploads yet.</li>}
-            {options.map((o) => (
-              <li key={o.date}>
-                <label className="flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm hover:bg-subtle">
-                  <input type="checkbox" checked={value.includes(o.date)} onChange={() => toggle(o.date)} className="h-4 w-4 shrink-0 accent-accent" />
-                  <span className="tabular flex-1 text-ink">{formatDate(o.date)}</span>
-                  {o.version && <span className="shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 text-2xs font-medium text-ink-muted">{o.version}</span>}
-                </label>
-              </li>
-            ))}
-          </ul>
-        </div>
+    <div className="flex flex-wrap items-center gap-2">
+      <DatePicker value="" onChange={add} allowed={days} marked={value} min={days[days.length - 1]} max={days[0]}
+                  placeholder={value.length ? "Add a date" : "Choose dates"} aria-label="Add a date to compare" className="w-44" />
+      {[...value].sort().reverse().map((date) => (
+        <span key={date} className="inline-flex h-8 items-center gap-1 rounded-full border border-accent/30 bg-accent/10 pl-3 pr-1 text-sm font-medium text-accent">
+          <span className="tabular">{formatDate(date)}</span>
+          <button type="button" onClick={() => onChange(value.filter((d) => d !== date))} aria-label={`Remove ${formatDate(date)}`}
+                  className="flex h-6 w-6 items-center justify-center rounded-full text-accent/70 transition-colors hover:bg-accent/15 hover:text-accent">✕</button>
+        </span>
+      ))}
+      {value.length > 1 && (
+        <button type="button" onClick={() => onChange([])} className="text-sm font-medium text-ink-muted hover:text-ink hover:underline">Clear all</button>
       )}
     </div>
   );

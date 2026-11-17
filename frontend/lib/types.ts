@@ -199,7 +199,7 @@ export interface Product {
   images?: ProductImage[]; // photos, oldest first
   // Products list only: vendors supplying it, the lowest vendor price per piece, pieces vendors have available.
   vendor_count?: number;
-  best_vendor_price?: { amount: string; currency: Currency; vendor: string } | null;
+  best_vendor_price?: { amount: string; currency: Currency; vendor: string; vendor_id?: number } | null;
   available_qty?: string | null;
 }
 
@@ -385,7 +385,7 @@ export interface Stats {
                      by_vendor: { vendor: string; currency: string; amount: string }[];
                      // All in rupees at the Settings exchange rates (rates: ₹ per unit used; not_converted: currencies without a rate).
                      in_inr: { amount: string; rates: Record<string, string>; not_converted: string[] };
-                     by_vendor_inr: { vendor: string; amount: string; foreign: { currency: string; amount: string }[] }[] };
+                     by_vendor_inr: { vendor: string; vendor_id?: number; amount: string; foreign: { currency: string; amount: string }[] }[] };
     ytd_customer_spend: MoneyTotal & { from: string; to: string; series_from: string; by_date: DateAmount[] };
   };
   overview: DashboardOverview;

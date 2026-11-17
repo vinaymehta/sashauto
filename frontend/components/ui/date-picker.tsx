@@ -20,10 +20,11 @@ function label(value: string) {
 // Date field with a calendar dropdown (replaces the browser's date picker). The calendar is rendered on <body>
 // (`data-floating`), so it is not clipped by panels or tables and does not close the panel it was opened from.
 // `clearable` shows a Clear button; `min` / `max` disable days outside the range.
+// `allowed`: only these days can be picked (e.g. days with an upload); `marked`: days shown as already chosen (several).
 export function DatePicker({ value, onChange, min, max, id, invalid = false, placeholder = "Select date", clearable = false,
-  className = "", "aria-label": ariaLabel }: {
+  className = "", "aria-label": ariaLabel, allowed, marked }: {
   value: string; onChange: (value: string) => void; min?: string; max?: string; id?: string; invalid?: boolean;
-  placeholder?: string; clearable?: boolean; className?: string; "aria-label"?: string;
+  placeholder?: string; clearable?: boolean; className?: string; "aria-label"?: string; allowed?: string[]; marked?: string[];
 }) {
   const trigger = useRef<HTMLButtonElement>(null);
   const popover = useRef<HTMLDivElement>(null);
@@ -105,7 +106,7 @@ export function DatePicker({ value, onChange, min, max, id, invalid = false, pla
     return { iso: iso(d.getFullYear(), d.getMonth(), d.getDate()), day: d.getDate(), inMonth: d.getMonth() === view.month };
   });
   const today = todayIso();
-  const disabled = (day: string) => (!!min && day < min) || (!!max && day > max);
+  const disabled = (day: string) => (!!min && day < min) || (!!max && day > max) || (!!allowed && !allowed.includes(day));
 
   return (
     <>
@@ -168,7 +169,7 @@ export function DatePicker({ value, onChange, min, max, id, invalid = false, pla
           </div>
           <div className="grid grid-cols-7 gap-0.5">
             {days.map((d) => {
-              const selected = d.iso === value;
+              const selected = d.iso === value || !!marked?.includes(d.iso);
               const isToday = d.iso === today;
               const off = disabled(d.iso);
               return (

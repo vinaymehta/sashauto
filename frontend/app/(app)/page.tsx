@@ -42,12 +42,6 @@ const CurrencyContext = createContext<string | null>("USD");
 const moneyIn = (currency: string | null) => (v: string | number, compact = false) => (currency ? formatMoney(v, currency, compact)
   : new Intl.NumberFormat("en-US", { minimumFractionDigits: compact ? 0 : 2, maximumFractionDigits: compact ? 1 : 2, notation: compact ? "compact" : "standard" }).format(Number(v)));
 const useMoney = () => moneyIn(useContext(CurrencyContext));
-// The supplier amounts in other currencies inside the rupee total, with the rate used (e.g. "incl. $16,746.60 at ₹88.50/USD").
-const foreignText = (s: Stats["money"]["open_supplier"]) => {
-  const parts = s.by_currency.filter((c) => c.currency !== "INR").map((c) =>
-    s.in_inr.rates[c.currency] ? `${formatMoney(c.amount, c.currency)} at ₹${s.in_inr.rates[c.currency]}/${c.currency}` : `${formatMoney(c.amount, c.currency)} (no rate, left out)`);
-  return parts.length ? `incl. ${parts.join(", ")}` : "";
-};
 const plural = (n: number, word: string) => `${formatCount(n)} ${word}${n === 1 ? "" : "s"}`;
 const ordersText = (n: number, missing: number) => `${plural(n, "order")}${missing ? ` · ${formatCount(missing)} without a price` : ""}`;
 
@@ -161,7 +155,7 @@ export default function DashboardPage() {
   const attention = [
     overview.kpis.overdue.count > 0 && {
       text: `${plural(overview.kpis.overdue.count, "order")} past the ship date and not dispatched yet`,
-      onClick: () => setOrdersSlider({ title: "Past ship date", description: "Late open orders not dispatched yet", filters: { type: "Firm,Order", timing: "overdue", status: "none,received" }, icon: <AlertIcon size={18} /> }),
+      onClick: () => setOrdersSlider({ title: "Past ship date", description: "Late open orders not dispatched yet", filters: { type: "Firm,Order", timing: "overdue", status: "none,received" }, icon: <AlertIcon size={18} /> , shipDate: true }),
     },
     totals.open_conflicts > 0 && { text: `${totals.open_conflicts} Commodity Type conflict${totals.open_conflicts === 1 ? "" : "s"} to review`, href: "/products?conflicts=open" },
     totals.in_progress > 0 && { text: `${totals.in_progress} upload${totals.in_progress === 1 ? " is" : "s are"} processing`, href: "/orders" },
@@ -202,11 +196,11 @@ export default function DashboardPage() {
           <StatCard size="lg" label="Total Open Value (Sale)" info={<>Value of Deere orders <b>not yet delivered</b>: the Firm and Order rows the Orders page lists as open (latest upload, orders kept from an older Deere file, and manual orders), without a &quot;Delivered to Deere&quot; (Outbound) status. Value = Qty × Unit Price ÷ 100 (Deere prices are per 100 pcs), in the business&apos;s currency (Settings). Forecast is not counted.</>} icon={<BoxIcon size={16} />} tint="violet"
                     onClick={() => setFigureSlider({ kind: "lines", figure: "pending_dtp", qtyLabel: "Open Qty", title: "Total Open Value (Sale)", description: "The Qty John Deere still lists open on each order line, at its current price", icon: <BoxIcon size={18} /> })}
                     value={usd(sale.amount)}
-                    detail={`${ordersText(sale.orders, sale.without_price)} not yet delivered to Deere`} />
+                    detail={ordersText(sale.orders, sale.without_price)} />
           <StatCard size="lg" label="Total Open Value (Supplier)" info={<>Value of the vendor POs generated in the app whose order has <b>no status yet</b> (not received at SASH Faridabad). Value = PO quantity × the vendor&apos;s unit price. POs priced in USD, EUR or GBP are turned into rupees at the exchange rates in Admin Settings → Businesses.</>} icon={<TruckIcon size={16} />} tint="amber"
                     onClick={() => setFigureSlider({ kind: "supplier", title: "Total Open Value (Supplier)", description: "Vendor POs not yet received at SASH Faridabad, with the price used for each", icon: <TruckIcon size={18} /> })}
                     value={supplier.by_currency.length ? formatMoney(supplier.in_inr.amount, "INR") : "—"}
-                    detail={<>{ordersText(supplier.orders, supplier.without_price)} not yet received{foreignText(supplier) && <span className="mt-0.5 block text-xs">{foreignText(supplier)}</span>}</>} />
+                    detail={plural(supplier.orders, "order")} />
           <StatCard size="lg" label="YTD Customer Spend with SASH" info={<>Value of Deere&apos;s Firm and Order orders with a <b>ship date from 1 April</b> (start of the financial year) to today, from every upload (the latest version of each order) and manual orders. Value = Qty × Unit Price ÷ 100, in the business&apos;s currency (Settings).</>} icon={<CalendarIcon size={16} />} tint="aqua"
                     onClick={() => setFigureSlider({ kind: "ytd", title: "YTD Customer Spend with SASH", description: `John Deere's Firm and Order orders shipping from ${formatDate(ytd.from)} to ${formatDate(ytd.to)}`, icon: <CalendarIcon size={18} /> })}
                     value={usd(ytd.amount)}
@@ -219,10 +213,10 @@ export default function DashboardPage() {
                     onClick={() => setOrdersSlider({ title: "Open orders", description: "Firm and Order orders not yet delivered to Deere", filters: { type: "Firm,Order" }, icon: <FileIcon size={18} /> })}
                     value={formatCount(kpis.open.count)} detail={`${usd(kpis.open.value, true)} · Firm and Order`} />
           <StatCard label="Shipping in 30 days" info={<>Open orders with a <b>ship date from today to 30 days ahead</b>, and their value. They are listed in Next shipments.</>} icon={<CalendarIcon size={16} />} tint="violet"
-                    onClick={() => setOrdersSlider({ title: "Shipping in 30 days", description: `Open orders due by ${formatDate(addDays(30))}`, filters: { type: "Firm,Order", timing: "next30" }, icon: <CalendarIcon size={18} /> })}
+                    onClick={() => setOrdersSlider({ title: "Shipping in 30 days", description: `Open orders due by ${formatDate(addDays(30))}`, filters: { type: "Firm,Order", timing: "next30" }, icon: <CalendarIcon size={18} /> , shipDate: true })}
                     value={formatCount(kpis.due_30.count)} detail={`${usd(kpis.due_30.value, true)} due by ${formatDate(addDays(30))}`} />
           <StatCard label="Past ship date" info={<>Orders whose <b>ship date has passed</b> and that are <b>not dispatched yet</b> (still with SASH India or the vendor): the late orders that still need action, and their value. Dispatched orders are on Orders → Dispatched. A combined order counts by its last ship date.</>} icon={<AlertIcon size={16} />} tint="dec" tone={kpis.overdue.count ? "bad" : undefined}
-                    onClick={() => setOrdersSlider({ title: "Past ship date", description: "Late open orders not dispatched yet", filters: { type: "Firm,Order", timing: "overdue", status: "none,received" }, icon: <AlertIcon size={18} /> })}
+                    onClick={() => setOrdersSlider({ title: "Past ship date", description: "Late open orders not dispatched yet", filters: { type: "Firm,Order", timing: "overdue", status: "none,received" }, icon: <AlertIcon size={18} /> , shipDate: true })}
                     value={formatCount(kpis.overdue.count)} detail={`${usd(kpis.overdue.value, true)} not dispatched yet`} />
           <StatCard label="PO coverage" info={<>Share of the <b>open order value that already has a vendor PO</b> (Generate PO). Below: open orders with a Qty and no PO yet.</>} icon={<CheckIcon size={16} />} tint="aqua"
                     onClick={() => setOrdersSlider({ title: "Orders without vendor PO", description: "Open orders without a vendor PO generated yet", filters: { type: "Firm,Order", po: "none" }, icon: <CheckIcon size={18} /> })}
@@ -234,7 +228,7 @@ export default function DashboardPage() {
                     onClick={() => setOrdersSlider({ title: "Partial outbound", description: "Orders with part of the quantity delivered to Deere", filters: { status: "delivery" }, icon: <TruckIcon size={18} /> })}
                     value={formatCount(listed.data?.partial_outbound ?? kpis.partial_outbound?.count ?? 0)} detail="Part delivered to Deere, as listed on Orders" />
           <StatCard label="Outbound (fulfilled)" info={<>Orders <b>delivered to Deere in full</b> (Outbound mark or fulfilled on SASH Inc invoices).</>} icon={<CheckIcon size={16} />} tint="inc"
-                    onClick={() => setOrdersSlider({ title: "Outbound (fulfilled)", description: "Orders delivered to Deere in full", filters: { status: "outbound" }, icon: <CheckIcon size={18} /> })}
+                    onClick={() => setOrdersSlider({ title: "Outbound (fulfilled)", description: "Orders delivered to Deere in full", filters: { status: "outbound" }, icon: <CheckIcon size={18} />, noVendorPo: true })}
                     value={formatCount(listed.data?.fulfilled ?? kpis.outbound?.count ?? 0)} detail="Delivered to Deere in full: the Orders fulfilled tab" />
         </div>
 
@@ -247,6 +241,8 @@ export default function DashboardPage() {
               <PieChart centerValue={formatMoney(supplier.in_inr.amount, "INR", true)} centerLabel="Total"
                         items={supplier.by_vendor_inr.map((v) => ({
                           label: v.vendor, value: Number(v.amount), display: formatMoney(v.amount, "INR", true),
+                          // The vendor opens its panel (parts, prices and details).
+                          node: v.vendor_id ? <RelatedLink kind="vendor" value={v.vendor} id={v.vendor_id} /> : undefined,
                           hint: [formatMoney(v.amount, "INR"), ...v.foreign.map((f) => `from ${formatMoney(f.amount, f.currency)}`)].join(" "),
                         }))} />
             )}
@@ -268,7 +264,7 @@ export default function DashboardPage() {
             <TopParts items={overview.top_parts} total={Number(kpis.open.value)} onOpenOrder={setOrder} />
           </Card>
           <Card title="Next shipments" info={<>The next <b>8 open orders to ship</b> within 30 days, overdue first, with their status and whether a vendor PO has been generated.</>} description="Open orders shipping in the next 30 days, overdue first"
-                action={<button type="button" onClick={() => setOrdersSlider({ title: "Next shipments", description: "Open orders shipping in the next 30 days, overdue first", filters: { type: "Firm,Order", timing: "overdue,next30" }, icon: <CalendarIcon size={18} /> })} className="shrink-0 text-sm text-ink-muted hover:text-ink cursor-pointer">All orders →</button>}>
+                action={<button type="button" onClick={() => setOrdersSlider({ title: "Next shipments", description: "Open orders shipping in the next 30 days, overdue first", filters: { type: "Firm,Order", timing: "overdue,next30" }, icon: <CalendarIcon size={18} /> , shipDate: true })} className="shrink-0 text-sm text-ink-muted hover:text-ink cursor-pointer">All orders →</button>}>
             <Upcoming items={overview.upcoming} onOpenOrder={setOrder} />
           </Card>
         </div>
@@ -805,8 +801,7 @@ function FulfilmentSection({ onSelectFigure }: { onSelectFigure?: (config: Figur
     );
   });
   return (
-    <Card title="Fulfilment" info={<>Totals of every Firm and Order order in the current order data, as the Product and PO summaries count them. Value = Qty × Deere Unit Price ÷ 100 (each order&apos;s own price).</>}
-          description={f.files.map((file) => file.name).join(" · ")}>
+    <Card title="Fulfilment" info={<>Totals of every Firm and Order order in the current order data, as the Product and PO summaries count them. Value = Qty × Deere Unit Price ÷ 100 (each order&apos;s own price).</>}>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {figures.map((fig) => {
           const config = getFilter(fig.key);

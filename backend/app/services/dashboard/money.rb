@@ -131,12 +131,9 @@ module Dashboard
       inr = ->(r) { r[:currency] == "INR" ? r[:value] : rates[r[:currency]] && r[:value] * rates[r[:currency]] }
       converted = priced.select { |r| inr.(r) }
       by_vendor_inr = converted.group_by { |r| r[:vendor] }.map do |vendor, list|
-        { vendor: vendor, amount: money(list.sum { |r| inr.(r) }),
+        { vendor: vendor, vendor_id: list.first[:vendor_id], amount: money(list.sum { |r| inr.(r) }),
           foreign: list.reject { |r| r[:currency] == "INR" }.group_by { |r| r[:currency] }.map { |c, l| { currency: c, amount: money(l.sum { |r| r[:value] }) } } }
       end.sort_by { |v| -v[:amount].to_d }
-      # Hardcoded supplier value override for the Dashboard.
-      override_inr = OPEN_SUPPLIER_INR_OVERRIDES[@overview.view] || OPEN_SUPPLIER_INR_OVERRIDES["all"]
-      totals.each { |t| t[:amount] = override_inr if t[:currency] == "INR" }
       { by_currency: totals, orders: rows.size, without_price: unpriced.size, by_vendor: by_vendor,
         in_inr: { amount: money(converted.sum(0.to_d) { |r| inr.(r) }), rates: rates.compact.transform_values { |v| v.to_s("F") },
                   not_converted: (priced - converted).map { |r| r[:currency] }.uniq },
@@ -167,7 +164,7 @@ module Dashboard
         else
           [ nil, nil, "No price" ]
         end
-        { id: o.id, number: o.number, vendor: o.vendor.name, po_number: pl.po_number, po_line_number: pl.po_line_number,
+        { id: o.id, number: o.number, vendor: o.vendor.name, vendor_id: o.vendor_id, po_number: pl.po_number, po_line_number: pl.po_line_number,
           part_number: pl.part_number || pl.product&.part_number, description: pl.product&.description, ship_date: pl.ship_date,
           qty: o.qty, price: price, currency: currency.presence || "INR", price_source: source, value: price && o.qty * price,
           order_row_id: pl.order_row_id, manual_order_id: pl.manual_order_id }

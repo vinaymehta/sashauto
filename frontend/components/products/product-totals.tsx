@@ -86,7 +86,12 @@ export function ProductTotalsPanel() {
               <tr key={r.part_number} className="hover:bg-canvas">
                 <Td><RelatedLink kind="part" value={r.part_number} /></Td>
                 <Td><span className="line-clamp-2 block w-44 whitespace-normal leading-snug text-ink-muted" title={r.description ?? undefined}>{r.description ?? "—"}</span></Td>
-                <Td align="right" className="text-ink-muted">{formatCount(r.pos)} · {formatCount(r.orders)}{r.open_orders > 0 ? ` (${formatCount(r.open_orders)} open)` : ""}</Td>
+                {/* Opens the part's Product summary: its POs and every order line (ordered, dispatched, delivered, pending). */}
+                <Td align="right" className="text-ink-muted">
+                  <RelatedLink kind="part" value={r.part_number}>
+                    {formatCount(r.pos)} · {formatCount(r.orders)}{r.open_orders > 0 ? ` (${formatCount(r.open_orders)} open)` : ""}
+                  </RelatedLink>
+                </Td>
                 <Td align="right" className="font-semibold text-ink">{money(r.revenue_ordered)}</Td>
                 <Td align="right" className="font-semibold text-green-700">{Number(r.revenue_delivered) === 0 ? <span className="font-normal text-neutral-300">—</span> : money(r.revenue_delivered)}</Td>
                 {COLUMNS.map((c) => (

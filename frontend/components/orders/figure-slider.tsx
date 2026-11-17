@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import type { OrderStatus, OrderType, ProductImage } from "@/lib/types";
-import { formatDate, formatQty } from "@/lib/format";
+import { formatQty } from "@/lib/format";
 import { useApi, useDebounced } from "@/components/use-api";
 import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
@@ -10,7 +10,6 @@ import { SearchInput } from "@/components/ui/search-input";
 import { SortTh, type SortDirection } from "@/components/ui/sort-header";
 import { Alert, EmptyState } from "@/components/ui/feedback";
 import { SkeletonRows, TableSkeleton } from "@/components/ui/skeleton";
-import { StatusPill } from "@/components/orders/delivery-cell";
 import { RelatedLink } from "@/components/orders/related-popover";
 import { PartThumbnail } from "@/components/products/part-thumbnail";
 import { FileIcon } from "@/components/icons";
@@ -32,6 +31,7 @@ export interface FigureRow {
   business?: string;
   number?: string; // vendor PO
   vendor?: string;
+  vendor_id?: number;
   po_number: string | null;
   po_line_number: string | null;
   part_number: string | null;
@@ -110,7 +110,9 @@ export function FigureSlider({ config, onClose, onOpenOrder }: { config: FigureS
   );
   const lines = config.kind === "lines";
   const supplier = config.kind === "supplier";
-  const columns = supplier ? 9 : lines ? 8 : 6;
+  // Columns: Part, Qty, price and revenue; the Supplier list adds the vendor PO, vendor and price source, the others the
+  // Deere PO. (No ship date, file or status: the card lists are about Qty and value.)
+  const columns = supplier ? 7 : 5;
 
   return (
     <Sheet open wide onClose={onClose} title={config.title} description={config.description} icon={config.icon ?? <FileIcon size={18} />}>
@@ -142,10 +144,7 @@ export function FigureSlider({ config, onClose, onOpenOrder }: { config: FigureS
                     {supplier && th("Vendor PO", "number")}
                     {supplier && th("Vendor", "vendor")}
                     {th("Part", "part_number")}
-                    {th("PO & Line", "po_number")}
-                    {th("Ship date", "ship_date")}
-                    {lines && th("File", "file")}
-                    {lines && th("Status", "status")}
+                    {!supplier && th("PO", "po_number")}
                     {th(lines ? config.qtyLabel : "Qty", "qty", "right")}
                     {th(supplier ? "Price / pc" : "Price / 100", "price", "right")}
                     {th("Revenue", "value", "right")}
@@ -159,7 +158,9 @@ export function FigureSlider({ config, onClose, onOpenOrder }: { config: FigureS
                       <tr key={`${r.id ?? "x"}-${r.manual ? "m" : "r"}-${i}`} onClick={() => order && onOpenOrder(order)}
                           className={order ? "cursor-pointer transition-colors hover:bg-neutral-50/80" : ""}>
                         {supplier && <td className="max-w-40 break-words px-3 py-2.5 text-xs font-medium text-ink">{r.number}</td>}
-                        {supplier && <td className="max-w-36 truncate px-3 py-2.5 text-xs text-ink" title={r.vendor ?? undefined}>{r.vendor}</td>}
+                        {supplier && <td className="max-w-36 truncate px-3 py-2.5 text-xs text-ink" title={r.vendor ?? undefined}>
+                          {r.vendor && r.vendor_id ? <RelatedLink kind="vendor" value={r.vendor} id={r.vendor_id} /> : r.vendor}
+                        </td>}
                         <td className="px-3 py-2.5">
                           <span className="flex items-center gap-2.5">
                             <PartThumbnail imageUrl={r.image_url} images={r.images} alt={r.part_number ?? "Part"} size="sm" />
@@ -171,16 +172,10 @@ export function FigureSlider({ config, onClose, onOpenOrder }: { config: FigureS
                             </span>
                           </span>
                         </td>
-                        <td className="whitespace-nowrap px-3 py-2.5">
+                        {!supplier && <td className="whitespace-nowrap px-3 py-2.5">
                           {r.po_number ? <RelatedLink kind="po" value={r.po_number}><span className="font-medium text-ink hover:text-accent">{r.po_number}</span></RelatedLink> : "—"}
-                          {r.po_line_number && <span className="text-ink-muted">/{r.po_line_number}</span>}
                           {r.order_type && <span className="block text-2xs text-ink-muted">{r.order_type}{r.manual ? " · Manual" : ""}{r.business ? ` · ${r.business.toUpperCase()}` : ""}</span>}
-                        </td>
-                        <td className="tabular whitespace-nowrap px-3 py-2.5 text-ink">{r.ship_date ? formatDate(r.ship_date) : "—"}</td>
-                        {lines && <td className="whitespace-nowrap px-3 py-2.5 text-xs" title={r.file_name ?? undefined}>
-                          <span className={r.kept ? "font-medium text-amber-700" : "text-ink-muted"}>{r.file}</span>
                         </td>}
-                        {lines && <td className="whitespace-nowrap px-3 py-2.5"><StatusPill kind={r.status ?? "none"} /></td>}
                         <td className="tabular whitespace-nowrap px-3 py-2.5 text-right font-medium text-ink">{formatQty(r.qty)}</td>
                         <td className="tabular whitespace-nowrap px-3 py-2.5 text-right text-xs text-ink-muted">
                           {r.price === null ? "—" : money(r.price, supplier ? r.currency : currency)}
