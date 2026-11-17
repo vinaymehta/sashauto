@@ -8,6 +8,9 @@ import { Sheet } from "../ui/sheet";
 import { VendorSummaryPanel } from "../vendors/vendor-summary";
 import { PartSummaryPanel } from "./part-summary";
 import { PoSummaryPanel } from "./po-summary";
+import { useApi } from "../use-api";
+import { PartThumbnail } from "../products/part-thumbnail";
+import type { ProductImage } from "@/lib/types";
 
 type Kind = "po" | "part" | "vendor";
 // What a summary panel shows: a PO, a Part Number or a vendor (`id`: the vendor's id).
@@ -21,6 +24,13 @@ const TITLES: Record<Kind, (value: string) => string> = {
   part: (v) => `Product summary · ${v}`,
   vendor: (v) => `Vendor · ${v}`,
 };
+// A Product summary's header icon: the part's photo (click: big view), else the box icon.
+function PartIcon({ part }: { part: string }) {
+  const { data } = useApi<{ data: Record<string, { image_url: string | null; images: ProductImage[] }> }>("/api/products/thumbnails", { parts: part });
+  const found = data?.data[part];
+  return <PartThumbnail imageUrl={found?.image_url} images={found?.images} alt={part} size="md" fallbackIcon={<BoxIcon size={18} />} />;
+}
+
 const ICONS: Record<Kind, ReactNode> = { po: <FileIcon size={18} />, part: <BoxIcon size={18} />, vendor: <TruckIcon size={18} /> };
 
 // Clickable PO Number, Part Number or vendor name. Opens the wide right-hand side panel with its summary: a PO's lines
@@ -66,7 +76,7 @@ export function RelatedLink({ kind, value, uploadId, id, children }: { kind: Kin
             title={TITLES[top.kind](top.value)}
             description={top.kind === "vendor" ? "The vendor's parts, prices and details."
               : top.uploadId ? "From the shown upload." : "From the current order data."}
-            icon={ICONS[top.kind]}
+            icon={top.kind === "part" ? <PartIcon part={top.value} /> : ICONS[top.kind]}
           >
             <OpenInPanel.Provider value={push}>
               {back && (

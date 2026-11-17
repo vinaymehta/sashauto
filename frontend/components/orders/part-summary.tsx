@@ -10,7 +10,6 @@ import { Alert } from "../ui/feedback";
 import { Skeleton } from "../ui/skeleton";
 import { SortTh, type SortDirection } from "../ui/sort-header";
 import { RelatedLink } from "./related-popover";
-import { PartThumbnail } from "../products/part-thumbnail";
 
 // Product summary of a Part Number (opened from a Part Number link): the product (description, MOQ), then for its Firm /
 // Order orders in the shown order data (`uploadId`; undefined = the current data) what was ordered, dispatched from India
@@ -89,7 +88,6 @@ export function PartSummaryPanel({ part, uploadId }: { part: string; uploadId?: 
       {/* The product */}
       <section className="rounded-lg border border-line bg-gradient-to-br from-tint-violet/70 via-white to-white px-5 py-4 shadow-card">
         <div className="flex items-start gap-3.5">
-          <PartThumbnail imageUrl={s.image_url} images={s.images} alt={s.part_number} size="lg" />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-xl font-semibold tracking-tight text-ink">{s.part_number}</h3>

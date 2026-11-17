@@ -21,6 +21,7 @@ export interface OrdersSliderConfig {
   title: string;
   description?: string;
   filters: Record<string, string | number | undefined>;
+  firmDate?: boolean; // show the Effective Firm Date column (ageing lists)
   noVendorPo?: boolean; // leave out the Vendor PO column (Outbound: delivered orders need no PO)
   shipDate?: boolean; // show the Ship date column (cards about dates: Past ship date, Shipping in 30 days, Next shipments)
   icon?: ReactNode;
@@ -92,7 +93,8 @@ export function OrdersSlider({ config, onClose, onOpenOrder }: OrdersSliderProps
 
   const showShip = Boolean(config.shipDate);
   const showVendorPo = !config.noVendorPo;
-  const columns = 5 + (showShip ? 1 : 0) + (showVendorPo ? 1 : 0);
+  const showFirm = Boolean(config.firmDate);
+  const columns = 5 + (showShip ? 1 : 0) + (showVendorPo ? 1 : 0) + (showFirm ? 1 : 0);
 
   // Build link to full orders page with current filters
   const fullPageParams = new URLSearchParams();
@@ -214,6 +216,7 @@ export function OrdersSlider({ config, onClose, onOpenOrder }: OrdersSliderProps
                   <tr className="border-b border-line bg-neutral-50/75 text-2xs font-semibold uppercase tracking-wider text-ink-muted">
                     <SortTh label="Part" sortKey="part_number" sort={sort} direction={direction} onSort={toggleSort} className="py-2.5 pl-4 pr-3" />
                     <SortTh label="PO" sortKey="po_number" sort={sort} direction={direction} onSort={toggleSort} className="px-3 py-2.5" />
+                    {showFirm && <SortTh label="Firm date" sortKey="firm_date" sort={sort} direction={direction} onSort={toggleSort} className="px-3 py-2.5" />}
                     {showShip && <SortTh label="Ship Date" sortKey="ship_date" sort={sort} direction={direction} onSort={toggleSort} className="px-3 py-2.5" />}
                     <SortTh label="Qty" sortKey="qty" align="right" sort={sort} direction={direction} onSort={toggleSort} className="px-3 py-2.5" />
                     <SortTh label="Price" sortKey="unit_price" align="right" sort={sort} direction={direction} onSort={toggleSort} className="px-3 py-2.5" />
@@ -268,6 +271,9 @@ export function OrdersSlider({ config, onClose, onOpenOrder }: OrdersSliderProps
                             {r.manual && " · Manual"}
                           </span>
                         </td>
+
+                        {/* Effective Firm Date (ageing) */}
+                        {showFirm && <td className="tabular whitespace-nowrap px-3 py-2.5 text-ink">{r.firm_date ? formatDate(r.firm_date) : "—"}</td>}
 
                         {/* Ship Date */}
                         {showShip && <td className="whitespace-nowrap px-3 py-2.5">

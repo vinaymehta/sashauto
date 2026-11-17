@@ -9,6 +9,7 @@ import { todayParam } from "@/components/age";
 import { OrderDetailPanel } from "@/components/orders/history-row";
 import { OrdersSlider, type OrdersSliderConfig } from "@/components/orders/orders-slider";
 import { FigureSlider, type FigureSliderConfig } from "@/components/orders/figure-slider";
+import { PoSlider, type PoSliderConfig } from "@/components/orders/po-slider";
 import { RelatedLink } from "@/components/orders/related-popover";
 import { PartThumbnail } from "@/components/products/part-thumbnail";
 import { StatusPill } from "@/components/orders/delivery-cell";
@@ -123,6 +124,8 @@ export default function DashboardPage() {
   const [ordersSlider, setOrdersSlider] = useState<OrdersSliderConfig | null>(null);
   // Slider of the rows behind a money figure (Fulfilment, Total Open Value, YTD), adding up to the card.
   const [figureSlider, setFigureSlider] = useState<FigureSliderConfig | null>(null);
+  // Slider of a card's orders grouped by Deere PO (Open orders, Partial outbound, Outbound).
+  const [poSlider, setPoSlider] = useState<PoSliderConfig | null>(null);
 
   const canUpload = can(me, "orders", "edit");
   const header = (
@@ -210,7 +213,7 @@ export default function DashboardPage() {
         {/* Operations (Dashboard::Overview). */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           <StatCard label="Open orders" info={<>Firm and Order orders <b>not yet delivered to Deere</b>, counted row by row as the Orders page lists them (each row of a combined order counts, and orders kept from an older Deere file too). The amount is their value.</>} icon={<FileIcon size={16} />} tint="neutral"
-                    onClick={() => setOrdersSlider({ title: "Open orders", description: "Firm and Order orders not yet delivered to Deere", filters: { type: "Firm,Order" }, icon: <FileIcon size={18} /> })}
+                    onClick={() => setPoSlider({ title: "Open orders", description: "Firm and Order orders not yet delivered to Deere", filters: { type: "Firm,Order" }, icon: <FileIcon size={18} /> , view: "open" })}
                     value={formatCount(kpis.open.count)} detail={`${usd(kpis.open.value, true)} · Firm and Order`} />
           <StatCard label="Shipping in 30 days" info={<>Open orders with a <b>ship date from today to 30 days ahead</b>, and their value. They are listed in Next shipments.</>} icon={<CalendarIcon size={16} />} tint="violet"
                     onClick={() => setOrdersSlider({ title: "Shipping in 30 days", description: `Open orders due by ${formatDate(addDays(30))}`, filters: { type: "Firm,Order", timing: "next30" }, icon: <CalendarIcon size={18} /> , shipDate: true })}
@@ -219,16 +222,16 @@ export default function DashboardPage() {
                     onClick={() => setOrdersSlider({ title: "Past ship date", description: "Late open orders not dispatched yet", filters: { type: "Firm,Order", timing: "overdue", status: "none,received" }, icon: <AlertIcon size={18} /> , shipDate: true })}
                     value={formatCount(kpis.overdue.count)} detail={`${usd(kpis.overdue.value, true)} not dispatched yet`} />
           <StatCard label="PO coverage" info={<>Share of the <b>open order value that already has a vendor PO</b> (Generate PO). Below: open orders with a Qty and no PO yet.</>} icon={<CheckIcon size={16} />} tint="aqua"
-                    onClick={() => setOrdersSlider({ title: "Orders without vendor PO", description: "Open orders without a vendor PO generated yet", filters: { type: "Firm,Order", po: "none" }, icon: <CheckIcon size={18} /> })}
+                    onClick={() => setOrdersSlider({ title: "Orders without vendor PO", description: "Open orders without a vendor PO generated yet", filters: { type: "Firm,Order", po: "none" }, icon: <CheckIcon size={18} />, noVendorPo: true })}
                     value={`${kpis.po_coverage.percent.toLocaleString("en-US", { maximumFractionDigits: 1 })}%`}
                     detail={`${plural(kpis.po_coverage.without_po.count, "open order")} without a vendor PO`}>
             <Progress percent={kpis.po_coverage.percent} />
           </StatCard>
           <StatCard label="Partial outbound" info={<>Firm and Order orders with <b>part of the quantity delivered to Deere</b> on SASH Inc invoices. The remaining balance is still to deliver.</>} icon={<TruckIcon size={16} />} tint="amber"
-                    onClick={() => setOrdersSlider({ title: "Partial outbound", description: "Orders with part of the quantity delivered to Deere", filters: { status: "delivery" }, icon: <TruckIcon size={18} /> })}
+                    onClick={() => setPoSlider({ title: "Partial outbound", description: "Orders with part of the quantity delivered to Deere", filters: { status: "delivery" }, icon: <TruckIcon size={18} /> , view: "partial" })}
                     value={formatCount(listed.data?.partial_outbound ?? kpis.partial_outbound?.count ?? 0)} detail="Part delivered to Deere, as listed on Orders" />
           <StatCard label="Outbound (fulfilled)" info={<>Orders <b>delivered to Deere in full</b> (Outbound mark or fulfilled on SASH Inc invoices).</>} icon={<CheckIcon size={16} />} tint="inc"
-                    onClick={() => setOrdersSlider({ title: "Outbound (fulfilled)", description: "Orders delivered to Deere in full", filters: { status: "outbound" }, icon: <CheckIcon size={18} />, noVendorPo: true })}
+                    onClick={() => setPoSlider({ title: "Outbound (fulfilled)", description: "Orders delivered to Deere in full", filters: { status: "outbound" }, icon: <CheckIcon size={18} /> , view: "outbound" })}
                     value={formatCount(listed.data?.fulfilled ?? kpis.outbound?.count ?? 0)} detail="Delivered to Deere in full: the Orders fulfilled tab" />
         </div>
 
@@ -241,8 +244,15 @@ export default function DashboardPage() {
               <PieChart centerValue={formatMoney(supplier.in_inr.amount, "INR", true)} centerLabel="Total"
                         items={supplier.by_vendor_inr.map((v) => ({
                           label: v.vendor, value: Number(v.amount), display: formatMoney(v.amount, "INR", true),
-                          // The vendor opens its panel (parts, prices and details).
-                          node: v.vendor_id ? <RelatedLink kind="vendor" value={v.vendor} id={v.vendor_id} /> : undefined,
+                          // The vendor opens its open POs: each PO's part, Qty, price and value.
+                          node: v.vendor_id ? (
+                            <button type="button" title={`Open POs of ${v.vendor}`}
+                                    onClick={() => setFigureSlider({ kind: "supplier", vendor_id: v.vendor_id, title: v.vendor,
+                                                                     description: "Open vendor POs (not yet received at SASH Faridabad) with their cost", icon: <TruckIcon size={18} /> })}
+                                    className="max-w-full truncate text-left text-ink underline decoration-neutral-300 underline-offset-2 hover:text-accent hover:decoration-accent">
+                              {v.vendor}
+                            </button>
+                          ) : undefined,
                           hint: [formatMoney(v.amount, "INR"), ...v.foreign.map((f) => `from ${formatMoney(f.amount, f.currency)}`)].join(" "),
                         }))} />
             )}
@@ -251,10 +261,10 @@ export default function DashboardPage() {
 
         <div className="grid gap-5 lg:grid-cols-2 xl:grid-cols-3">
           <Card title="Order pipeline" info={<>Open orders by their <b>latest status</b>: No status → Received (at SASH Faridabad) → Dispatched (from Faridabad) → Inbound (at SASH US) → Partial outbound (part delivered to Deere). Orders delivered to Deere (Outbound) are no longer open.</>} description="Open orders by their latest status">
-            <Pipeline items={overview.pipeline} onSelect={(status) => setOrdersSlider({ title: `Pipeline: ${STATUS[status].label}`, description: STATUS[status].hint, filters: status === "outbound" ? { status: "outbound" } : { type: "Firm,Order", status }, icon: <TruckIcon size={18} /> })} />
+            <Pipeline items={overview.pipeline} onSelect={(status) => setOrdersSlider({ title: `Pipeline: ${STATUS[status].label}`, description: STATUS[status].hint, filters: status === "outbound" ? { status: "outbound" } : { type: "Firm,Order", status: status === "dispatched" ? "dispatch,dispatched" : status }, icon: <TruckIcon size={18} /> })} />
           </Card>
           <Card title="Ageing since Effective Firm Date" info={<>Open orders by <b>days since their Effective Firm Date</b>: 90+ red, 60–89 yellow, 30–59 green; under 30 days or no Effective Firm Date grey. The same colours as on the Orders page.</>} description="Open orders by days since their Effective Firm Date">
-            <Ageing items={overview.ageing} onSelect={(band) => setOrdersSlider({ title: `Ageing: ${AGE[band].label}`, description: `Open orders aged ${AGE[band].label} since Effective Firm Date`, filters: { type: "Firm,Order", age: band }, icon: <CalendarIcon size={18} /> })} />
+            <Ageing items={overview.ageing} onSelect={(band) => setOrdersSlider({ title: `Ageing: ${AGE[band].label}`, description: `Open orders aged ${AGE[band].label} since Effective Firm Date`, filters: { type: "Firm,Order", age: band }, icon: <CalendarIcon size={18} /> , firmDate: true })} />
           </Card>
           <OutlookChart points={overview.outlook} />
         </div>
@@ -271,6 +281,7 @@ export default function DashboardPage() {
 
         <SpendChart points={ytd.by_date} yearStart={ytd.from} />
       </div>
+      {poSlider && <PoSlider config={poSlider} onClose={() => setPoSlider(null)} />}
       {figureSlider && (
         <FigureSlider config={figureSlider} onClose={() => setFigureSlider(null)} onOpenOrder={(o) => setOrder({ ...o, value: "0", status: "none", po: false, order_placed: false, overdue: false })} />
       )}

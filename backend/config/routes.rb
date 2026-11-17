@@ -57,6 +57,7 @@ Rails.application.routes.draw do
         get :parts_summary
         get :fulfilment
         get :fulfilment_lines
+        get :po_groups
         get :ship_to_alerts
       end
     end

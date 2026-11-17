@@ -20,7 +20,7 @@ import { FileIcon } from "@/components/icons";
 //   ytd       YTD Customer Spend (GET /api/stats/ytd_orders): the order rows shipping from 1 April to today
 export type FigureSliderConfig =
   | { kind: "lines"; title: string; description?: string; icon?: ReactNode; figure: string; qtyLabel: string; business?: string; part_number?: string }
-  | { kind: "supplier"; title: string; description?: string; icon?: ReactNode }
+  | { kind: "supplier"; title: string; description?: string; icon?: ReactNode; vendor_id?: number } // vendor_id: one vendor's POs
   | { kind: "ytd"; title: string; description?: string; icon?: ReactNode };
 
 // One row of any of the three lists (the fields a kind does not have are absent).
@@ -78,7 +78,8 @@ export function FigureSlider({ config, onClose, onOpenOrder }: { config: FigureS
   const [direction, setDirection] = useState<SortDirection>("desc");
   const [page, setPage] = useState(1);
   // Searching, sorting and paging happen on the server, over all the rows.
-  const query = { ...(config.kind === "lines" ? { figure: config.figure, business: config.business, part_number: config.part_number } : {}),
+  const query = { ...(config.kind === "lines" ? { figure: config.figure, business: config.business, part_number: config.part_number }
+                     : config.kind === "supplier" ? { vendor_id: config.vendor_id } : {}),
                   q: q || undefined, sort, direction, page, per_page: 50 };
   const { data, error, loading } = useApi<FigureResponse>(ENDPOINT[config.kind], query);
 
@@ -112,7 +113,9 @@ export function FigureSlider({ config, onClose, onOpenOrder }: { config: FigureS
   const supplier = config.kind === "supplier";
   // Columns: Part, Qty, price and revenue; the Supplier list adds the vendor PO, vendor and price source, the others the
   // Deere PO. (No ship date, file or status: the card lists are about Qty and value.)
-  const columns = supplier ? 7 : 5;
+  // One vendor's POs (vendor chart): its name is the title, no Vendor column.
+  const oneVendor = config.kind === "supplier" && !!config.vendor_id;
+  const columns = supplier ? (oneVendor ? 6 : 7) : 5;
 
   return (
     <Sheet open wide onClose={onClose} title={config.title} description={config.description} icon={config.icon ?? <FileIcon size={18} />}>
@@ -142,11 +145,11 @@ export function FigureSlider({ config, onClose, onOpenOrder }: { config: FigureS
                 <thead>
                   <tr className="border-b border-line bg-neutral-50/75 text-2xs uppercase tracking-wider text-ink-muted">
                     {supplier && th("Vendor PO", "number")}
-                    {supplier && th("Vendor", "vendor")}
+                    {supplier && !oneVendor && th("Vendor", "vendor")}
                     {th("Part", "part_number")}
                     {!supplier && th("PO", "po_number")}
                     {th(lines ? config.qtyLabel : "Qty", "qty", "right")}
-                    {th(supplier ? "Price / pc" : "Price / 100", "price", "right")}
+                    {th("Price / pc", "price", "right")}
                     {th("Revenue", "value", "right")}
                     {supplier && th("Price from", "price_source")}
                   </tr>
@@ -158,7 +161,7 @@ export function FigureSlider({ config, onClose, onOpenOrder }: { config: FigureS
                       <tr key={`${r.id ?? "x"}-${r.manual ? "m" : "r"}-${i}`} onClick={() => order && onOpenOrder(order)}
                           className={order ? "cursor-pointer transition-colors hover:bg-neutral-50/80" : ""}>
                         {supplier && <td className="max-w-40 break-words px-3 py-2.5 text-xs font-medium text-ink">{r.number}</td>}
-                        {supplier && <td className="max-w-36 truncate px-3 py-2.5 text-xs text-ink" title={r.vendor ?? undefined}>
+                        {supplier && !oneVendor && <td className="max-w-36 truncate px-3 py-2.5 text-xs text-ink" title={r.vendor ?? undefined}>
                           {r.vendor && r.vendor_id ? <RelatedLink kind="vendor" value={r.vendor} id={r.vendor_id} /> : r.vendor}
                         </td>}
                         <td className="px-3 py-2.5">
@@ -178,7 +181,7 @@ export function FigureSlider({ config, onClose, onOpenOrder }: { config: FigureS
                         </td>}
                         <td className="tabular whitespace-nowrap px-3 py-2.5 text-right font-medium text-ink">{formatQty(r.qty)}</td>
                         <td className="tabular whitespace-nowrap px-3 py-2.5 text-right text-xs text-ink-muted">
-                          {r.price === null ? "—" : money(r.price, supplier ? r.currency : currency)}
+                          {r.price === null ? "—" : money(supplier ? r.price : Number(r.price) / 100, supplier ? r.currency : currency)}
                         </td>
 
                         <td className="tabular whitespace-nowrap px-3 py-2.5 text-right font-semibold text-ink">

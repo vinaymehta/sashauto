@@ -7,6 +7,8 @@ module Api
     # The open vendor POs behind the Dashboard's Total Open Value (Supplier), one row each (Dashboard::Money#supplier_rows).
     def supplier_orders
       rows = money.supplier_rows
+      # One vendor's POs (the Dashboard's vendor chart).
+      rows = rows.select { |r| r[:vendor_id] == params[:vendor_id].to_i } if params[:vendor_id].present?
       found, page, meta = search_sort_page(rows, search: %i[number vendor part_number description po_number price_source], numeric: %i[qty price value],
                                                  default_sort: "value")
       # Totals per currency of the POs found (all pages).

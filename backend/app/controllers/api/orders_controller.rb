@@ -149,9 +149,82 @@ module Api
       (row.qty.to_d * BigDecimal(text) / (charge_parts.include?(row.part_number) ? 1 : 100)).round(2).to_s("F")
     end
 
+    # Deere's latest files (one per business): [current price by [business, PO, Part] and by [business, Part] (per 100
+    # pcs, as in the file), Cumulative Receipt Qty by [business, PO, Part, PO Line]].
+    def current_prices
+      @current_prices ||= begin
+        batches = UploadBatch.latest_for("all").to_h { |b| [ b.id, b.business ] }
+        prices = {}
+        receipts = {}
+        OrderRow.where(upload_batch_id: batches.keys).order(:upload_batch_id, :source_row_number)
+                .pluck(:upload_batch_id, :po_number, :part_number, :po_line_number,
+                       Arel.sql("source_data->>'Unit Price'"), Arel.sql("source_data->>'Cumulative Receipt Qty'")).each do |batch, po, part, line, unit, received|
+          business = batches[batch]
+          text = unit.to_s.delete(",").strip
+          if text.match?(/\A\d+(\.\d+)?\z/) && BigDecimal(text).positive?
+            prices[[ business, po, part ]] ||= BigDecimal(text)
+            prices[[ business, part ]] ||= BigDecimal(text)
+          end
+          qty = received.to_s.delete(",").strip
+          key = [ business, po, part, line ]
+          # Every PO line in the file gets an entry (blank = nothing received), so only a line Deere dropped has none.
+          receipts[key] = [ receipts[key] || 0.to_d, qty.match?(/\A\d+(\.\d+)?\z/) ? BigDecimal(qty) : 0.to_d ].max
+        end
+        [ prices, receipts ]
+      end
+    end
+
     # Part Numbers of charges (freight; Product.charge_parts), once per request.
     def charge_parts
       @charge_parts ||= Product.charge_parts(Product.pluck(:part_number))
+    end
+
+    # The orders the Orders list shows for its filters (as #index: search, type, status, timing, `dashboard`…) grouped by
+    # PO Number: each PO with its parts, order lines, Qty, revenue (Qty × Unit Price ÷ 100) and ship dates. Searched,
+    # sorted and paged on the server (#search_sort_page); totals of every PO found.
+    def po_groups
+      batches = selected_batches
+      combined = Orders::Combiner.for_batches(batches.map(&:id))
+      load_combined_orders(combined)
+      @moq_parts = Orders::MoqBalance.needs(batches.map(&:id))
+      scope = filter(search(dataset(batches), ""), combined).unscope(:order)
+      groups = scope.group("order_rows.po_number").pluck(
+        "order_rows.po_number", Arel.sql("COUNT(*)"), Arel.sql("array_agg(DISTINCT order_rows.part_number ORDER BY order_rows.part_number)"),
+        Arel.sql("SUM(COALESCE(order_rows.qty, 0))"), Arel.sql("SUM(#{revenue_sql})"), Arel.sql("MIN(order_rows.ship_date)"),
+        Arel.sql("MAX(order_rows.ship_date)"), Arel.sql("bool_or(order_rows.kept)")
+      ).map do |po, lines, parts, qty, revenue, first, last, kept|
+        { po_number: po, lines: lines, parts: parts.compact, part_count: parts.compact.size, qty: qty.to_d, revenue: revenue&.to_d&.round(2),
+          first_ship: first, last_ship: last, kept: kept }
+      end
+      # Qty delivered to John Deere (SASH Inc invoices) on each PO's rows, by each row's own order key.
+      rows = scope.pluck("order_rows.id", "order_rows.po_number", "order_rows.group_key", "order_rows.po_line_number", "order_rows.ship_date", "order_rows.manual",
+                         "order_rows.part_number", Arel.sql("order_rows.source_data->>'Unit Price'"), "order_rows.business")
+      keys = rows.map { |id, _, group, line, ship, manual| manual ? VendorOrderPlacement.order_key(ManualOrder.new(id: id)) : Digest::SHA256.hexdigest([ group, line, ship.iso8601 ].join(OrderRows::Normalizer::KEY_SEPARATOR)) }
+      progress = Invoices::Progress.for_keys(keys)
+      delivered = Hash.new(0.to_d)
+      delivered_value = Hash.new(0.to_d)
+      # Delivered value as the Delivered to Deere card counts it: at John Deere's current price (#current_prices), freight
+      # (a charge) left out.
+      current, = current_prices
+      rows.each_with_index do |(_, po, _, _, _, _, part, unit, business), i|
+        qty = progress[keys[i]]&.outbound || 0
+        delivered[po] += qty
+        next if charge_parts.include?(part)
+
+        own = unit.to_s.gsub(/[^0-9.]/, "")
+        price = current[[ business, po, part ]] || current[[ business, part ]] || (BigDecimal(own) if own.match?(/\A\d+(\.\d+)?\z/))
+        delivered_value[po] += qty * price / 100 if price
+      end
+      groups.each { |g| g[:delivered] = delivered[g[:po_number]]; g[:delivered_value] = delivered_value[g[:po_number]].round(2) }
+      found, page, meta = search_sort_page(groups, search: %i[po_number parts], numeric: %i[lines part_count qty revenue delivered delivered_value], default_sort: "revenue")
+      render json: {
+        data: page.map { |g| g.merge(qty: Serializers.qty(g[:qty]), delivered: Serializers.qty(g[:delivered]), delivered_value: g[:delivered_value].to_s("F"), revenue: g[:revenue]&.to_s("F")) },
+        meta: meta,
+        totals: { pos: found.size, lines: found.sum { |g| g[:lines] }, qty: Serializers.qty(found.sum(0.to_d) { |g| g[:qty] }),
+                  delivered: Serializers.qty(found.sum(0.to_d) { |g| g[:delivered] }),
+                  delivered_value: found.sum(0.to_d) { |g| g[:delivered_value] }.round(2).to_s("F"),
+                  revenue: found.sum(0.to_d) { |g| g[:revenue] || 0 }.round(2).to_s("F") }
+      }
     end
 
     # Cards above the Orders table, for the current order data (latest upload, kept rows + manual orders), counting rows of the

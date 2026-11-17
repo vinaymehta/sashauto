@@ -57,7 +57,7 @@ module Dashboard
       @order_placed = VendorOrderPlacement.order_placed_keys(placed.to_a)
       {
         kpis: kpis(open, placed),
-        pipeline: PIPELINE_STATUSES.map { |s| bucket(open.select { |o| (status[o.key] || "none") == s }).merge(status: s) },
+        pipeline: pipeline(open),
         ageing: ageing(open),
         outlook: outlook(orders),
         top_parts: top_parts(open, status, placed),
@@ -78,9 +78,22 @@ module Dashboard
     # shipped nothing of it: #list_lines), or further its own uploaded invoices (Invoices::Progress, by its own Qty).
     def row_status(order, key, qty)
       listed, named = list_lines
-      mark = order.rows > 1 && listed.include?(order.key) && !named.include?(key) ? nil : marks[order.key]
+      # A combined order's row the dispatched orders list does not name has sent nothing: of the combined order's marks
+      # only a Received set by hand is its own (as OrdersController#mark_status_sql).
+      mark = if order.rows > 1 && listed.include?(order.key) && !named.include?(key)
+        "received" if hand_received.include?(order.key)
+      else
+        marks[order.key]
+      end
       own = row_progress[key]&.status(qty)
       [ mark, own ].compact.max_by { |k| STATUSES.index(k) || 0 }
+    end
+
+    # Order keys with an active Received mark set by hand (not by the dispatched orders list), once.
+    def hand_received
+      @hand_received ||= OrderDelivery.active.where(kind: "received")
+                                      .where.not("note LIKE ?", "#{Api::OrdersController::LIST_RECEIVED_NOTE}%").or(OrderDelivery.active.where(kind: "received", note: nil))
+                                      .distinct.pluck(:order_key).to_set
     end
 
     # The order with only its rows for which the block is true (rows, Qty and value theirs); nil when none is.
@@ -309,6 +322,20 @@ module Dashboard
         product_id: prod&.id,
         image_url: img ? "/api/products/#{prod.id}/images/#{img.id}" : nil,
         images: prod ? Serializers.product_images(prod) : [] }
+    end
+
+    # Open orders by status, row by row as the Orders list's Status filter counts them (#row_status: a combined order's
+    # rows each by their own; part dispatched counts as Dispatched), so a step and the list it opens agree.
+    def pipeline(open)
+      steps = PIPELINE_STATUSES.index_with { [] }
+      open.each do |o|
+        o.members.each do |key, value, qty|
+          s = row_status(o, key, qty) || "none"
+          s = "dispatched" if s == "dispatch"
+          (steps[s] ||= []) << value
+        end
+      end
+      PIPELINE_STATUSES.map { |s| { count: steps[s].size, value: money(steps[s].sum(BigDecimal("0"))), status: s } }
     end
 
     def bucket(list)
