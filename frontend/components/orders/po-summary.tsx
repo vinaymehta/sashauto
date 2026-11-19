@@ -112,14 +112,15 @@ export function PoSummaryPanel({ po, uploadId }: { po: string; uploadId?: number
                   <SortTh label="Line" sortKey="po_line_number" sort={lineSort} direction={lineDir} onSort={toggleSort} className="px-5 py-2 font-semibold" />
                   <SortTh label="Part Number" sortKey="part_number" sort={lineSort} direction={lineDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
                   <SortTh label="Type" sortKey="order_type" sort={lineSort} direction={lineDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
-                  <SortTh label="File" sortKey="file" sort={lineSort} direction={lineDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
                   <SortTh label="Ship date" sortKey="ship_date" sort={lineSort} direction={lineDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
                   <SortTh label="Status" sortKey="status" sort={lineSort} direction={lineDir} onSort={toggleSort} className="px-3 py-2 font-semibold" />
                   <SortTh label="Ordered" sortKey="ordered" align="right" sort={lineSort} direction={lineDir} onSort={toggleSort} className="px-2 py-2 text-right font-semibold" />
                   <SortTh label="Pending" sortKey="pending" align="right" sort={lineSort} direction={lineDir} onSort={toggleSort} className="px-2 py-2 text-right font-semibold" />
                   <SortTh label="Dispatched" sortKey="dispatched" align="right" sort={lineSort} direction={lineDir} onSort={toggleSort} className="px-2 py-2 text-right font-semibold" />
                   <SortTh label="Delivered" sortKey="delivered" align="right" sort={lineSort} direction={lineDir} onSort={toggleSort} className="px-2 py-2 text-right font-semibold" />
-                  <SortTh label="Revenue" sortKey="revenue" align="right" sort={lineSort} direction={lineDir} onSort={toggleSort} className="px-5 py-2 text-right font-semibold" />
+                  <SortTh label="Revenue" sortKey="revenue" align="right" sort={lineSort} direction={lineDir} onSort={toggleSort} className="px-3 py-2 text-right font-semibold" />
+                  {/* File: the last column. */}
+                  <SortTh label="File" sortKey="file" sort={lineSort} direction={lineDir} onSort={toggleSort} className="px-5 py-2 font-semibold" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
@@ -131,16 +132,16 @@ export function PoSummaryPanel({ po, uploadId }: { po: string; uploadId?: number
                       {l.description && <span className="block max-w-48 truncate text-xs text-ink-muted" title={l.description}>{l.description}</span>}
                     </td>
                     <td className="px-3 py-2 text-ink">{l.order_type}</td>
-                    <td className="whitespace-nowrap px-3 py-2">
-                      <FileCell line={l} />
-                    </td>
                     <td className="whitespace-nowrap px-3 py-2 text-ink">{formatDate(l.ship_date)}</td>
                     <td className="px-3 py-2"><StatusPill kind={l.status} /></td>
                     <td className="px-2 py-2 text-right tabular text-ink">{formatQty(l.ordered)}</td>
                     <td className={`px-2 py-2 text-right tabular font-semibold ${Number(l.pending) > 0 ? "text-amber-700" : "text-ink-faint"}`}>{formatQty(l.pending)}</td>
                     <td className="px-2 py-2 text-right tabular text-violet-700">{formatQty(l.dispatched)}</td>
                     <td className="px-2 py-2 text-right tabular text-green-700">{formatQty(l.delivered)}</td>
-                    <td className="px-5 py-2 text-right tabular text-ink">{l.unpriced ? <span className="text-ink-faint">—</span> : money(l.revenue_ordered)}</td>
+                    <td className="px-3 py-2 text-right tabular text-ink">{l.unpriced ? <span className="text-ink-faint">—</span> : money(l.revenue_ordered)}</td>
+                    <td className="whitespace-nowrap px-5 py-2">
+                      <FileCell line={l} />
+                    </td>
                   </tr>
                 ))}
               </tbody>

@@ -191,10 +191,12 @@ module Api
       groups = scope.group("order_rows.po_number").pluck(
         "order_rows.po_number", Arel.sql("COUNT(*)"), Arel.sql("array_agg(DISTINCT order_rows.part_number ORDER BY order_rows.part_number)"),
         Arel.sql("SUM(COALESCE(order_rows.qty, 0))"), Arel.sql("SUM(#{revenue_sql})"), Arel.sql("MIN(order_rows.ship_date)"),
-        Arel.sql("MAX(order_rows.ship_date)"), Arel.sql("bool_or(order_rows.kept)")
-      ).map do |po, lines, parts, qty, revenue, first, last, kept|
+        Arel.sql("MAX(order_rows.ship_date)"), Arel.sql("bool_or(order_rows.kept)"), Arel.sql("bool_and(order_rows.kept)"), Arel.sql("bool_or(order_rows.manual)")
+      ).map do |po, lines, parts, qty, revenue, first, last, kept, all_kept, manual|
         { po_number: po, lines: lines, parts: parts.compact, part_count: parts.compact.size, qty: qty.to_d, revenue: revenue&.to_d&.round(2),
-          first_ship: first, last_ship: last, kept: kept }
+          first_ship: first, last_ship: last, kept: kept,
+          # File: where the PO's order lines are (Deere's latest file, older files kept on Orders, manual orders).
+          file: if manual && !kept then "Manual order" elsif all_kept then "Old file" elsif kept then "Latest + old file" else "Latest" end }
       end
       # Qty delivered to John Deere (SASH Inc invoices) on each PO's rows, by each row's own order key.
       rows = scope.pluck("order_rows.id", "order_rows.po_number", "order_rows.group_key", "order_rows.po_line_number", "order_rows.ship_date", "order_rows.manual",

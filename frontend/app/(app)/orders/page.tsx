@@ -221,7 +221,8 @@ function buildColumns(columns: { key: string; label: string }[], uploadId?: numb
 // The Orders table columns a user sees until they choose their own (Columns; its Default button goes back to them): ten
 // at most, with every clickable column: Status (marks), PO Number (Order details), Part Number (Product summary) and
 // Unit (Place order: Generate PO).
-const DEFAULT_COLUMNS = ["status", "type", "file", "firm_date", "ship_date", "po_number", "part_number", "part_description", "unit", "qty", "balance_qty"];
+// File comes last by default (a user can still move it: Columns panel or dragging the header).
+const DEFAULT_COLUMNS = ["status", "type", "firm_date", "ship_date", "po_number", "part_number", "part_description", "unit", "qty", "balance_qty", "file"];
 
 // Delivery tabs: the order rows with a fixed Status. Dispatched = part (Dispatch) or all (Dispatched) dispatched from
 // SASH Faridabad (SASH India invoices) but not yet at SASH US, Orders fulfilled = delivered to Deere.

@@ -87,12 +87,12 @@ module Dashboard
         rows = OrderRow.from(latest, :order_rows).where("order_rows.upload_batch_id = order_rows.latest_batch_id")
                        .where(upload_batch_id: UploadBatch.where(business: @overview.businesses).select(:id))
                        .where.not(Business.dashboard_excluded_sql("(SELECT b.business FROM upload_batches b WHERE b.id = order_rows.upload_batch_id)", "order_rows.po_number", "order_rows.part_number"))
-                       .pluck(:group_key, :po_line_number, :part_number, :qty, :ship_date, Arel.sql("source_data->>'Unit Price'"), :id, :po_number, :order_type)
-                       .map { |g, line, part, qty, ship, price, id, po, type| [ order_key(g, line, ship), Sale.new(part, qty, price, ship), { id: id, manual: false, po_number: po, po_line_number: line, order_type: type } ] }
+                       .pluck(:group_key, :po_line_number, :part_number, :qty, :ship_date, Arel.sql("source_data->>'Unit Price'"), :id, :po_number, :order_type, :upload_batch_id)
+                       .map { |g, line, part, qty, ship, price, id, po, type, batch| [ order_key(g, line, ship), Sale.new(part, qty, price, ship), { id: id, manual: false, po_number: po, po_line_number: line, order_type: type, file: file_label(batch) } ] }
         manual = ManualOrder.active.where(business: @overview.businesses, order_type: TYPES, ship_date: series_from..@today)
                             .where.not(Business.dashboard_excluded_sql("manual_orders.business", "manual_orders.po_number", "manual_orders.part_number"))
                             .pluck(:id, :part_number, :qty, Arel.sql("source_data->>'Unit Price'"), :ship_date, :po_number, :po_line_number, :order_type)
-                            .map { |id, part, qty, price, ship, po, line, type| [ VendorOrderPlacement.order_key(ManualOrder.new(id: id)), Sale.new(part, qty, price, ship), { id: id, manual: true, po_number: po, po_line_number: line, order_type: type } ] }
+                            .map { |id, part, qty, price, ship, po, line, type| [ VendorOrderPlacement.order_key(ManualOrder.new(id: id)), Sale.new(part, qty, price, ship), { id: id, manual: true, po_number: po, po_line_number: line, order_type: type, file: file_label(nil, manual: true) } ] }
         sales = rows + manual
         values = values_of(sales.map { |s| s[1] })
         descriptions = Product.where(part_number: sales.map { |s| s[1].part }.uniq).pluck(:part_number, :description).to_h
@@ -167,7 +167,7 @@ module Dashboard
         { id: o.id, number: o.number, vendor: o.vendor.name, vendor_id: o.vendor_id, po_number: pl.po_number, po_line_number: pl.po_line_number,
           part_number: pl.part_number || pl.product&.part_number, description: pl.product&.description, ship_date: pl.ship_date,
           qty: o.qty, price: price, currency: currency.presence || "INR", price_source: source, value: price && o.qty * price,
-          order_row_id: pl.order_row_id, manual_order_id: pl.manual_order_id }
+          order_row_id: pl.order_row_id, manual_order_id: pl.manual_order_id, file: file_label(pl.upload_batch_id, manual: pl.manual_order_id.present?) }
       end
     end
 
@@ -197,6 +197,19 @@ module Dashboard
       definition = AppSetting::DEFINITIONS.find { |d| d.key == "RATE_#{currency}" } or return nil
       value = number(AppConfig.setting(definition.key, definition.default))
       value&.positive? ? value : nil
+    end
+
+    # File of an order (the Dashboard lists' File column): "Latest" for Deere's latest file of its business, "Old file ·
+    # day" for an older upload, "Manual order" for a manual one.
+    def file_label(batch_id, manual: false)
+      return "Manual order" if manual || batch_id.nil?
+
+      @latest_batch_ids ||= UploadBatch.latest_for("all").map(&:id).to_set
+      return "Latest" if @latest_batch_ids.include?(batch_id)
+
+      @batch_days ||= {}
+      @batch_days[batch_id] ||= UploadBatch.find_by(id: batch_id)&.completed_at&.in_time_zone(AppConfig.ageing_time_zone)&.to_date
+      "Old file#{@batch_days[batch_id] ? " · #{@batch_days[batch_id].strftime('%d %b %Y')}" : ''}"
     end
 
     def money(value)

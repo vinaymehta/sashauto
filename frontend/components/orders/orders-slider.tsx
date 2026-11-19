@@ -94,7 +94,7 @@ export function OrdersSlider({ config, onClose, onOpenOrder }: OrdersSliderProps
   const showShip = Boolean(config.shipDate);
   const showVendorPo = !config.noVendorPo;
   const showFirm = Boolean(config.firmDate);
-  const columns = 5 + (showShip ? 1 : 0) + (showVendorPo ? 1 : 0) + (showFirm ? 1 : 0);
+  const columns = 6 + (showShip ? 1 : 0) + (showVendorPo ? 1 : 0) + (showFirm ? 1 : 0); // + File
 
   // Build link to full orders page with current filters
   const fullPageParams = new URLSearchParams();
@@ -222,6 +222,7 @@ export function OrdersSlider({ config, onClose, onOpenOrder }: OrdersSliderProps
                     <SortTh label="Price" sortKey="unit_price" align="right" sort={sort} direction={direction} onSort={toggleSort} className="px-3 py-2.5" />
                     <SortTh label="Revenue" sortKey="revenue" align="right" sort={sort} direction={direction} onSort={toggleSort} className="px-3 py-2.5" />
                     {showVendorPo && <SortTh label="Vendor PO" sortKey="vendor_po" sort={sort} direction={direction} onSort={toggleSort} className="py-2.5 pl-3 pr-4" />}
+                    <th className="px-3 py-2.5">File</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-100">
@@ -316,6 +317,13 @@ export function OrdersSlider({ config, onClose, onOpenOrder }: OrdersSliderProps
                             <Badge tone="warn">No vendor PO</Badge>
                           )}
                         </td>}
+
+                        {/* File: always the last column. */}
+                        <td className="whitespace-nowrap px-3 py-2.5 text-xs">
+                          {r.manual ? <span className="text-ink-muted">Manual order</span>
+                            : r.kept ? <span className="font-medium text-age-yellow-ink">Old file{r.file_day ? ` · ${formatDate(r.file_day)}` : ""}</span>
+                            : <span className="text-inc">Latest</span>}
+                        </td>
                       </tr>
                     );
                   })}

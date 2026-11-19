@@ -23,7 +23,7 @@ export interface PoSliderConfig {
   view: "open" | "partial" | "outbound";
 }
 
-interface PoGroup { po_number: string; lines: number; parts: string[]; part_count: number; qty: string; delivered: string; delivered_value: string; revenue: string | null; kept: boolean; first_ship: string | null }
+interface PoGroup { po_number: string; lines: number; parts: string[]; part_count: number; qty: string; delivered: string; delivered_value: string; revenue: string | null; kept: boolean; first_ship: string | null; file: string }
 interface PoResponse {
   data: PoGroup[];
   meta: { page: number; total: number; total_pages: number; from: number; to: number };
@@ -51,7 +51,7 @@ export function PoSlider({ config, onClose }: { config: PoSliderConfig; onClose:
     <SortTh label={label} sortKey={key} sort={sort} direction={direction} onSort={onSort} align={align} className="whitespace-nowrap px-4 py-2.5" />
   );
   const rows = data?.data ?? [];
-  const columnCount = config.view === "partial" ? 7 : 6;
+  const columnCount = (config.view === "partial" ? 7 : 6) + 1; // + File
   const meta = data?.meta;
   const t = data?.totals;
 
@@ -75,7 +75,7 @@ export function PoSlider({ config, onClose }: { config: PoSliderConfig; onClose:
         {error ? (
           <Alert title="Could not load the POs">{error.message}</Alert>
         ) : !data && loading ? (
-          <div className="overflow-hidden rounded-lg border border-line bg-white shadow-card"><TableSkeleton rows={10} columns={7} /></div>
+          <div className="overflow-hidden rounded-lg border border-line bg-white shadow-card"><TableSkeleton rows={10} columns={8} /></div>
         ) : !data || rows.length === 0 ? (
           <div className="rounded-lg border border-line bg-white py-12">
             <EmptyState title="No POs" description={q ? "No PO matches your search." : "No orders make up this card."} />
@@ -94,6 +94,7 @@ export function PoSlider({ config, onClose }: { config: PoSliderConfig; onClose:
                     {config.view === "open" && th("First ship date", "first_ship")}
                     {config.view !== "outbound" && th(config.view === "partial" ? "Open revenue" : "Revenue", "revenue", "right")}
                     {config.view !== "open" && th("Delivered value", "delivered_value", "right")}
+                    {th("File", "file")}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-100">
@@ -114,6 +115,8 @@ export function PoSlider({ config, onClose }: { config: PoSliderConfig; onClose:
                       {config.view === "open" && <td className="tabular whitespace-nowrap px-4 py-3 text-ink">{g.first_ship ? formatDate(g.first_ship) : "—"}</td>}
                       {config.view !== "outbound" && <td className="tabular whitespace-nowrap px-4 py-3 text-right font-semibold text-ink">{g.revenue === null ? "—" : dollars(g.revenue)}</td>}
                       {config.view !== "open" && <td className="tabular whitespace-nowrap px-4 py-3 text-right font-semibold text-green-700">{dollars(g.delivered_value)}</td>}
+                      {/* File: always the last column. */}
+                      <td className={`whitespace-nowrap px-4 py-3 text-xs ${g.file.startsWith("Old") || g.file.includes("old") ? "font-medium text-age-yellow-ink" : g.file === "Latest" ? "text-inc" : "text-ink-muted"}`}>{g.file}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -115,7 +115,7 @@ export function FigureSlider({ config, onClose, onOpenOrder }: { config: FigureS
   // Deere PO. (No ship date, file or status: the card lists are about Qty and value.)
   // One vendor's POs (vendor chart): its name is the title, no Vendor column.
   const oneVendor = config.kind === "supplier" && !!config.vendor_id;
-  const columns = supplier ? (oneVendor ? 6 : 7) : 5;
+  const columns = (supplier ? (oneVendor ? 6 : 7) : 5) + 1; // + File
 
   return (
     <Sheet open wide onClose={onClose} title={config.title} description={config.description} icon={config.icon ?? <FileIcon size={18} />}>
@@ -152,6 +152,7 @@ export function FigureSlider({ config, onClose, onOpenOrder }: { config: FigureS
                     {th("Price / pc", "price", "right")}
                     {th("Revenue", "value", "right")}
                     {supplier && th("Price from", "price_source")}
+                    {th("File", "file")}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-100">
@@ -189,6 +190,10 @@ export function FigureSlider({ config, onClose, onOpenOrder }: { config: FigureS
                         </td>
                         {supplier && <td className={`max-w-40 truncate px-3 py-2.5 text-xs ${r.price_source?.startsWith("Other vendor") || r.price_source === "No price" ? "font-medium text-amber-700" : "text-ink-muted"}`}
                                          title={r.price_source}>{r.price_source}</td>}
+                        {/* File: always the last column. */}
+                        <td className="whitespace-nowrap px-3 py-2.5 text-xs" title={r.file_name ?? undefined}>
+                          <span className={r.file?.startsWith("Old") ? "font-medium text-age-yellow-ink" : r.file === "Latest" ? "text-inc" : "text-ink-muted"}>{r.file ?? "—"}</span>
+                        </td>
                       </tr>
                     );
                   })}
