@@ -29,7 +29,8 @@ module Dashboard
     # One listed order: its anchor row (or manual order), every row's value summed, and the keys of its marks.
     # unpriced: a row of it has no Unit Price (nor a customer price), so its value leaves that row out. rows: its rows of the
     # order file (1 unless combined).
-    # members: [row key, value, Qty] of each row (a combined order's in it; a manual order's own).
+    # members: [row key, value, Qty, open] of each row (a combined order's in it; a manual order's own); open: whether
+    # Deere still lists Qty open on it (a kept row and a row at Qty 0 are not), as the Sale card's list counts lines.
     Order = Data.define(:id, :manual, :key, :firm_key, :po_number, :po_line_number, :part_number, :order_type, :ship_date, :qty, :value, :unpriced,
                         :rows, :members)
 
@@ -76,6 +77,8 @@ module Dashboard
 
     # A row's status as the Orders list shows it: its order's furthest status mark (a combined order's, unless the row
     # shipped nothing of it: #list_lines), or further its own uploaded invoices (Invoices::Progress, by its own Qty).
+    # A row Deere's latest file still lists with Qty open is not delivered in full: its invoices make it Partial
+    # outbound (delivery), not Outbound (as OrdersController#invoice_info).
     def row_status(order, key, qty)
       listed, named = list_lines
       # A combined order's row the dispatched orders list does not name has sent nothing: of the combined order's marks
@@ -86,6 +89,8 @@ module Dashboard
         marks[order.key]
       end
       own = row_progress[key]&.status(qty)
+      own = "delivery" if own == "outbound" && deere_open?(order, qty)
+      own = "outbound" if own == "delivery" && deere_closed?(order, qty)
       [ mark, own ].compact.max_by { |k| STATUSES.index(k) || 0 }
     end
 
@@ -94,6 +99,17 @@ module Dashboard
       @hand_received ||= OrderDelivery.active.where(kind: "received")
                                       .where.not("note LIKE ?", "#{Api::OrdersController::LIST_RECEIVED_NOTE}%").or(OrderDelivery.active.where(kind: "received", note: nil))
                                       .distinct.pluck(:order_key).to_set
+    end
+
+    # Whether a row of `order` is still open in Deere's latest file (Qty above 0; not a manual order nor a kept row).
+    def deere_open?(order, qty)
+      !order.manual && !@kept_ids.include?(order.id) && qty.to_d.positive?
+    end
+
+    # Whether a row of `order` is in Deere's latest file with Qty 0: delivered on it is all Deere wants there, so its
+    # invoices make it Outbound (as OrdersController#invoice_info).
+    def deere_closed?(order, qty)
+      !order.manual && !@kept_ids.include?(order.id) && qty.to_d.zero?
     end
 
     # The order with only its rows for which the block is true (rows, Qty and value theirs); nil when none is.
@@ -153,7 +169,9 @@ module Dashboard
       rows.reject! { |r| Business.dashboard_excluded?(business_of[r[9]], r[2], r[4]) }
       prices = price_lookup(rows.map { |r| r[4] })
       charges = Product.charge_parts(rows.map { |r| r[4] })
-      values = rows.to_h { |r| [ r[0], value(r[7], r[8], prices[r[4]], charge: charges.include?(r[4])) ] }
+      # Values are what Deere still has open (its latest files' Qty, as Pending as per DTP): a kept row is listed (and
+      # counted) for its shipments, but Deere no longer lists it, so nothing of it is open in value.
+      values = rows.to_h { |r| [ r[0], @kept_ids.include?(r[0]) ? BigDecimal("0") : value(r[7], r[8], prices[r[4]], charge: charges.include?(r[4])) ] }
       groups = rows.group_by { |r| anchor_of[r[0]] || r[0] }
       row_key = ->(r) { Digest::SHA256.hexdigest([ r[1], r[3], r[6].iso8601 ].join(OrderRows::Normalizer::KEY_SEPARATOR)) }
       groups.map do |anchor_id, members|
@@ -165,7 +183,7 @@ module Dashboard
                   ship_date: members.map { |m| m[6] }.max, # a combined order ships with its last order
                   qty: members.sum { |m| m[7].to_d }, value: members.filter_map { |m| values[m[0]] }.sum(BigDecimal("0")),
                   unpriced: members.any? { |m| values[m[0]].nil? }, rows: members.size,
-                  members: members.map { |m| [ row_key.(m), values[m[0]] || BigDecimal("0"), m[7].to_d ] })
+                  members: members.map { |m| [ row_key.(m), values[m[0]] || BigDecimal("0"), m[7].to_d, !@kept_ids.include?(m[0]) && m[7].to_d.positive? ] })
       end + manual_orders
     end
 
@@ -179,16 +197,24 @@ module Dashboard
         amount = value(qty, price, prices[part], charge: charges.include?(part))
         Order.new(id: id, manual: true, key: key, firm_key: key, po_number: po, po_line_number: line, part_number: part, order_type: type,
                   ship_date: ship, qty: qty.to_d, value: amount || BigDecimal("0"), unpriced: amount.nil?, rows: 1,
-                  members: [ [ key, amount || BigDecimal("0"), qty.to_d ] ])
+                  members: [ [ key, amount || BigDecimal("0"), qty.to_d, qty.to_d.positive? ] ])
       end
     end
 
     # order key => furthest status, for the Firm / Order orders listed: its furthest active status mark, or further its
-    # uploaded invoices' (see #invoice_statuses).
+    # uploaded invoices' (see #invoice_statuses). An order with a row Deere still lists open is Partial outbound at most
+    # by its invoices (#deere_open?); one whose rows are all Outbound by their own (#row_status, #deere_closed?) is Outbound.
     def statuses
       @statuses ||= begin
-        keys = listed_orders.select { |o| TYPES.include?(o.order_type) }.map(&:key)
-        marks.merge(invoice_statuses(keys)) { |_, mark, invoice| [ mark, invoice ].max_by { |k| STATUSES.index(k) || 0 } }
+        orders = listed_orders.select { |o| TYPES.include?(o.order_type) }.index_by(&:key)
+        open = orders.values.select { |o| o.members.any? { |_, _, qty| deere_open?(o, qty) } }.to_set(&:key)
+        invoices = invoice_statuses(orders.keys).to_h do |key, s|
+          o = orders[key]
+          s = "delivery" if s == "outbound" && open.include?(key)
+          s = "outbound" if s == "delivery" && o && o.members.all? { |k, _, qty| row_status(o, k, qty) == "outbound" }
+          [ key, s ]
+        end
+        marks.merge(invoices) { |_, mark, invoice| [ mark, invoice ].max_by { |k| STATUSES.index(k) || 0 } }
       end
     end
 
@@ -260,7 +286,7 @@ module Dashboard
       {
         open: bucket(open),
         due_30: bucket(current(open).select { |o| o.ship_date >= @today && o.ship_date <= @today + 30 }),
-        overdue: late_rows(current(open)).then { |rows| { count: rows.size, value: money(rows.sum(BigDecimal("0"), &:last)) } },
+        overdue: late_rows(current(open)).then { |rows| { count: rows.size, value: money(rows.sum(BigDecimal("0")) { |m| m[1] }) } },
         po_coverage: { percent: total.positive? ? (covered.sum(BigDecimal("0"), &:value) / total * 100).round(1).to_f : 0.0,
                        covered: bucket(covered), without_po: bucket(without_po(open, placed)) },
         partial_outbound: bucket(firm_order.select { |o| statuses[o.key] == "delivery" }),

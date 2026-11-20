@@ -44,7 +44,8 @@ const moneyIn = (currency: string | null) => (v: string | number, compact = fals
   : new Intl.NumberFormat("en-US", { minimumFractionDigits: compact ? 0 : 2, maximumFractionDigits: compact ? 1 : 2, notation: compact ? "compact" : "standard" }).format(Number(v)));
 const useMoney = () => moneyIn(useContext(CurrencyContext));
 const plural = (n: number, word: string) => `${formatCount(n)} ${word}${n === 1 ? "" : "s"}`;
-const ordersText = (n: number, missing: number) => `${plural(n, "order")}${missing ? ` · ${formatCount(missing)} without a price` : ""}`;
+// Counted as the card's list counts: order lines (a combined order is several lines).
+const ordersText = (n: number, missing: number) => `${plural(n, "order line")}${missing ? ` · ${formatCount(missing)} without a price` : ""}`;
 
 const STATUS: Record<PipelineStatus, { label: string; hint: string; color: string }> = {
   none: { label: "No status", hint: "Not yet received at SASH Faridabad", color: "bg-neutral-400" },
@@ -196,14 +197,14 @@ export default function DashboardPage() {
               </Alert>
             </div>
           )}
-          <StatCard size="lg" label="Total Open Value (Sale)" info={<>Value of Deere orders <b>not yet delivered</b>: the Firm and Order rows the Orders page lists as open (latest upload, orders kept from an older Deere file, and manual orders), without a &quot;Delivered to Deere&quot; (Outbound) status. Value = Qty × Unit Price ÷ 100 (Deere prices are per 100 pcs), in the business&apos;s currency (Settings). Forecast is not counted.</>} icon={<BoxIcon size={16} />} tint="violet"
+          <StatCard size="lg" label="Total Open Value (Sale)" info={<>Value of Deere orders <b>not yet delivered</b>: the Firm and Order rows the Orders page lists as open (latest upload, orders kept from an older Deere file, and manual orders), without a &quot;Delivered to Deere&quot; (Outbound) status. Value = the Qty Deere still lists open × Unit Price ÷ 100 (Deere prices are per 100 pcs), so it equals Pending as per DTP; an order kept from an older Deere file is counted but has no open value. In the business&apos;s currency (Settings). Forecast is not counted.</>} icon={<BoxIcon size={16} />} tint="violet"
                     onClick={() => setFigureSlider({ kind: "lines", figure: "pending_dtp", qtyLabel: "Open Qty", title: "Total Open Value (Sale)", description: "The Qty John Deere still lists open on each order line, at its current price", icon: <BoxIcon size={18} /> })}
                     value={usd(sale.amount)}
                     detail={ordersText(sale.orders, sale.without_price)} />
           <StatCard size="lg" label="Total Open Value (Supplier)" info={<>Value of the vendor POs generated in the app whose order has <b>no status yet</b> (not received at SASH Faridabad). Value = PO quantity × the vendor&apos;s unit price. POs priced in USD, EUR or GBP are turned into rupees at the exchange rates in Admin Settings → Businesses.</>} icon={<TruckIcon size={16} />} tint="amber"
                     onClick={() => setFigureSlider({ kind: "supplier", title: "Total Open Value (Supplier)", description: "Vendor POs not yet received at SASH Faridabad, with the price used for each", icon: <TruckIcon size={18} /> })}
                     value={supplier.by_currency.length ? formatMoney(supplier.in_inr.amount, "INR") : "—"}
-                    detail={plural(supplier.orders, "order")} />
+                    detail={plural(supplier.orders, "vendor PO")} />
           <StatCard size="lg" label="YTD Customer Spend with SASH" info={<>Value of Deere&apos;s Firm and Order orders with a <b>ship date from 1 April</b> (start of the financial year) to today, from every upload (the latest version of each order) and manual orders. Value = Qty × Unit Price ÷ 100, in the business&apos;s currency (Settings).</>} icon={<CalendarIcon size={16} />} tint="aqua"
                     onClick={() => setFigureSlider({ kind: "ytd", title: "YTD Customer Spend with SASH", description: `John Deere's Firm and Order orders shipping from ${formatDate(ytd.from)} to ${formatDate(ytd.to)}`, icon: <CalendarIcon size={18} /> })}
                     value={usd(ytd.amount)}
@@ -812,7 +813,7 @@ function FulfilmentSection({ onSelectFigure }: { onSelectFigure?: (config: Figur
     );
   });
   return (
-    <Card title="Fulfilment" info={<>Totals of every Firm and Order order in the current order data, as the Product and PO summaries count them. Value = Qty × Deere Unit Price ÷ 100 (each order&apos;s own price).</>}>
+    <Card title="Fulfilment" info={<>Totals of every Firm and Order order in the current order data, as the Product and PO summaries count them. Value = Qty × Deere&apos;s current Unit Price ÷ 100 (the price in Deere&apos;s latest file, for older orders too). Freight is counted only in Pending as per DTP.</>}>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {figures.map((fig) => {
           const config = getFilter(fig.key);

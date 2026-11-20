@@ -58,7 +58,11 @@ interface FigureResponse {
   data: FigureRow[];
   meta: { page: number; per_page: number; total: number; total_pages: number; from: number; to: number };
   currency?: string | null;
-  totals: { qty: string; value?: string; by_currency?: { currency: string; amount: string }[] };
+  totals: {
+    qty: string; value?: string; by_currency?: { currency: string; amount: string }[];
+    // Supplier POs: one rupee total (Settings exchange rates), as the card shows it.
+    in_inr?: { amount: string; rates: Record<string, string>; not_converted: string[] };
+  };
 }
 
 // The order a row is for, to open its Order details (vendor POs: the order they were placed for).
@@ -95,9 +99,15 @@ export function FigureSlider({ config, onClose, onOpenOrder }: { config: FigureS
   const rows = data?.data ?? [];
   const meta = data?.meta;
   const currency = data?.currency ?? null;
-  const totalValue = data?.totals.by_currency
-    ? data.totals.by_currency.map((t) => money(t.amount, t.currency)).join(" + ") || "—"
-    : data?.totals.value !== undefined ? money(data.totals.value, currency) : "—";
+  // Supplier POs in several currencies: one rupee total, as the card; the amounts per currency and the rates on hover.
+  const inInr = data?.totals.in_inr;
+  const totalValue = inInr ? money(inInr.amount, "INR")
+    : data?.totals.by_currency ? data.totals.by_currency.map((t) => money(t.amount, t.currency)).join(" + ") || "—"
+      : data?.totals.value !== undefined ? money(data.totals.value, currency) : "—";
+  const totalTitle = inInr && data?.totals.by_currency && data.totals.by_currency.length > 1
+    ? `${data.totals.by_currency.map((t) => money(t.amount, t.currency)).join(" + ")} · ${Object.entries(inInr.rates).map(([c, r]) => `1 ${c} = ₹${r}`).join(", ")}`
+      + (inInr.not_converted.length ? ` · not in the total (no rate): ${inInr.not_converted.join(", ")}` : "")
+    : undefined;
 
   const orderOf = (r: FigureRow): FigureOrder | null => {
     const id = r.id !== null && config.kind !== "supplier" ? r.id : (r.order_row_id ?? r.manual_order_id ?? null);
@@ -125,7 +135,7 @@ export function FigureSlider({ config, onClose, onOpenOrder }: { config: FigureS
           {data && (
             <span className="text-sm text-ink-muted">
               <b className="text-ink">{formatQty(String(meta?.total ?? 0))}</b> {supplier ? "vendor POs" : "order lines"} ·{" "}
-              <b className="text-ink">{formatQty(data.totals.qty)}</b> pcs · <b className="text-ink">{totalValue}</b>
+              <b className="text-ink">{formatQty(data.totals.qty)}</b> pcs · <b className="text-ink" title={totalTitle}>{totalValue}</b>
             </span>
           )}
         </div>

@@ -33,18 +33,35 @@ module Dashboard
       { open_sale: open_sale, open_supplier: open_supplier, ytd_customer_spend: ytd_customer_spend }
     end
 
+    # One rupee total of supplier rows in several currencies (Settings exchange rates), as Total Open Value (Supplier)
+    # shows it: { amount, rates (currency => rupees), not_converted (currencies without a rate, left out) }.
+    def inr_total(rows)
+      priced = rows.select { |r| r[:value] }
+      rates = priced.map { |r| r[:currency] }.uniq.excluding("INR").to_h { |c| [ c, inr_rate(c) ] }
+      inr = ->(r) { r[:currency] == "INR" ? r[:value] : rates[r[:currency]] && r[:value] * rates[r[:currency]] }
+      converted = priced.select { |r| inr.(r) }
+      { amount: money(converted.sum(0.to_d) { |r| inr.(r) }), rates: rates.compact.transform_values { |v| v.to_s("F") },
+        not_converted: (priced - converted).map { |r| r[:currency] }.uniq }
+    end
+
     private
 
+    # Counted in order lines Deere still lists open (Qty above 0; not a kept row), as the card's list (Pending as per DTP).
     def open_sale
       open = @overview.open_orders
+      lines = ->(list) { list.sum { |o| o.members.count { |m| m[3] } } }
       totals(open.map { |o| [ o.ship_date, o.value, o.unpriced ] })
-        .merge(orders: open.sum(&:rows), without_price: open.select(&:unpriced).sum(&:rows))
+        .merge(orders: lines.(open), without_price: lines.(open.select(&:unpriced)))
     end
 
     def ytd_customer_spend
       from, orders = ytd_orders
-      ytd = orders.select { |o| o[:ship] >= from }.map { |o| [ o[:ship], o[:value], o[:unpriced] ] }
-      totals(ytd).merge(from: from, to: @today, series_from: from_series(from), by_date: by_date(orders.map { |o| [ o[:ship], o[:value], o[:unpriced] ] }))
+      shipped = orders.select { |o| o[:ship] >= from }
+      ytd = shipped.map { |o| [ o[:ship], o[:value], o[:unpriced] ] }
+      # Counted in order lines, as the card's list (a combined order is several lines).
+      rows = shipped.flat_map { |o| o[:rows] }
+      totals(ytd).merge(orders: rows.size, without_price: rows.count { |r| r[:value].nil? },
+                        from: from, to: @today, series_from: from_series(from), by_date: by_date(orders.map { |o| [ o[:ship], o[:value], o[:unpriced] ] }))
     end
 
     # The order rows behind ytd_customer_spend: every row of the orders shipping from 1 April to today (a combined
@@ -118,9 +135,7 @@ module Dashboard
           foreign: list.reject { |r| r[:currency] == "INR" }.group_by { |r| r[:currency] }.map { |c, l| { currency: c, amount: money(l.sum { |r| r[:value] }) } } }
       end.sort_by { |v| -v[:amount].to_d }
       { by_currency: totals, orders: rows.size, without_price: unpriced.size, by_vendor: by_vendor,
-        in_inr: { amount: money(converted.sum(0.to_d) { |r| inr.(r) }), rates: rates.compact.transform_values { |v| v.to_s("F") },
-                  not_converted: (priced - converted).map { |r| r[:currency] }.uniq },
-        by_vendor_inr: by_vendor_inr }
+        in_inr: inr_total(priced), by_vendor_inr: by_vendor_inr }
     end
 
     # The open vendor POs behind open_supplier, one row each: vendor PO, vendor, the order it is for, Qty, the price used

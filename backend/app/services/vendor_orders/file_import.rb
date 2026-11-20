@@ -166,7 +166,7 @@ module VendorOrders
         VendorOrder.create!(vendor_order_placement: placement, vendor: v, number: numbers[v].first(255), qty: pieces[v],
                             unit: "pcs", source: "file", email_status: "no_email", order_placed_at: now, order_placed_by: @user,
                             order_date: row[:order_date], source_order_key: own_key,
-                            unit_price: vendors.size > 1 ? link&.price_amount : nil, price_currency: vendors.size > 1 ? link&.price_currency : nil)
+                            unit_price: link&.price_amount, price_currency: link&.price_amount && (link.price_currency || "INR"))
       end
       added[key] += sets unless joined
       nil

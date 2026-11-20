@@ -149,31 +149,6 @@ module Api
       (row.qty.to_d * BigDecimal(text) / (charge_parts.include?(row.part_number) ? 1 : 100)).round(2).to_s("F")
     end
 
-    # Deere's latest files (one per business): [current price by [business, PO, Part] and by [business, Part] (per 100
-    # pcs, as in the file), Cumulative Receipt Qty by [business, PO, Part, PO Line]].
-    def current_prices
-      @current_prices ||= begin
-        batches = UploadBatch.latest_for("all").to_h { |b| [ b.id, b.business ] }
-        prices = {}
-        receipts = {}
-        OrderRow.where(upload_batch_id: batches.keys).order(:upload_batch_id, :source_row_number)
-                .pluck(:upload_batch_id, :po_number, :part_number, :po_line_number,
-                       Arel.sql("source_data->>'Unit Price'"), Arel.sql("source_data->>'Cumulative Receipt Qty'")).each do |batch, po, part, line, unit, received|
-          business = batches[batch]
-          text = unit.to_s.delete(",").strip
-          if text.match?(/\A\d+(\.\d+)?\z/) && BigDecimal(text).positive?
-            prices[[ business, po, part ]] ||= BigDecimal(text)
-            prices[[ business, part ]] ||= BigDecimal(text)
-          end
-          qty = received.to_s.delete(",").strip
-          key = [ business, po, part, line ]
-          # Every PO line in the file gets an entry (blank = nothing received), so only a line Deere dropped has none.
-          receipts[key] = [ receipts[key] || 0.to_d, qty.match?(/\A\d+(\.\d+)?\z/) ? BigDecimal(qty) : 0.to_d ].max
-        end
-        [ prices, receipts ]
-      end
-    end
-
     # Part Numbers of charges (freight; Product.charge_parts), once per request.
     def charge_parts
       @charge_parts ||= Product.charge_parts(Product.pluck(:part_number))
@@ -188,12 +163,19 @@ module Api
       load_combined_orders(combined)
       @moq_parts = Orders::MoqBalance.needs(batches.map(&:id))
       scope = filter(search(dataset(batches), ""), combined).unscope(:order)
+      # Open Qty and revenue as the Dashboard counts them: what Deere still lists open. A kept row (Deere no longer lists
+      # it) is listed for its shipments with nothing open; a charge (freight) has no pieces, only its value.
+      charges = charge_parts.map { |p| OrderRow.connection.quote(p) }
+      charge = charges.any? ? "order_rows.part_number IN (#{charges.join(',')})" : "FALSE"
+      open_qty = "(CASE WHEN order_rows.kept OR #{charge} THEN 0 ELSE COALESCE(order_rows.qty, 0) END)"
+      open_revenue = "(CASE WHEN order_rows.kept THEN 0 ELSE #{revenue_sql} END)"
       groups = scope.group("order_rows.po_number").pluck(
         "order_rows.po_number", Arel.sql("COUNT(*)"), Arel.sql("array_agg(DISTINCT order_rows.part_number ORDER BY order_rows.part_number)"),
-        Arel.sql("SUM(COALESCE(order_rows.qty, 0))"), Arel.sql("SUM(#{revenue_sql})"), Arel.sql("MIN(order_rows.ship_date)"),
+        Arel.sql("SUM(#{open_qty})"), Arel.sql("SUM(#{open_revenue})"), Arel.sql("MIN(order_rows.ship_date)"),
         Arel.sql("MAX(order_rows.ship_date)"), Arel.sql("bool_or(order_rows.kept)"), Arel.sql("bool_and(order_rows.kept)"), Arel.sql("bool_or(order_rows.manual)")
       ).map do |po, lines, parts, qty, revenue, first, last, kept, all_kept, manual|
-        { po_number: po, lines: lines, parts: parts.compact, part_count: parts.compact.size, qty: qty.to_d, revenue: revenue&.to_d&.round(2),
+        # Revenue and delivered value kept unrounded (rounded when shown), so the totals add up as the cards do.
+        { po_number: po, lines: lines, parts: parts.compact, part_count: parts.compact.size, qty: qty.to_d, revenue: revenue&.to_d,
           first_ship: first, last_ship: last, kept: kept,
           # File: where the PO's order lines are (Deere's latest file, older files kept on Orders, manual orders).
           file: if manual && !kept then "Manual order" elsif all_kept then "Old file" elsif kept then "Latest + old file" else "Latest" end }
@@ -217,10 +199,10 @@ module Api
         price = current[[ business, po, part ]] || current[[ business, part ]] || (BigDecimal(own) if own.match?(/\A\d+(\.\d+)?\z/))
         delivered_value[po] += qty * price / 100 if price
       end
-      groups.each { |g| g[:delivered] = delivered[g[:po_number]]; g[:delivered_value] = delivered_value[g[:po_number]].round(2) }
+      groups.each { |g| g[:delivered] = delivered[g[:po_number]]; g[:delivered_value] = delivered_value[g[:po_number]] }
       found, page, meta = search_sort_page(groups, search: %i[po_number parts], numeric: %i[lines part_count qty revenue delivered delivered_value], default_sort: "revenue")
       render json: {
-        data: page.map { |g| g.merge(qty: Serializers.qty(g[:qty]), delivered: Serializers.qty(g[:delivered]), delivered_value: g[:delivered_value].to_s("F"), revenue: g[:revenue]&.to_s("F")) },
+        data: page.map { |g| g.merge(qty: Serializers.qty(g[:qty]), delivered: Serializers.qty(g[:delivered]), delivered_value: g[:delivered_value].round(2).to_s("F"), revenue: g[:revenue]&.round(2)&.to_s("F")) },
         meta: meta,
         totals: { pos: found.size, lines: found.sum { |g| g[:lines] }, qty: Serializers.qty(found.sum(0.to_d) { |g| g[:qty] }),
                   delivered: Serializers.qty(found.sum(0.to_d) { |g| g[:delivered] }),
@@ -256,7 +238,14 @@ module Api
       delivered = OrderDelivery.active.where(kind: "outbound", order_key: rows.map { |r| r[1] }).distinct.pluck(:order_key).to_set
       # Each row's own key (the invoices are recorded per row, a combined order's rows too).
       own = rows.map { |id, key, _, manual| manual ? key : keys[id] }
-      fulfilled = Invoices::Progress.fulfilled_keys(own.zip(rows.map { |r| r[2] }))
+      # A row Deere's latest file still lists with Qty open is not fulfilled by its invoices (#deere_open?).
+      kept = kept_ids(batches).to_set
+      fulfilled = Invoices::Progress.fulfilled_keys(rows.each_with_index.reject { |(id, _, qty, manual), _| !manual && !kept.include?(id) && qty.to_d.positive? }
+                                                        .map { |r, i| [ own[i], r[2] ] })
+      # A row Deere lists with Qty 0 and Qty delivered on it is fulfilled (#deere_closed?).
+      closed = rows.each_index.select { |i| id, _, qty, manual = rows[i]; !manual && !kept.include?(id) && qty.to_d.zero? }
+      closed_progress = Invoices::Progress.for_keys(closed.map { |i| own[i] })
+      fulfilled += closed.map { |i| own[i] }.select { |key| closed_progress[key]&.outbound&.positive? }
       open = rows.each_with_index.reject { |(_, key, *), i| delivered.include?(key) || fulfilled.include?(own[i]) }.map(&:first)
       placed = VendorOrderPlacement.where(order_key: open.map { |r| r[1] }).distinct.pluck(:order_key).to_set
       # The orders of the open rows (a combined order's first row for each of its rows).
@@ -546,8 +535,8 @@ module Api
     end
 
     # Firm / Order rows of `rows` (a list of the shown order data) with what the Orders list shows for each: Qty ordered,
-    # dispatched (invoices, the dispatched orders list or a Dispatched mark), delivered (SASH Inc invoices or Outbound)
-    # and the Deere Unit Price (the row's, else the product's customer price; per 100 pcs).
+    # dispatched (invoices, the dispatched orders list or a Dispatched mark), delivered (SASH Inc invoices or Outbound;
+    # GMBH: Deere's receipts, #receipts_delivered) and Deere's current price (#current_prices; per 100 pcs).
     def summary_lines(rows)
       deliveries = deliveries_by_key(rows)
       own_keys = rows.map { |row| own_key(row) }
@@ -555,7 +544,7 @@ module Api
       named = listed_marks(own_keys) # the list's mark naming each row (see #index)
       fallback = Product.where(part_number: rows.map(&:part_number).uniq).pluck(:part_number, :customer_price).to_h
       charges = Product.charge_parts(rows.map(&:part_number))
-      invoiced = delivered_values(own_keys)
+      current, receipts = current_prices
       # Deere's file can list one order line twice (same PO + Part + Type + PO Line + Ship Date, e.g. GMBH's 4500417775
       # under two Units): counted once, on the row with the most Qty (the first in the file when equal).
       repeats = rows.each_index.group_by { |i| [ rows[i].upload_batch_id, own_keys[i] ] }.values
@@ -574,7 +563,10 @@ module Api
         elsif !by_list && %w[dispatched inbound delivery outbound].include?(info[:status]) then ordered
         else 0.to_d
         end
-        delivered = info[:outbound_qty] ? info[:outbound_qty].to_d : (info[:status] == "outbound" ? ordered : 0.to_d)
+        delivered = if info[:outbound_qty] then info[:outbound_qty].to_d
+        elsif info[:status] == "outbound" then ordered
+        else 0.to_d
+        end
         # Ordered = what Deere has received + what Deere still lists as open (pending as per DTP). Deere's Qty is the
         # open Qty, so a row's Qty at dispatch overstates it once goods arrive, and a kept row (no longer in Deere's file)
         # has nothing open: its dispatches count, its Qty does not. A manual order is SASH's own: its Qty stays.
@@ -582,71 +574,127 @@ module Api
         elsif row[:kept] then 0.to_d
         else row.qty.to_d
         end
+        # One price for every figure: Deere's current price of the PO + Part, else of the Part, in Deere's latest files
+        # (an older order or a kept row is valued at today's price, as Deere does); else the row's own, else the
+        # product's customer price.
         text = row.source_data&.dig("Unit Price").to_s.delete(",").strip
-        price = text.match?(/\A\d+(\.\d+)?\z/) ? BigDecimal(text) : fallback[row.part_number]
+        price = current[[ row[:business], row.po_number, row.part_number ]] || current[[ row[:business], row.part_number ]] ||
+                (BigDecimal(text) if text.match?(/\A\d+(\.\d+)?\z/)) || fallback[row.part_number]
         # Prices are per 100 pieces; a charge's Unit Price is the charge itself (Product.charge_parts).
-        price *= 100 if price && charges.include?(row.part_number)
-        # Delivered value: at the prices on its SASH Inc invoices (#delivered_values); Qty with no invoice price at the
-        # order's price.
-        on_invoices = invoiced[own_keys[i]]
-        rest = [ delivered - (on_invoices&.first || 0), 0.to_d ].max
-        delivered_value = on_invoices || price ? (on_invoices&.last || 0) + (price ? rest * price / 100 : 0) : nil
-        { row: row, ordered: open + delivered, open: open, shipped: shipped, delivered: delivered, price: price, status: info[:status],
-          delivered_value: delivered_value }
-      end.then { |lines| allocate_pending(lines) }
-    end
-
-    # Order key => [Qty, value] delivered on SASH Inc invoices at each invoice line's price (Invoices::Reader: the price
-    # of one piece on the invoice); only the Qty of lines with a price.
-    def delivered_values(keys)
-      allocations = InvoiceAllocation.active.where(invoices: { kind: "inc" }, order_key: keys.uniq).pluck(:order_key, :invoice_id, :line_index, :qty)
-      prices = Invoice.where(id: allocations.map { |a| a[1] }.uniq).pluck(:id, :lines)
-                      .flat_map { |id, lines| Array(lines).filter_map { |l| [ [ id, l["index"] ], BigDecimal(l["price"].to_s) ] if l["price"].present? } }.to_h
-      allocations.each_with_object({}) do |(key, invoice, index, qty), by_key|
-        price = prices[[ invoice, index ]] or next
-        sum = by_key[key] ||= [ 0.to_d, 0.to_d ]
-        sum[0] += qty
-        sum[1] += qty * price
+        charge = charges.include?(row.part_number)
+        price *= 100 if price && charge
+        { row: row, open: open, shipped: shipped, delivered: delivered, price: price, status: info[:status], charge: charge }
+      end.then { |lines| receipts_delivered(lines, receipts) }.each do |l|
+        l[:ordered] = l[:open] + l[:delivered]
+      end.then { |lines| allocate_pending(lines) }.each do |l|
+        # A charge (freight) is billed by Deere, not dispatched by SASH: nothing of it is pending to dispatch.
+        l[:pending] = 0.to_d if l[:charge]
       end
     end
 
-    # Pending to dispatch (as per SASH) of each summary line. Dispatches are often recorded on an earlier ship date than
-    # the Qty Deere now lists (e.g. on a kept row, or more than a row's Ordered), so within one PO line (PO + Part + PO
-    # Line) what a row got beyond its Ordered covers the open rows after it, earliest ship date first. The rows' pending
-    # then adds up to the PO line's Ordered − Dispatched.
-    def allocate_pending(lines)
-      lines.group_by { |l| [ l[:row].po_number, l[:row].part_number, l[:row].po_line_number ] }.each_value do |group|
-        group = group.sort_by { |l| l[:row].ship_date }
-        surplus = group.sum(0.to_d) { |l| [ l[:shipped] - l[:ordered], 0.to_d ].max }
-        group.each do |l|
-          own = [ l[:ordered] - l[:shipped], 0.to_d ].max
-          covered = [ own, surplus ].min
-          surplus -= covered
-          l[:pending] = own - covered
+    # Businesses whose deliveries to Deere are not on SASH Inc invoices: Deere's receipts tell what arrived.
+    RECEIPT_BUSINESSES = %w[gmbh].freeze
+
+    # Deere's latest files (one per business): [current price by [business, PO, Part] and by [business, Part] (per 100
+    # pcs, as in the file), Cumulative Receipt Qty by [business, PO, Part, PO Line]].
+    def current_prices
+      @current_prices ||= begin
+        batches = UploadBatch.latest_for("all").to_h { |b| [ b.id, b.business ] }
+        prices = {}
+        receipts = {}
+        OrderRow.where(upload_batch_id: batches.keys).order(:upload_batch_id, :source_row_number)
+                .pluck(:upload_batch_id, :po_number, :part_number, :po_line_number,
+                       Arel.sql("source_data->>'Unit Price'"), Arel.sql("source_data->>'Cumulative Receipt Qty'")).each do |batch, po, part, line, unit, received|
+          business = batches[batch]
+          text = unit.to_s.delete(",").strip
+          if text.match?(/\A\d+(\.\d+)?\z/) && BigDecimal(text).positive?
+            prices[[ business, po, part ]] ||= BigDecimal(text)
+            prices[[ business, part ]] ||= BigDecimal(text)
+          end
+          qty = received.to_s.delete(",").strip
+          key = [ business, po, part, line ]
+          # Every PO line in the file gets an entry (blank = nothing received), so only a line Deere dropped has none.
+          receipts[key] = [ receipts[key] || 0.to_d, qty.match?(/\A\d+(\.\d+)?\z/) ? BigDecimal(qty) : 0.to_d ].max
+        end
+        [ prices, receipts ]
+      end
+    end
+
+    # Delivered of RECEIPT_BUSINESSES rows from Deere's Cumulative Receipt Qty of their PO line: shared over the line's
+    # rows earliest ship date first, each up to what it was dispatched (an Outbound mark or invoice keeps its Qty when
+    # more). A kept row whose PO line Deere no longer lists was received in full: its dispatched Qty is delivered.
+    def receipts_delivered(lines, receipts)
+      lines.select { |l| RECEIPT_BUSINESSES.include?(l[:row][:business]) && !l[:row][:manual] && !l[:charge] }
+           .group_by { |l| [ l[:row][:business], l[:row].po_number, l[:row].part_number, l[:row].po_line_number ] }.each do |key, group|
+        left = receipts[key]
+        group.sort_by { |l| l[:row].ship_date }.each do |l|
+          if left.nil?
+            l[:delivered] = [ l[:delivered], l[:shipped] ].max if l[:row][:kept]
+          else
+            l[:delivered] = [ l[:delivered], [ l[:shipped], left ].min ].max
+            left = [ left - l[:delivered], 0.to_d ].max
+          end
         end
       end
       lines
     end
 
-    # Totals of summary lines: Qty ordered, dispatched, in transit, delivered, still to dispatch, orders (open), and the
-    # revenue of the Qty ordered, dispatched and delivered (Qty × price ÷ 100; lines without a price left out, counted in
-    # unpriced). Dispatched includes what is still in transit, so it is not 0 before Deere receives the goods.
+    # Dispatched and Pending to dispatch (as per SASH) of each summary line. Dispatches are often recorded on an earlier
+    # ship date than the Qty Deere now lists (Deere moves open Qty to a later ship date, e.g. 297 sent on a 21 Jul row
+    # Deere now lists at 0, its Qty moved to 11 Dec), so within one PO line (PO + Part + PO Line) what a row got beyond
+    # its Ordered moves to the open rows after it, earliest ship date first. Each row then shows Dispatched up to its
+    # Ordered; what is left over (more sent than the PO line's Ordered) stays on the rows it was sent for. The PO line's
+    # Dispatched is unchanged, and the rows' pending adds up to its Ordered − Dispatched.
+    def allocate_pending(lines)
+      lines.group_by { |l| [ l[:row].po_number, l[:row].part_number, l[:row].po_line_number ] }.each_value do |group|
+        group = group.sort_by { |l| l[:row].ship_date }
+        extra = group.map { |l| [ l[:shipped] - l[:ordered], 0.to_d ].max }
+        surplus = extra.sum(0.to_d)
+        group.each_with_index do |l, i|
+          l[:shipped] -= extra[i]
+          covered = [ l[:ordered] - l[:shipped], surplus ].min
+          surplus -= covered
+          l[:shipped] += covered
+          l[:pending] = l[:ordered] - l[:shipped]
+          # A row nothing was recorded against that now holds goods sent on an earlier ship date shows them in its status.
+          if covered.positive? && [ nil, "none", "received" ].include?(l[:status])
+            l[:status] = l[:pending].positive? ? "dispatch" : "dispatched"
+          end
+        end
+        group.each_with_index do |l, i|
+          back = [ extra[i], surplus ].min
+          surplus -= back
+          l[:shipped] += back
+        end
+      end
+      lines
+    end
+
+    # Totals of summary lines: Qty ordered, dispatched, in transit, delivered, still to dispatch, orders (open), and their
+    # value at Deere's current price (Qty × price ÷ 100; lines without a price left out, counted in unpriced). Dispatched
+    # includes what is still in transit, so it is not 0 before Deere receives the goods. A charge (freight) counts only
+    # in pending as per DTP: it is not goods dispatched or delivered. So Ordered = Delivered + Pending as per DTP and In
+    # transit = Dispatched − Delivered, in value too.
     def summary_figures(lines)
       # Pieces: parts only. A charge (Air Freight Charges) is not a piece: it has no Qty anywhere (its value still counts
       # where it does, below). Only charges: no Qty (nil, shown as —).
       parts = lines.reject { |l| l[:charge] }
       pcs = ->(&qty) { parts.empty? && lines.any? ? nil : Serializers.qty(parts.sum(0.to_d) { |l| qty.(l) }) }
       priced = lines.select { |l| l[:price] }
+      goods = priced.reject { |l| l[:charge] }
+      value = ->(list, &qty) { list.sum(0.to_d) { |l| qty.(l) * l[:price] / 100 } }
+      delivered_value = value.(goods) { |l| l[:delivered] }
+      pending_dtp_value = value.(priced) { |l| l[:open] }
       { ordered: pcs.() { |l| l[:ordered] }, dispatched: pcs.() { |l| l[:shipped] },
         in_transit: pcs.() { |l| [ l[:shipped] - l[:delivered], 0.to_d ].max }, # per order, never below 0
         delivered: pcs.() { |l| l[:delivered] }, pending: pcs.() { |l| l[:pending] }, pending_dtp: pcs.() { |l| l[:open] }, orders: lines.size,
         open_orders: lines.count { |l| l[:pending].positive? },
-        revenue_ordered: (priced.sum(0.to_d) { |l| l[:ordered] * l[:price] / 100 }).round(2).to_s("F"),
-        revenue_dispatched: (priced.sum(0.to_d) { |l| l[:shipped] * l[:price] / 100 }).round(2).to_s("F"),
-        revenue_delivered: (lines.sum(0.to_d) { |l| l[:delivered_value] || 0 }).round(2).to_s("F"),
-        revenue_in_transit: priced.sum(0.to_d) { |l| [ l[:shipped] - l[:delivered], 0.to_d ].max * l[:price] / 100 }.round(2).to_s("F"),
-        revenue_pending_dtp: (priced.sum(0.to_d) { |l| l[:open] * l[:price] / 100 }).round(2).to_s("F"),
-        revenue_pending: (priced.sum(0.to_d) { |l| l[:pending] * l[:price] / 100 }).round(2).to_s("F"),
+        revenue_ordered: (delivered_value + pending_dtp_value).round(2).to_s("F"),
+        revenue_dispatched: value.(goods) { |l| l[:shipped] }.round(2).to_s("F"),
+        revenue_delivered: delivered_value.round(2).to_s("F"),
+        revenue_in_transit: value.(goods) { |l| [ l[:shipped] - l[:delivered], 0.to_d ].max }.round(2).to_s("F"),
+        revenue_pending_dtp: pending_dtp_value.round(2).to_s("F"),
+        revenue_pending: value.(goods) { |l| l[:pending] }.round(2).to_s("F"),
         unpriced: lines.size - priced.size }
     end
 
@@ -706,7 +754,12 @@ module Api
       shipped = "COALESCE(SUM(a.qty) FILTER (WHERE i.kind = 'india'), 0)"
       outbound = "COALESCE(SUM(a.qty) FILTER (WHERE i.kind = 'inc'), 0)"
       total = "GREATEST(COALESCE(MAX(a.order_qty), 0), COALESCE(order_rows.qty, 0))"
-      position = "CASE WHEN #{outbound} > 0 AND #{outbound} >= #{total} THEN 7 WHEN #{outbound} > 0 THEN 6 " \
+      # A row in Deere's latest file: Deere's Qty decides (#deere_open?). Qty still open: Partial outbound at most; Qty 0
+      # with Qty delivered: Deere has all it wants on that ship date, Outbound.
+      latest = "(NOT order_rows.kept AND NOT order_rows.manual)"
+      open = "(#{latest} AND COALESCE(order_rows.qty, 0) > 0)"
+      closed = "(#{latest} AND COALESCE(order_rows.qty, 0) = 0)"
+      position = "CASE WHEN #{outbound} > 0 AND (#{outbound} >= #{total} OR #{closed}) AND NOT #{open} THEN 7 WHEN #{outbound} > 0 THEN 6 " \
                  "WHEN #{shipped} <= 0 THEN 1 WHEN #{shipped} >= #{total} THEN 4 ELSE 3 END"
       imported = "a.manual_order_id IS NULL AND a.po_number = order_rows.po_number AND a.part_number = order_rows.part_number " \
                  "AND a.order_type = order_rows.order_type AND a.po_line_number = order_rows.po_line_number AND a.ship_date = order_rows.ship_date"
@@ -936,6 +989,8 @@ module Api
       end
       mark = OrderDelivery::KINDS.reverse.find { |kind| marks.key?(kind) } || "none"
       from_invoices = progress&.status(row.qty)
+      from_invoices = "delivery" if from_invoices == "outbound" && deere_open?(row)
+      from_invoices = "outbound" if from_invoices == "delivery" && deere_closed?(row)
       status = [ mark, from_invoices ].compact.max_by { |kind| STATUSES.index(kind) }
       # Sent by the dispatched orders list: its Qty there counts as shipped, with its Qty on SASH India invoices (a list
       # line of an uploaded invoice is left out, #listed_qty). `named`: the list's Dispatched mark naming the row
@@ -951,6 +1006,18 @@ module Api
       { status: status, order_qty: Serializers.qty(order_qty), shipped_qty: Serializers.qty(shipped),
         balance_qty: Serializers.qty([ order_qty - shipped, 0.to_d ].max), outbound_qty: progress&.outbound&.positive? ? Serializers.qty(progress.outbound) : nil,
         invoice_moves: (progress&.moves || []).map { |m| { kind: m.kind, invoice_id: m.invoice_id, invoice_number: m.invoice_number, invoice_date: m.invoice_date, qty: Serializers.qty(m.qty) } } }
+    end
+
+    # Whether a listed row is still open in Deere's latest file (Qty above 0; not a manual order nor a kept row): its
+    # invoices cannot make it Outbound, Deere still waits for that Qty.
+    def deere_open?(row)
+      row.has_attribute?(:kept) && !row[:kept] && !row[:manual] && row.qty.to_d.positive?
+    end
+
+    # Whether a listed row is in Deere's latest file with Qty 0: what was delivered on it is all Deere wants there (its
+    # other Qty moved to a later ship date), so its invoices make it Outbound, not Partial outbound.
+    def deere_closed?(row)
+      row.has_attribute?(:kept) && !row[:kept] && !row[:manual] && row.qty.to_d.zero?
     end
 
     # Order key => { "dispatched" => mark } of the Dispatched marks on these keys or naming them on their list lines.
