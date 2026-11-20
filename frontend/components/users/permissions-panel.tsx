@@ -13,7 +13,8 @@ import { ROLE_LABEL } from "./user-form-panel";
 
 // Users → a user: for each section of the app a View and an Edit checkbox — View = see it ("view"), View + Edit = see and
 // change it ("edit"), neither = the page is hidden ("none"). Edit needs View: ticking Edit ticks View, unticking View
-// unticks Edit. Admins always have everything. The server enforces the same rules.
+// unticks Edit. Admins always have everything. The server enforces the same rules. Below: whether the user gets the John
+// Deere sync alerts (the sync popup with the OTP box, bell items and emails; admins always do).
 export function PermissionsPanel({ user, onClose, onSaved }: { user: User; onClose: () => void; onSaved: (user: User) => void }) {
   const notify = useToast();
   const admin = user.role === "admin";
@@ -24,15 +25,16 @@ export function PermissionsPanel({ user, onClose, onSaved }: { user: User; onClo
     const next: Level = box === "edit" ? (level === "edit" ? "view" : "edit") : (level === "none" ? "view" : "none");
     return { ...current, [section]: next };
   });
+  const [syncAlerts, setSyncAlerts] = useState(user.deere_sync_alerts);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const changed = SECTIONS.some((s) => levels[s.key] !== user.permissions[s.key]);
+  const changed = SECTIONS.some((s) => levels[s.key] !== user.permissions[s.key]) || syncAlerts !== user.deere_sync_alerts;
 
   async function save() {
     setSaving(true);
     setError(null);
     try {
-      const res = await api.patch<{ data: User }>(`/api/users/${user.id}`, { permissions: levels });
+      const res = await api.patch<{ data: User }>(`/api/users/${user.id}`, { permissions: levels, deere_sync_alerts: syncAlerts });
       notify(`Permissions of ${user.name} saved.`);
       onSaved(res.data);
     } catch (err) {
@@ -85,6 +87,24 @@ export function PermissionsPanel({ user, onClose, onSaved }: { user: User; onClo
             );
           })}
         </ul>
+      </section>
+      <section className="mt-4 overflow-hidden rounded-lg border border-line bg-white shadow-card">
+        <header className="border-b border-neutral-100 px-5 py-3">
+          <h3 className="text-sm font-semibold text-ink">Alerts</h3>
+        </header>
+        <label className={`flex items-center justify-between gap-6 px-5 py-3.5 ${admin ? "" : "cursor-pointer"}`}>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-medium text-ink">John Deere sync</span>
+            <span className="block text-xs text-ink-muted">
+              {admin ? "Admins always get them: " : ""}the sync popup when they open the app, and a notification and an email when Deere asks
+              for the SMS OTP, nobody enters it in time, or the sync fails. They can enter the OTP and run the sync again.
+            </span>
+          </span>
+          <span className="flex w-12 justify-center">
+            <input type="checkbox" checked={admin || syncAlerts} disabled={admin} onChange={() => setSyncAlerts((v) => !v)}
+                   aria-label="John Deere sync alerts" className="h-4 w-4 accent-[var(--color-accent)]" />
+          </span>
+        </label>
       </section>
       {!admin && user.role === "warehouse_manager" && (
         <p className="mt-3 text-xs text-ink-muted">

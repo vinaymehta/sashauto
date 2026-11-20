@@ -1,20 +1,21 @@
-# Lets a Sidekiq worker that hits an OTP screen pause and wait for a human to
-# type the code (received by SMS) into the app at /otp_requests.
+# Lets a Sidekiq worker that hits an OTP screen pause and wait for a person to type the code (received by SMS) into the
+# app: the Deere sync popup (POST /api/portal_sync/otp).
 #
 # Worker side:
 #   code = OtpHandoff.new('secure_portal', label: 'John Deere').wait_for_code
 #
-# Web side (OtpRequestsController):
-#   OtpHandoff.pending          # requests currently waiting for a code
+# Web side (Api::PortalSyncController):
+#   OtpHandoff.request(key)     # the request waiting for a code, or nil
 #   OtpHandoff.submit(key, code)
 #
-# Everything lives in Redis with a TTL, so an abandoned request disappears on
-# its own and nothing needs a migration.
+# Everything lives in Redis with a TTL, so an abandoned request disappears on its own and nothing needs a migration.
 class OtpHandoff
-  REQUEST_PREFIX = 'otp_requests:'.freeze
-  CODE_PREFIX    = 'otp_codes:'.freeze
-  # OTP codes typically expire in 5-10 min, and a worker shouldn't hold a
-  # chromedriver slot much longer than that.
+  # Nobody entered the code before the deadline (the worker gives up).
+  class TimedOut < StandardError; end
+
+  REQUEST_PREFIX = "otp_requests:".freeze
+  CODE_PREFIX    = "otp_codes:".freeze
+  # OTP codes typically expire in 5-10 min, and a worker shouldn't hold a chromedriver slot much longer than that.
   WAIT_TIMEOUT  = 480
   POLL_INTERVAL = 5
 
@@ -25,11 +26,11 @@ class OtpHandoff
     @label = label
   end
 
-  # Opens (or re-opens, after a rejected code) a request, alerts the team, and
-  # blocks until a code is submitted or the deadline passes. Returns the code
-  # or nil on timeout.
-  def wait_for_code(message: nil, deadline: Time.now + WAIT_TIMEOUT)
-    open_request(message)
+  # Opens (or re-opens, after a rejected code) a request and blocks until a code is submitted or the deadline passes.
+  # `alert`: also tell the people who look after the sync (PortalAlerts: bell and email; the popup shows the request
+  # either way). Returns the code, or nil on timeout.
+  def wait_for_code(message: nil, deadline: Time.now + WAIT_TIMEOUT, alert: true)
+    open_request(message, deadline, alert)
     while Time.now < deadline
       code = take_code
       return code if code
@@ -37,33 +38,30 @@ class OtpHandoff
       sleep POLL_INTERVAL
     end
     finish
-    SlackNotifier.new.notify_otp_required(@label, "OTP request for #{@label} timed out -- nobody entered the code. It will be asked again on the next run.", url: nil) rescue nil
     nil
   end
 
-  # Call once the code was accepted (or the worker gives up) so the request
-  # drops off the /otp_requests page.
+  # Call once the code was accepted (or the worker gives up) so the request drops out of the popup.
   def finish
     REDIS_POOL.with { |r| r.del(request_key, code_key) }
   end
 
-  def self.pending
-    REDIS_POOL.with do |r|
-      r.scan_each(match: "#{REQUEST_PREFIX}*").map do |redis_key|
-        r.hgetall(redis_key).merge('key' => redis_key.delete_prefix(REQUEST_PREFIX))
-      end
-    end.reject { |req| req['status'].nil? }.sort_by { |req| req['requested_at'].to_s }
+  # The request waiting for a code: { "label", "message", "status" ("waiting", or "submitted" once a code was typed),
+  # "requested_at", "expires_at" }, or nil.
+  def self.request(key)
+    found = REDIS_POOL.with { |r| r.hgetall("#{REQUEST_PREFIX}#{key}") }
+    found.presence && found["status"] ? found : nil
   end
 
   def self.submit(key, code)
-    code = code.to_s.gsub(/\s+/, '')
+    code = code.to_s.gsub(/\s+/, "")
     return false if code.empty?
 
     REDIS_POOL.with do |r|
-      return false unless r.exists("#{REQUEST_PREFIX}#{key}")
+      return false unless r.exists?("#{REQUEST_PREFIX}#{key}")
 
       r.set("#{CODE_PREFIX}#{key}", code, ex: WAIT_TIMEOUT)
-      r.hset("#{REQUEST_PREFIX}#{key}", 'status', 'submitted')
+      r.hset("#{REQUEST_PREFIX}#{key}", "status", "submitted")
     end
     true
   end
@@ -78,17 +76,15 @@ class OtpHandoff
     "#{CODE_PREFIX}#{@key}"
   end
 
-  def open_request(message)
-    message ||= "#{@label} is asking for the SMS OTP. Enter it to let the scraper continue."
+  def open_request(message, deadline, alert)
+    message ||= "#{@label} is asking for the SMS OTP. Enter it to let the sync continue."
     REDIS_POOL.with do |r|
       r.del(code_key) # never reuse a code typed for an earlier attempt
-      r.mapped_hmset(request_key, 'label' => @label, 'message' => message, 'status' => 'waiting',
-                                  'requested_at' => Time.now.utc.iso8601)
+      r.mapped_hmset(request_key, "label" => @label, "message" => message, "status" => "waiting",
+                                  "requested_at" => Time.now.utc.iso8601, "expires_at" => deadline.utc.iso8601)
       r.expire(request_key, WAIT_TIMEOUT + 60)
     end
-
-    path = "/otp_requests##{@key}"
-    SlackNotifier.new.notify_otp_required(@label, message, url: "#{AppConfig.backend_public_url}#{path}") rescue nil
+    PortalAlerts.otp_needed(message: message, expires_at: deadline) if alert
   end
 
   def take_code

@@ -4,7 +4,9 @@ require "digest"
 # Dale, GMBH: Faridabad; see AppConfig.portal_supplier) and uploads each to its business like a manual upload (Uploads::Intake,
 # as the first active admin), so the usual checks and emails run. A file the same as the business's last upload is
 # skipped. Started by sidekiq-cron at 08:00 IST (config/schedule.yml), or right away from Admin Settings →
-# Deere portal ("Run sync now"). One run at a time (PortalSync lock); its status and results are kept for that page.
+# Deere portal or the John Deere sync popup ("Sync now"). One run at a time (PortalSync lock); its status and results are
+# kept for those. When Deere asks for the SMS OTP, nobody enters it in time, or the run fails, the people who look after
+# the sync are alerted in the app and by email (OtpHandoff, PortalAlerts).
 class SecurePortalSyncJob < ApplicationJob
   # A failed run is not retried: each retry would sign in to Deere again (and could lock the account or send another
   # SMS). The next scheduled run tries again.
@@ -22,6 +24,7 @@ class SecurePortalSyncJob < ApplicationJob
     PortalSync.write(run.merge(state: "running"))
     results = []
     error = nil
+    failure = nil
     finished = false
     begin
       suppliers = Business::KEYS.to_h { |business| [ business, AppConfig.portal_supplier(business) ] }
@@ -31,14 +34,28 @@ class SecurePortalSyncJob < ApplicationJob
         files[business] ? upload(files[business], business) : { business: business, status: "failed", message: portal.errors[business] || "Download failed." }
       end
       finished = true
+    rescue OtpHandoff::TimedOut => e
+      error = e.message
+      failure = e
     rescue StandardError => e
       error = "#{e.class}: #{e.message.lines.first&.strip}"
-      raise
+      failure = e
     ensure
       # Neither finished nor failed: stopped from outside (Sidekiq shutting down; Sidekiq then queues the job again).
       error ||= "Stopped before it finished." unless finished
       PortalSync.write(run.merge(state: error ? "failed" : "done", finished_at: Time.current, results: results, error: error))
       PortalSync.unlock(token)
+    end
+
+    # Alerted once the status is saved, so the popup already shows the result. No OTP in time is expected now and then:
+    # alerted, not raised.
+    if failure.is_a?(OtpHandoff::TimedOut)
+      PortalAlerts.otp_timed_out
+    elsif failure
+      PortalAlerts.failed(error: error, results: results)
+      raise failure
+    elsif results.any? { |r| r[:status] == "failed" }
+      PortalAlerts.failed(results: results)
     end
   end
 

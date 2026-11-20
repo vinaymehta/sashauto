@@ -32,9 +32,17 @@ class User < ApplicationRecord
 
   scope :active, -> { where(active: true) }
   scope :admins, -> { where(role: "admin") }
+  # Get the Deere portal sync alerts (#deere_sync_alerts?): active admins and the users ticked for them.
+  scope :deere_sync_recipients, -> { active.where(deleted_at: nil).where("users.role = 'admin' OR users.deere_sync_alerts") }
 
   def admin?
     role == "admin"
+  end
+
+  # Gets the Deere portal sync alerts (OTP needed, OTP timed out, sync failed): the popup in the app, the bell and an
+  # email (PortalAlerts). Admins always; another user when an admin ticks it (Users → Permissions).
+  def deere_sync_alerts?
+    admin? || self[:deere_sync_alerts]
   end
 
   # "none", "view" or "edit" for a section (User::SECTIONS).

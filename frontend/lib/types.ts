@@ -11,6 +11,7 @@ export interface User {
   created_at: string;
   permissions: Record<"dashboard" | "orders" | "products" | "vendors" | "settings", "none" | "view" | "edit">; // in effect (admin: edit)
   orders_columns: string[] | null; // keys of the Orders table columns this user shows (null: not chosen, the default ones)
+  deere_sync_alerts: boolean; // gets the John Deere sync popup, bell items and emails (admins always)
 }
 
 // Response of creating a user or resetting a password. When the email could not be sent, the password is
@@ -225,7 +226,8 @@ export interface Dashboard {
   manual_detections: { quantity_changes: number; address_changes: number; moq_alerts: number };
 }
 
-export type ActivityKind = "changes" | "no_changes" | "baseline" | "upload_failed" | "email_failed" | "conflicts" | "delivered";
+export type ActivityKind = "changes" | "no_changes" | "baseline" | "upload_failed" | "email_failed" | "conflicts" | "delivered"
+  | "otp_needed" | "otp_timed_out" | "sync_failed"; // the last three: John Deere sync alerts (open the Deere sync popup)
 
 // Inbound (received at SASH US) / outbound (delivered to Deere) mark on an order, set by the Warehouse Manager.
 // Order status steps: received / dispatched (SASH Faridabad, admin) → inbound / outbound (SASH US, Warehouse Manager).

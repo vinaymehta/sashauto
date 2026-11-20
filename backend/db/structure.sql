@@ -1257,6 +1257,7 @@ CREATE TABLE public.users (
     permissions jsonb DEFAULT '{}'::jsonb NOT NULL,
     configurable jsonb DEFAULT '{}'::jsonb NOT NULL,
     read_notification_ids jsonb DEFAULT '[]'::jsonb NOT NULL,
+    deere_sync_alerts boolean DEFAULT false NOT NULL,
     CONSTRAINT users_role_valid CHECK (((role)::text = ANY (ARRAY[('admin'::character varying)::text, ('warehouse_manager'::character varying)::text, ('employee'::character varying)::text])))
 );
 
@@ -2211,6 +2212,13 @@ CREATE UNIQUE INDEX index_app_settings_on_key ON public.app_settings USING btree
 --
 
 CREATE INDEX index_app_settings_on_updated_by_id ON public.app_settings USING btree (updated_by_id);
+
+
+--
+-- Name: index_audit_logs_on_action_and_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_audit_logs_on_action_and_created_at ON public.audit_logs USING btree (action, created_at);
 
 
 --
@@ -3582,6 +3590,7 @@ ALTER TABLE ONLY public.address_changes
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261120000001'),
 ('20261119000001'),
 ('20261114000007'),
 ('20261114000006'),

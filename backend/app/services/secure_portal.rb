@@ -11,6 +11,8 @@ class SecurePortal
   OTP_INPUT_CSS = 'input[name="credentials.passcode"]'.freeze
   OTP_SUBMIT_CSS = 'input.button.button-primary'.freeze
   OTP_MAX_ATTEMPTS = 3
+  # The OtpHandoff request the Deere sync popup shows (Api::PortalSyncController).
+  OTP_KEY = 'secure_portal'.freeze
 
   DOWNLOAD_DIR = Rails.root.join('public', 'secure_portal').to_s
   DOWNLOAD_TIMEOUT = 180
@@ -124,10 +126,11 @@ class SecurePortal
     @session_store.capture_storage(@driver)
   end
 
-  # Asks a human for the SMS code via /otp_requests (bell + Slack alert) and
-  # types it in. Retries with a fresh request if the site rejects the code.
+  # Asks a person for the SMS code (the Deere sync popup in the app; the bell and an email the first time, PortalAlerts)
+  # and types it in. Retries with a fresh request if the site rejects the code. Raises OtpHandoff::TimedOut when nobody
+  # enters it in time.
   def verify_otp
-    handoff = OtpHandoff.new('secure_portal', label: 'John Deere (jdsnofi)')
+    handoff = OtpHandoff.new(OTP_KEY, label: 'John Deere')
     deadline = Time.now + OtpHandoff::WAIT_TIMEOUT
     send_code = @driver.find_elements(css: OTP_SEND_CODE_CSS).find(&:displayed?)
     if send_code
@@ -136,9 +139,10 @@ class SecurePortal
     end
 
     message = nil
-    OTP_MAX_ATTEMPTS.times do
-      code = handoff.wait_for_code(message: message, deadline: deadline)
-      raise "SecurePortal: no OTP entered within #{OtpHandoff::WAIT_TIMEOUT}s" unless code
+    OTP_MAX_ATTEMPTS.times do |attempt|
+      # Only the first request alerts: a rejected code was typed by someone who has the popup open.
+      code = handoff.wait_for_code(message: message, deadline: deadline, alert: attempt.zero?)
+      raise OtpHandoff::TimedOut, "No OTP was entered within #{OtpHandoff::WAIT_TIMEOUT / 60} minutes." unless code
 
       puts "OTP received, submitting"
       enter_otp(code)
@@ -153,7 +157,7 @@ class SecurePortal
       message = "The last code was rejected -- check the SMS and enter the latest code."
     end
     handoff.finish
-    raise "SecurePortal: OTP rejected #{OTP_MAX_ATTEMPTS} times"
+    raise "Deere rejected the OTP #{OTP_MAX_ATTEMPTS} times."
   end
 
   def logged_in?

@@ -20,19 +20,6 @@ module Dashboard
     # One sale order: part, Qty, Unit Price text (per 100 pcs) and ship date.
     Sale = Data.define(:part, :qty, :price, :ship_date)
 
-    # Hardcoded overrides per business view.
-    OPEN_SALE_OVERRIDES = {
-      "dtp"  => "1505851.39",
-      "gmbh" => "315462.13",
-      "all"  => "1821313.52"
-    }.freeze
-
-    OPEN_SUPPLIER_INR_OVERRIDES = {
-      "dtp"  => "68949819.43",
-      "gmbh" => "9691366.33",
-      "all"  => "78641185.76"
-    }.freeze
-
     def self.call(today: Time.find_zone!(AppConfig.ageing_time_zone).today, overview: nil)
       new(today, overview || Overview.new(today)).call
     end
@@ -50,12 +37,8 @@ module Dashboard
 
     def open_sale
       open = @overview.open_orders
-      result = totals(open.map { |o| [ o.ship_date, o.value, o.unpriced ] })
+      totals(open.map { |o| [ o.ship_date, o.value, o.unpriced ] })
         .merge(orders: open.sum(&:rows), without_price: open.select(&:unpriced).sum(&:rows))
-      # Hardcoded revenue override for the Dashboard.
-      override = OPEN_SALE_OVERRIDES[@overview.view] || OPEN_SALE_OVERRIDES["all"]
-      result[:amount] = override if override
-      result
     end
 
     def ytd_customer_spend

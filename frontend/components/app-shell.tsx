@@ -8,6 +8,7 @@ import { BrandLogo } from "./brand-logo";
 import { BusinessProvider, useBusiness } from "./business-switch";
 import { ChangePasswordForm } from "./users/change-password-form";
 import { NotificationBell } from "./notification-bell";
+import { DeereSyncPopup } from "./deere-sync-popup";
 import { useSession } from "./session";
 import { ToastProvider } from "./toast";
 import { Skeleton } from "./ui/skeleton";
@@ -188,6 +189,8 @@ function Shell({ children }: { children: ReactNode }) {
               )}
             </div>
           </header>
+          {/* For the people who look after the John Deere sync: its status, and the SMS OTP box when it waits for one. */}
+          {ready && user.deere_sync_alerts && <DeereSyncPopup />}
           <main className="flex-1 px-4 py-5 sm:px-6">
             {/* Keyed by path (and business view) so each page fades in, and reloads its data for another business. */}
             <div key={`${pathname}:${business}`} className="animate-fade-in">

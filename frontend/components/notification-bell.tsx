@@ -5,7 +5,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type { ActivityFeed, ActivityItem, ActivityKind } from "@/lib/types";
 import { formatRelative } from "@/lib/format";
-import { AlertIcon, BellIcon, BoxIcon, CheckIcon, FileIcon, TruckIcon } from "./icons";
+import { AlertIcon, BellIcon, BoxIcon, CheckIcon, FileIcon, KeyIcon, RefreshIcon, TruckIcon } from "./icons";
+import { OPEN_DEERE_SYNC_EVENT } from "./deere-sync-popup";
 import { Spinner } from "./ui/feedback";
 import { useDismiss } from "./use-dismiss";
 
@@ -20,6 +21,9 @@ const KIND_STYLE: Record<ActivityKind, { icon: typeof BellIcon; className: strin
   email_failed: { icon: AlertIcon, className: "bg-white text-neutral-900 ring-1 ring-neutral-900" },
   conflicts: { icon: BoxIcon, className: "bg-white text-neutral-900 ring-1 ring-neutral-300" },
   delivered: { icon: TruckIcon, className: "bg-inc text-white" },
+  otp_needed: { icon: KeyIcon, className: "bg-accent text-white" },
+  otp_timed_out: { icon: RefreshIcon, className: "bg-white text-neutral-900 ring-1 ring-neutral-900" },
+  sync_failed: { icon: AlertIcon, className: "bg-white text-neutral-900 ring-1 ring-neutral-900" },
 };
 
 export function NotificationBell() {
@@ -63,7 +67,9 @@ export function NotificationBell() {
       setFeed({ ...feed, unread_count: Math.max(0, feed.unread_count - 1), items: feed.items.map((i) => (i.id === item.id ? { ...i, unread: false } : i)) });
       api.post("/api/activity/read", { id: item.id }).catch(() => undefined);
     }
-    router.push(item.href);
+    // John Deere sync items open the Deere sync popup (with the OTP box while the sync waits for the code).
+    if (item.href === "#deere-sync") window.dispatchEvent(new Event(OPEN_DEERE_SYNC_EVENT));
+    else router.push(item.href);
   }
 
   // "Mark as read": every notification at once.

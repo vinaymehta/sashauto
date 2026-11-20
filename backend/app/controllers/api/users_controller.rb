@@ -97,10 +97,11 @@ module Api
 
     private
 
-    # `permissions`: { section => "none" | "view" | "edit" } (Users → a user → Permissions).
+    # `permissions`: { section => "none" | "view" | "edit" } and `deere_sync_alerts` (Users → a user → Permissions).
     def user_params
       attrs = params.permit(:name, :email, :role).to_h.symbolize_keys
       attrs[:permissions] = params.require(:permissions).permit(*User::SECTIONS).to_h if params.key?(:permissions)
+      attrs[:deere_sync_alerts] = ActiveModel::Type::Boolean.new.cast(params[:deere_sync_alerts]) == true if params.key?(:deere_sync_alerts)
       attrs
     end
 

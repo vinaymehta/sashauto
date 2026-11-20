@@ -76,7 +76,7 @@ class ApplicationController < ActionController::Base
     "api/products" => %w[products], "api/product_images" => %w[products], "api/available_parts" => %w[products],
     "api/product_conflicts" => %w[products],
     "api/vendors" => %w[vendors], "api/vendor_products" => %w[vendors products], "api/import_issues" => %w[products vendors],
-    "api/settings" => %w[settings], "api/portal_sync" => %w[settings]
+    "api/settings" => %w[settings], "api/portal_sync" => :all # PortalSyncController checks who (#require_sync_access)
   }.freeze
   # Actions that only need view although they are not a GET: a delivery mark is set by the role it belongs to (the
   # Warehouse Manager's inbound / outbound with view of the Orders; OrderDeliveriesController checks the kind); the

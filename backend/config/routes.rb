@@ -2,11 +2,6 @@ Rails.application.routes.draw do
   get "up" => "rails/health#show", as: :rails_health_check
   # Sidekiq dashboard (password in .env, see config/initializers/sidekiq.rb)
   mount Sidekiq::Web => "/sidekiq" if defined?(Sidekiq::Web)
-  resources :otp_requests, only: [ :index ], id: /[a-z0-9_]+/ do
-    member do
-      post :submit
-    end
-  end
   scope :api, module: :api, as: :api, defaults: { format: :json } do
     resource :session, only: %i[show create destroy] do
       patch :password
@@ -107,8 +102,10 @@ Rails.application.routes.draw do
     get "settings", to: "settings#index"
     patch "settings", to: "settings#update"
     post "settings/po_preview", to: "settings#po_preview"
-    # Deere portal sync: status, and "Run sync now" (Admin Settings → Deere portal).
-    resource :portal_sync, only: %i[show create], controller: :portal_sync
+    # Deere portal sync: status, "Sync now" (Admin Settings, the Deere sync popup) and the SMS OTP it waits for.
+    resource :portal_sync, only: %i[show create], controller: :portal_sync do
+      post :otp
+    end
     resources :products, only: %i[index create update] do
       get :vendors, on: :member
       # Order summary (Products page): Firm / Addition / Forecast per part and day, and the same as .xlsx.

@@ -1,6 +1,7 @@
 module Activity
   # Items for the notification bell, derived from records that already exist (finished uploads,
-  # their email notifications, order status marks, open product conflicts). Nothing is stored per item; a user's
+  # their email notifications, order status marks, open product conflicts, and the Deere sync alerts in the audit log
+  # for the people who get them). Nothing is stored per item; a user's
   # `notifications_seen_at` ("Mark as read") and `read_notification_ids` (opened one by one) decide what is unread.
   class Feed
     LIMIT = 20
@@ -16,8 +17,10 @@ module Activity
     end
 
     def call
-      items = (upload_items + conflict_items + delivery_items).sort_by { |item| -item.at.to_f }.first(LIMIT)
-      items = Samples.items + items if Samples.enabled? # development only: one of each kind (Activity::Samples)
+      items = upload_items + conflict_items + delivery_items + portal_items
+      # Development only: one of each kind (Activity::Samples), in time order with the real ones (newest first).
+      items += Samples.items if Samples.enabled?
+      items = items.sort_by { |item| -item.at.to_f }.first(LIMIT + (Samples.enabled? ? Samples.items.size : 0))
       seen = @user.notifications_seen_at
       opened = @user.read_notification_ids.to_set
       unread = ->(item) { (seen.nil? || item.at > seen) && !opened.include?(item.id) }
@@ -96,6 +99,24 @@ module Activity
           Item.new(id: "deliveries-#{d.id}", kind: "delivered", title: "#{list.size} orders marked as #{OrderDelivery::LABELS.fetch(kind)}",
                    description: "#{where}by #{d.marked_by.name}", at: d.created_at, href: "/orders")
         end
+      end
+    end
+
+    # The Deere sync alerts (PortalAlerts), for the people who get them. "#deere-sync": the bell opens the Deere sync
+    # popup (with the OTP box while the sync still waits for the code).
+    PORTAL_ITEMS = {
+      PortalAlerts::EVENTS[:otp_needed] => [ "otp_needed", "John Deere sync needs the OTP" ],
+      PortalAlerts::EVENTS[:otp_timed_out] => [ "otp_timed_out", "John Deere sync stopped: no OTP entered" ],
+      PortalAlerts::EVENTS[:failed] => [ "sync_failed", "John Deere sync failed" ]
+    }.freeze
+
+    def portal_items
+      return [] unless @user.deere_sync_alerts?
+
+      AuditLog.where(action: PORTAL_ITEMS.keys).order(created_at: :desc).limit(LIMIT).map do |log|
+        kind, title = PORTAL_ITEMS.fetch(log.action)
+        description = kind == "otp_needed" ? "Open to enter the SMS code" : log.metadata["message"].to_s.lines.first.to_s.strip.truncate(140)
+        Item.new(id: "portal-#{log.id}", kind: kind, title: title, description: description, at: log.created_at, href: "#deere-sync")
       end
     end
 

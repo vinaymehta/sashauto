@@ -377,34 +377,6 @@ module Api
       } }
     end
 
-    # Hardcoded revenue overrides for Dashboard fulfilment figures per business view.
-    FULFILMENT_OVERRIDES = {
-      "dtp" => {
-        revenue_ordered:     "2028899.17",
-        revenue_delivered:   "523047.78",
-        revenue_in_transit:  "311841.28",
-        revenue_dispatched:  "834889.06",
-        revenue_pending_dtp: "1505851.39",
-        revenue_pending:     "1158785.83"
-      },
-      "gmbh" => {
-        revenue_ordered:     "438055.67",
-        revenue_delivered:   "122593.54",
-        revenue_in_transit:  "148187.57",
-        revenue_dispatched:  "270781.11",
-        revenue_pending_dtp: "315462.13",
-        revenue_pending:     "167274.56"
-      },
-      "all" => {
-        revenue_ordered:     "2466954.84",
-        revenue_delivered:   "645641.32",
-        revenue_in_transit:  "460028.85",
-        revenue_dispatched:  "1105670.17",
-        revenue_pending_dtp: "1821313.52",
-        revenue_pending:     "1326060.39"
-      }
-    }.freeze
-
     # Fulfilment figures of the Dashboard: the Product summary's totals (#summary_figures) over every Firm / Order order of
     # the current order data, in total and per business of the view: Qty and value ordered, delivered to Deere, in
     # transit, dispatched, pending as per DTP (open in Deere's file) and pending to dispatch as per SASH.
@@ -415,13 +387,9 @@ module Api
       lines = summary_lines(dataset(batches).where.not(Business.dashboard_excluded_sql("order_rows.business", "order_rows.po_number", "order_rows.part_number")).to_a)
       by_business = lines.group_by { |l| l[:row][:business] }
       totals = summary_figures(lines)
-      override = FULFILMENT_OVERRIDES[current_business] || FULFILMENT_OVERRIDES["all"]
-      totals.merge!(override) if override
 
       by_business_rows = businesses.map do |b|
-        figures = summary_figures(by_business[b] || [])
-        figures.merge!(FULFILMENT_OVERRIDES[b] || {})
-        figures.merge(business: b, currency: Business.currency(b))
+        summary_figures(by_business[b] || []).merge(business: b, currency: Business.currency(b))
       end
 
       render json: { data: {

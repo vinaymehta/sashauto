@@ -5,7 +5,7 @@ class SlackNotifier
     @notifier = Slack::Notifier.new(webhook_url) if webhook_url
   end
 
-  # The Deere portal job is waiting for the SMS code; `url` opens the page where an admin enters it.
+  # The Deere portal job is waiting for the SMS code; `url` opens the app with the John Deere sync popup (the OTP box).
   def notify_otp_required(label, message, url: nil)
     post(":iphone: *OTP needed: #{label}*\n#{message}#{"\n<#{url}|Enter the code>" if url}")
   end
