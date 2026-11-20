@@ -10,38 +10,32 @@ import { RESULT_LABEL, usePortalSync, type SyncOtp, type SyncStatus } from "./us
 
 // Opens the popup from anywhere (the bell's Deere sync items).
 export const OPEN_DEERE_SYNC_EVENT = "open-deere-sync";
-// Shown once per visit (browser tab session), remembered here.
+// While a failed sync needs attention: shown once per visit (browser tab session), remembered here.
 const SEEN_KEY = "deere-sync-seen";
-// Checks every 30 s in the background whether the sync started waiting for an OTP.
+// Checks every 30 s in the background whether the sync failed or started waiting for an OTP.
 const IDLE_POLL_MS = 30_000;
 
 const BUSINESS: Record<string, string> = { dtp: "DTP", gmbh: "GMBH" };
 
 // The John Deere sync popup, for the people who look after the sync (admins and users ticked for the Deere sync alerts):
-// the current or last run with each business's result and "Sync again". It opens on each visit, from the bell's Deere
-// sync items and from the alert email's link (?deere_sync=1), and by itself when the sync starts waiting for the SMS OTP:
-// then it shows the OTP box with the time left.
+// the current or last run with each business's result and "Sync again". When a sync fails it opens on each of their
+// visits until a sync succeeds (`attention`); also from the bell's Deere sync items and the alert email's link
+// (?deere_sync=1). When the sync waits for the SMS OTP it opens by itself with the OTP box and the time left. A rejected
+// or late OTP fails the run: Sync again asks Deere for a new code.
 export function DeereSyncPopup() {
   const { status, busy, starting, run, submitOtp } = usePortalSync({ idleMs: IDLE_POLL_MS });
   const [open, setOpen] = useState(false);
   // The OTP request the user closed the popup on: it does not open again for that one.
   const [dismissedOtp, setDismissedOtp] = useState<string | null>(null);
 
+  // The alert email's or Slack's link (?deere_sync=1) and the bell open it. The link is cleaned only once it really
+  // opens: an effect run that is undone at once must not lose it.
   useEffect(() => {
-    let seen = false;
-    try {
-      seen = sessionStorage.getItem(SEEN_KEY) === "1";
-    } catch { /* storage blocked: open on every page load */ }
     const fromLink = new URL(window.location.href).searchParams.has("deere_sync");
-    // Remembered (and the link cleaned) only once it really opens: an effect run that is undone at once must not use
-    // up the visit.
-    const first = !seen || fromLink ? setTimeout(() => {
-      try { sessionStorage.setItem(SEEN_KEY, "1"); } catch { /* storage blocked */ }
-      if (fromLink) {
-        const url = new URL(window.location.href);
-        url.searchParams.delete("deere_sync");
-        window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
-      }
+    const first = fromLink ? setTimeout(() => {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("deere_sync");
+      window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
       setOpen(true);
     }, 0) : undefined;
     const show = () => setOpen(true);
@@ -51,6 +45,26 @@ export function DeereSyncPopup() {
       window.removeEventListener(OPEN_DEERE_SYNC_EVENT, show);
     };
   }, []);
+
+  // A failed sync not followed by a successful one: opens once per visit. Once a sync succeeds the visit is forgotten,
+  // so a later failure opens it again.
+  const loaded = !!status;
+  const attention = status?.attention === true;
+  useEffect(() => {
+    if (!loaded) return;
+    if (!attention) {
+      try { sessionStorage.removeItem(SEEN_KEY); } catch { /* storage blocked */ }
+      return;
+    }
+    let seen = false;
+    try { seen = sessionStorage.getItem(SEEN_KEY) === "1"; } catch { /* storage blocked: open on every page load */ }
+    if (seen) return;
+    const timer = setTimeout(() => {
+      try { sessionStorage.setItem(SEEN_KEY, "1"); } catch { /* storage blocked */ }
+      setOpen(true);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [loaded, attention]);
 
   const otp = status?.otp ?? null;
   // A new OTP request opens the popup, and it stays open (after Submit too) until the user closes it.
@@ -95,6 +109,12 @@ export function DeereSyncPopup() {
 
         <div className="space-y-4 overflow-y-auto px-6 py-5">
           {otp && <OtpBox key={otp.requested_at} otp={otp} onSubmit={submitOtp} />}
+          {attention && !busy && !otp && (
+            <p className="flex items-start gap-2 rounded-lg border border-dec bg-dec-bg px-4 py-3 text-sm text-ink">
+              <AlertIcon size={16} className="mt-0.5 shrink-0 text-dec" />
+              <span>The last sync failed. Click <b>Sync again</b> to run it now. If Deere asks for the SMS code, the box appears here.</span>
+            </p>
+          )}
           <RunStatus status={status} busy={busy} onOpenUpload={close} />
         </div>
 
@@ -146,7 +166,7 @@ function OtpBox({ otp, onSubmit }: { otp: SyncOtp; onSubmit: (code: string) => P
       {error && <p className="mt-2 text-sm font-medium text-dec">{error}</p>}
       {left !== null && (
         <p className={`mt-2 text-xs ${left <= 60 ? "font-medium text-dec" : "text-ink-muted"}`}>
-          {left > 0 ? `The sync waits ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")} more for the code.` : "Time is up: the sync stopped. Click Sync again to get a new code."}
+          {left > 0 ? `The sync waits ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")} more for the code.` : "Time is up: the sync stops. Click Sync again to get a new code."}
         </p>
       )}
     </form>

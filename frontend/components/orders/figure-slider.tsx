@@ -41,7 +41,7 @@ export interface FigureRow {
   status?: OrderStatus;
   file?: string;
   file_name?: string | null;
-  qty: string;
+  qty: string | null; // null: a charge (freight), not a piece
   price: string | null;
   currency?: string;
   price_source?: string;
@@ -103,7 +103,7 @@ export function FigureSlider({ config, onClose, onOpenOrder }: { config: FigureS
     const id = r.id !== null && config.kind !== "supplier" ? r.id : (r.order_row_id ?? r.manual_order_id ?? null);
     if (id === null || !r.po_number || !r.part_number || !r.ship_date) return null;
     return { id, manual: config.kind === "supplier" ? !r.order_row_id : Boolean(r.manual), po_number: r.po_number, po_line_number: r.po_line_number ?? "",
-             part_number: r.part_number, order_type: r.order_type ?? "Firm", ship_date: r.ship_date, qty: r.qty };
+             part_number: r.part_number, order_type: r.order_type ?? "Firm", ship_date: r.ship_date, qty: r.qty ?? "0" };
   };
 
   const th = (label: string, key: string, align: "left" | "right" = "left") => (

@@ -19,6 +19,7 @@ export interface SyncStatus {
   results?: SyncResult[];
   error?: string | null;
   otp?: SyncOtp | null;
+  attention?: boolean; // a sync failed and none has succeeded since: the popup shows on each visit
 }
 
 export const RESULT_LABEL: Record<SyncResult["status"], string> = { uploaded: "Uploaded", same: "No change", failed: "Failed" };

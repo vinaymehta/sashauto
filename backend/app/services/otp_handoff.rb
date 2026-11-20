@@ -26,11 +26,10 @@ class OtpHandoff
     @label = label
   end
 
-  # Opens (or re-opens, after a rejected code) a request and blocks until a code is submitted or the deadline passes.
-  # `alert`: also tell the people who look after the sync (PortalAlerts: bell and email; the popup shows the request
-  # either way). Returns the code, or nil on timeout.
-  def wait_for_code(message: nil, deadline: Time.now + WAIT_TIMEOUT, alert: true)
-    open_request(message, deadline, alert)
+  # Opens a request (the popup's OTP box shows it) and blocks until a code is submitted or the deadline passes. Returns
+  # the code, or nil on timeout. No alert: the people who look after the sync are alerted when the run fails.
+  def wait_for_code(message: nil, deadline: Time.now + WAIT_TIMEOUT)
+    open_request(message, deadline)
     while Time.now < deadline
       code = take_code
       return code if code
@@ -76,7 +75,7 @@ class OtpHandoff
     "#{CODE_PREFIX}#{@key}"
   end
 
-  def open_request(message, deadline, alert)
+  def open_request(message, deadline)
     message ||= "#{@label} is asking for the SMS OTP. Enter it to let the sync continue."
     REDIS_POOL.with do |r|
       r.del(code_key) # never reuse a code typed for an earlier attempt
@@ -84,7 +83,6 @@ class OtpHandoff
                                   "requested_at" => Time.now.utc.iso8601, "expires_at" => deadline.utc.iso8601)
       r.expire(request_key, WAIT_TIMEOUT + 60)
     end
-    PortalAlerts.otp_needed(message: message, expires_at: deadline) if alert
   end
 
   def take_code

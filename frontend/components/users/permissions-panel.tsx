@@ -96,8 +96,8 @@ export function PermissionsPanel({ user, onClose, onSaved }: { user: User; onClo
           <span className="min-w-0 flex-1">
             <span className="block text-sm font-medium text-ink">John Deere sync</span>
             <span className="block text-xs text-ink-muted">
-              {admin ? "Admins always get them: " : ""}the sync popup when they open the app, and a notification and an email when Deere asks
-              for the SMS OTP, nobody enters it in time, or the sync fails. They can enter the OTP and run the sync again.
+              {admin ? "Admins always get them: " : ""}a notification and an email when the sync fails (also when nobody entered the SMS OTP in
+              time), and the sync popup on each visit until a sync succeeds. From it they run the sync again and enter the OTP.
             </span>
           </span>
           <span className="flex w-12 justify-center">

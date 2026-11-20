@@ -23,7 +23,6 @@ module Activity
         [ "delivered", "35 orders marked as Dispatched from SASH Faridabad", "DTP · by Admin User", "/orders" ],
         [ "delivered", "PO 5500929633 · JXAL110010: Delivered to Deere", "GMBH · by Warehouse Manager", "/orders" ],
         [ "conflicts", "3 parts have a Commodity Type conflict", "Open Products to review them", "/products?conflicts=open" ],
-        [ "otp_needed", "John Deere sync needs the OTP", "Open to enter the SMS code", "#deere-sync" ],
         [ "otp_timed_out", "John Deere sync stopped: no OTP entered", "Nobody entered the SMS code within 8 minutes, so the sync stopped.", "#deere-sync" ],
         [ "sync_failed", "John Deere sync failed", "DTP: Download failed: no Supplier option contains \"0000383803\"", "#deere-sync" ]
       ].each_with_index.map do |(kind, title, description, href), i|

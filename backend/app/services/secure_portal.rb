@@ -1,4 +1,7 @@
 class SecurePortal
+  # Deere rejected the SMS code typed in the popup (the run fails; Sync again asks for a new code).
+  class OtpRejected < StandardError; end
+
   LOGIN_URL  = "https://sso.johndeere.com/".freeze          # TODO: login page URL
   TARGET_URL = "https://jdsnofi.deere.com/jdsnofi/servlet/com.deere.jdsnofi.view.servlet.WebServiceServlet".freeze  # TODO: page that requires being logged in
   # Username field, or a password field (Okta uses name="credentials.passcode"
@@ -10,7 +13,6 @@ class SecurePortal
   OTP_SEND_CODE_CSS = 'input.button.button-primary'.freeze
   OTP_INPUT_CSS = 'input[name="credentials.passcode"]'.freeze
   OTP_SUBMIT_CSS = 'input.button.button-primary'.freeze
-  OTP_MAX_ATTEMPTS = 3
   # The OtpHandoff request the Deere sync popup shows (Api::PortalSyncController).
   OTP_KEY = 'secure_portal'.freeze
 
@@ -126,9 +128,9 @@ class SecurePortal
     @session_store.capture_storage(@driver)
   end
 
-  # Asks a person for the SMS code (the Deere sync popup in the app; the bell and an email the first time, PortalAlerts)
-  # and types it in. Retries with a fresh request if the site rejects the code. Raises OtpHandoff::TimedOut when nobody
-  # enters it in time.
+  # Asks a person for the SMS code (the OTP box of the Deere sync popup in the app) and types it in. Raises
+  # OtpHandoff::TimedOut when nobody enters it in time, and fails the run when Deere rejects it: the popup then offers
+  # Sync again, which asks for a new code.
   def verify_otp
     handoff = OtpHandoff.new(OTP_KEY, label: 'John Deere')
     deadline = Time.now + OtpHandoff::WAIT_TIMEOUT
@@ -138,26 +140,17 @@ class SecurePortal
       sleep 3
     end
 
-    message = nil
-    OTP_MAX_ATTEMPTS.times do |attempt|
-      # Only the first request alerts: a rejected code was typed by someone who has the popup open.
-      code = handoff.wait_for_code(message: message, deadline: deadline, alert: attempt.zero?)
-      raise OtpHandoff::TimedOut, "No OTP was entered within #{OtpHandoff::WAIT_TIMEOUT / 60} minutes." unless code
+    code = handoff.wait_for_code(deadline: deadline)
+    raise OtpHandoff::TimedOut, "No OTP was entered within #{OtpHandoff::WAIT_TIMEOUT / 60} minutes." unless code
 
-      puts "OTP received, submitting"
-      enter_otp(code)
-      unless otp_form?
-        handoff.finish
-        @session_store.capture_storage(@driver)
-        @session_store.save(@driver) # this is what persists the 30-day device-trust cookie
-        open_page(TARGET_URL) unless @driver.current_url.start_with?(TARGET_URL)
-        return
-      end
-
-      message = "The last code was rejected -- check the SMS and enter the latest code."
-    end
+    puts "OTP received, submitting"
+    enter_otp(code)
     handoff.finish
-    raise "Deere rejected the OTP #{OTP_MAX_ATTEMPTS} times."
+    raise OtpRejected, "Deere rejected the OTP. Click Sync again to get a new code." if otp_form?
+
+    @session_store.capture_storage(@driver)
+    @session_store.save(@driver) # this is what persists the 30-day device-trust cookie
+    open_page(TARGET_URL) unless @driver.current_url.start_with?(TARGET_URL)
   end
 
   def logged_in?

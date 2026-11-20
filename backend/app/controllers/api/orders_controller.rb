@@ -414,7 +414,7 @@ module Api
       business = params[:business] if businesses.include?(params[:business])
       part = OrderRows::Normalizer.part_number(params[:part_number].to_s) if params[:part_number].present?
       batches = UploadBatch.latest_for(current_business)
-      cached = Rails.cache.fetch([ "fulfilment_lines/v1", current_business, business, part, lines_version(batches) ], expires_in: 30.minutes) do
+      cached = Rails.cache.fetch([ "fulfilment_lines/v2", current_business, business, part, lines_version(batches) ], expires_in: 30.minutes) do
         figure_lines(batches, business, part)
       end
       rows, totals = cached[figure]
@@ -447,14 +447,16 @@ module Api
       FIGURES.to_h do |figure|
         rows = lines.filter_map do |l|
           qty, value = figure_of(l, figure)
-          next unless qty.positive? || value&.positive?
+          # A charge is listed only where it has a value (no Qty: not a piece).
+          next unless (!l[:charge] && qty.positive?) || value&.positive?
 
           r = l[:row]
           name, day = files[r.upload_batch_id]
+          # A charge (freight) is listed for its value but has no Qty (not a piece; the card's pcs leave it out).
           { id: r.id, manual: r[:manual], kept: r[:kept], business: r[:business], po_number: r.po_number, po_line_number: r.po_line_number,
             part_number: r.part_number, description: descriptions[r.part_number], order_type: r.order_type, ship_date: r.ship_date,
             status: l[:status] || "none", file: r[:manual] ? "Manual order" : (r[:kept] ? "Old file · #{day&.in_time_zone(zone)&.to_date}" : "Latest"),
-            file_name: name, qty: Serializers.qty(qty), price: l[:price]&.to_s("F"), value: value&.round(2)&.to_s("F"), charge: l[:charge] }
+            file_name: name, qty: l[:charge] ? nil : Serializers.qty(qty), price: l[:price]&.to_s("F"), value: value&.round(2)&.to_s("F"), charge: l[:charge] }
         end
         [ figure, [ rows, { qty: totals[figure.to_sym], value: totals[:"revenue_#{figure}"] } ] ]
       end
@@ -630,12 +632,14 @@ module Api
     # revenue of the Qty ordered, dispatched and delivered (Qty × price ÷ 100; lines without a price left out, counted in
     # unpriced). Dispatched includes what is still in transit, so it is not 0 before Deere receives the goods.
     def summary_figures(lines)
-      ordered, open, shipped, delivered, pending = %i[ordered open shipped delivered pending].map { |k| lines.sum(0.to_d) { |l| l[k] } }
+      # Pieces: parts only. A charge (Air Freight Charges) is not a piece: it has no Qty anywhere (its value still counts
+      # where it does, below). Only charges: no Qty (nil, shown as —).
+      parts = lines.reject { |l| l[:charge] }
+      pcs = ->(&qty) { parts.empty? && lines.any? ? nil : Serializers.qty(parts.sum(0.to_d) { |l| qty.(l) }) }
       priced = lines.select { |l| l[:price] }
-      # In transit per order, never below 0: a charge delivered without being dispatched (freight) takes nothing off.
-      transit = lines.sum(0.to_d) { |l| [ l[:shipped] - l[:delivered], 0.to_d ].max }
-      { ordered: Serializers.qty(ordered), dispatched: Serializers.qty(shipped), in_transit: Serializers.qty(transit),
-        delivered: Serializers.qty(delivered), pending: Serializers.qty(pending), pending_dtp: Serializers.qty(open), orders: lines.size,
+      { ordered: pcs.() { |l| l[:ordered] }, dispatched: pcs.() { |l| l[:shipped] },
+        in_transit: pcs.() { |l| [ l[:shipped] - l[:delivered], 0.to_d ].max }, # per order, never below 0
+        delivered: pcs.() { |l| l[:delivered] }, pending: pcs.() { |l| l[:pending] }, pending_dtp: pcs.() { |l| l[:open] }, orders: lines.size,
         open_orders: lines.count { |l| l[:pending].positive? },
         revenue_ordered: (priced.sum(0.to_d) { |l| l[:ordered] * l[:price] / 100 }).round(2).to_s("F"),
         revenue_dispatched: (priced.sum(0.to_d) { |l| l[:shipped] * l[:price] / 100 }).round(2).to_s("F"),

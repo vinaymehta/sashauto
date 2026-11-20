@@ -4,9 +4,10 @@ require "digest"
 # Dale, GMBH: Faridabad; see AppConfig.portal_supplier) and uploads each to its business like a manual upload (Uploads::Intake,
 # as the first active admin), so the usual checks and emails run. A file the same as the business's last upload is
 # skipped. Started by sidekiq-cron at 08:00 IST (config/schedule.yml), or right away from Admin Settings →
-# Deere portal or the John Deere sync popup ("Sync now"). One run at a time (PortalSync lock); its status and results are
-# kept for those. When Deere asks for the SMS OTP, nobody enters it in time, or the run fails, the people who look after
-# the sync are alerted in the app and by email (OtpHandoff, PortalAlerts).
+# Deere portal or the John Deere sync popup ("Sync again"). One run at a time (PortalSync lock); its status and results
+# are kept for those. When Deere asks for the SMS OTP the popup shows the OTP box (OtpHandoff). When the run fails
+# (nobody entered the OTP in time, Deere rejected it, or anything else) the people who look after the sync are alerted
+# (PortalAlerts) and the popup shows on each of their visits until a run succeeds (`attention`).
 class SecurePortalSyncJob < ApplicationJob
   # A failed run is not retried: each retry would sign in to Deere again (and could lock the account or send another
   # SMS). The next scheduled run tries again.
@@ -20,7 +21,9 @@ class SecurePortalSyncJob < ApplicationJob
       return
     end
 
-    run = { trigger: trigger, by: user_id && User.find_by(id: user_id)&.name, started_at: Time.current }
+    # `attention`: a run failed and none has succeeded since (kept while this one runs).
+    run = { trigger: trigger, by: user_id && User.find_by(id: user_id)&.name, started_at: Time.current,
+            attention: PortalSync.status["attention"] == true }
     PortalSync.write(run.merge(state: "running"))
     results = []
     error = nil
@@ -38,12 +41,14 @@ class SecurePortalSyncJob < ApplicationJob
       error = e.message
       failure = e
     rescue StandardError => e
-      error = "#{e.class}: #{e.message.lines.first&.strip}"
+      # A rejected OTP reads as it is in the popup; any other error with its class, for whoever looks into it.
+      error = e.is_a?(SecurePortal::OtpRejected) ? e.message : "#{e.class}: #{e.message.lines.first&.strip}"
       failure = e
     ensure
       # Neither finished nor failed: stopped from outside (Sidekiq shutting down; Sidekiq then queues the job again).
       error ||= "Stopped before it finished." unless finished
-      PortalSync.write(run.merge(state: error ? "failed" : "done", finished_at: Time.current, results: results, error: error))
+      failed = error.present? || results.any? { |r| r[:status] == "failed" }
+      PortalSync.write(run.merge(state: error ? "failed" : "done", finished_at: Time.current, results: results, error: error, attention: failed))
       PortalSync.unlock(token)
     end
 

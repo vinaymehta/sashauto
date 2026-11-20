@@ -1,9 +1,8 @@
 <%= @title %>
 <%= @at.strftime("%-d %b %Y, %H:%M IST") %>
 
-<% if @kind == "otp_needed" %>The Deere portal sent an SMS code. The sync is waiting for it<% if @expires_at %> until <%= @expires_at.strftime("%H:%M IST") %><% end %>.
-Open the app and enter the code in the John Deere sync popup.
+<%= @message %>
 
-<% end %><%= @message %>
+Open the app and click Sync again in the John Deere sync popup. If Deere asks for the SMS code, enter it there.
 
-<%= @kind == "otp_needed" ? "Enter the OTP" : "Open the John Deere sync" %>: <%= @url %>
+Open the John Deere sync: <%= @url %>

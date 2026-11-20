@@ -12,7 +12,8 @@ module Api
     def create
       return render_error("A sync is already running. Wait for it to finish.", :conflict) if PortalSync.running?
 
-      PortalSync.write(state: "queued", trigger: "manual", by: current_user.name, requested_at: Time.current)
+      PortalSync.write(state: "queued", trigger: "manual", by: current_user.name, requested_at: Time.current,
+                       attention: PortalSync.status["attention"] == true)
       SecurePortalSyncJob.perform_later("manual", current_user.id)
       audit("portal_sync.requested")
       render json: { data: status_json }, status: :accepted

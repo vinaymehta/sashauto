@@ -12,7 +12,8 @@ module PortalSync
   module_function
 
   # The current or last run: state ("never", "queued", "running", "done", "failed"), trigger ("manual", "schedule"),
-  # who asked (manual), times, results ([{ business, status, upload_id, file, message }]) and error.
+  # who asked (manual), times, results ([{ business, status, upload_id, file, message }]), error, and `attention`: a run
+  # failed and none has succeeded since (the John Deere sync popup shows on each visit then).
   def status
     raw = REDIS_POOL.with { |r| r.get(STATUS_KEY) }
     (raw && JSON.parse(raw)) || { "state" => "never" }
