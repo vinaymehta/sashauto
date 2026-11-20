@@ -103,17 +103,20 @@ module Api
       products = Product.with_attached_images.where(part_number: rows.map(&:part_number).uniq).index_by(&:part_number)
       descriptions = products.transform_values(&:description)
       discontinued = products.values.select(&:discontinued).to_set(&:part_number)
+      adjusted = qty_adjustments(rows)
       render json: {
         data: rows.each_with_index.map do |row, i|
           # The order's PO and status (a combined order's on each of its rows).
           key = placement_key(row)
+          info = invoice_info(row, progress[own_keys[i]], deliveries.fetch(key, {}), named: named.dig(own_keys[i], "dispatched"))
           prod = products[row.part_number]
           img = prod&.images&.first
           Serializers.order_row(row, source: true).merge(placed: ordered.key?(key), order_placed: order_placed.include?(key),
                                                          ordered_qty: Serializers.qty(ordered[key]),
                                                          deliveries: deliveries.fetch(key, {}),
                                                          **row_invoice(named.dig(own_keys[i], "dispatched") || deliveries.dig(key, "dispatched"), row, progress[own_keys[i]]),
-                                                         **invoice_info(row, progress[own_keys[i]], deliveries.fetch(key, {}), named: named.dig(own_keys[i], "dispatched")),
+                                                         **info,
+                                                         **qty_fields(adjusted[[ row[:manual] ? true : false, row.id ]], info),
                                                          firm_date: firm_dates[firm_keys[i]], came_firm_date: came[i], business: row[:business],
                                                          part_description: descriptions[row.part_number],
                                                          discontinued: discontinued.include?(row.part_number),
@@ -361,7 +364,7 @@ module Api
           file_day = kept ? UploadBatch.completed_day(row.upload_batch_id) : nil
           summary_figures([ l ]).merge(part_number: row.part_number, description: descriptions[row.part_number], po_line_number: row.po_line_number,
                                        order_type: row.order_type, ship_date: row.ship_date, ship_to_location: row.ship_to_location, status: l[:status],
-                                       kept: kept, manual: manual, file_day: file_day)
+                                       kept: kept, manual: manual, file_day: file_day, qty_change: l[:qty_change])
         end
       } }
     end
@@ -583,10 +586,12 @@ module Api
         # Prices are per 100 pieces; a charge's Unit Price is the charge itself (Product.charge_parts).
         charge = charges.include?(row.part_number)
         price *= 100 if price && charge
-        { row: row, open: open, shipped: shipped, delivered: delivered, price: price, status: info[:status], charge: charge }
+        { row: row, open: open, shipped: shipped, delivered: delivered, price: price, status: info[:status], charge: charge,
+          order_qty_was: ordered, shipped_was: shipped, kept: row[:kept] ? true : false }
       end.then { |lines| receipts_delivered(lines, receipts) }.each do |l|
         l[:ordered] = l[:open] + l[:delivered]
       end.then { |lines| allocate_pending(lines) }.each do |l|
+        l[:qty_change] = qty_change(l)
         # A charge (freight) is billed by Deere, not dispatched by SASH: nothing of it is pending to dispatch.
         l[:pending] = 0.to_d if l[:charge]
       end
@@ -668,6 +673,47 @@ module Api
         end
       end
       lines
+    end
+
+    # Why a summary line's Ordered / Dispatched differ from the row's Order Qty / Shipped Qty on its invoices (nil: they
+    # do not): { ordered: [was, now], dispatched: [was, now], causes: [...] }.
+    def qty_change(l)
+      ordered_changed = l[:ordered] != l[:order_qty_was]
+      moved = l[:shipped] - l[:shipped_was]
+      return nil unless ordered_changed || moved != 0
+
+      causes = []
+      if ordered_changed
+        causes << if l[:kept]
+          "Deere no longer lists this row, so only what Deere has received (#{Serializers.qty(l[:delivered])}) counts as ordered."
+        else
+          "Ordered = delivered to Deere (#{Serializers.qty(l[:delivered])}) + still open at Deere (#{Serializers.qty(l[:open])}); " \
+            "the Order Qty at dispatch was #{Serializers.qty(l[:order_qty_was])}."
+        end
+      end
+      causes << "Dispatched is capped at Ordered; #{Serializers.qty(-moved)} moved to the next open row of this PO line." if moved.negative?
+      causes << "Got #{Serializers.qty(moved)} dispatched from another row of this PO line that had dispatched more than it ordered." if moved.positive?
+      { ordered: [ Serializers.qty(l[:order_qty_was]), Serializers.qty(l[:ordered]) ],
+        dispatched: [ Serializers.qty(l[:shipped_was]), Serializers.qty(l[:shipped]) ], causes: causes }
+    end
+
+    # Summary lines of every row of the PO lines of `rows` (the listed page), by [manual, id], for #qty_fields.
+    def qty_adjustments(rows)
+      triples = rows.map { |r| [ r.po_number, r.part_number, r.po_line_number ] }.uniq.to_set
+      return {} if triples.empty?
+
+      siblings = dataset(selected_batches).where(po_number: triples.map(&:first).uniq, part_number: triples.map { |t| t[1] }.uniq)
+                                          .to_a.select { |r| triples.include?([ r.po_number, r.part_number, r.po_line_number ]) }
+      summary_lines(siblings).to_h { |l| [ [ l[:row][:manual] ? true : false, l[:row].id ], l ] }
+    end
+
+    # The Orders list's Order / Shipped / Balance Qty of a row whose summary line changed them (see #allocate_pending).
+    def qty_fields(l, info)
+      return {} unless l&.dig(:qty_change)
+
+      fields = { order_qty: Serializers.qty(l[:ordered]), balance_qty: Serializers.qty([ l[:ordered] - l[:shipped], 0.to_d ].max), qty_change: l[:qty_change] }
+      fields[:shipped_qty] = Serializers.qty(l[:shipped]) if l[:shipped].positive? || info[:shipped_qty]
+      fields
     end
 
     # Totals of summary lines: Qty ordered, dispatched, in transit, delivered, still to dispatch, orders (open), and their

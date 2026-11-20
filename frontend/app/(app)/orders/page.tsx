@@ -16,6 +16,7 @@ import { InvoiceUploadPanel } from "@/components/orders/invoice-upload-panel";
 import { DispatchImportPanel } from "@/components/orders/dispatch-import-panel";
 import { OrderActions, UploadPicker } from "@/components/orders/orders-menu";
 import { ColumnsMenu } from "@/components/orders/columns-menu";
+import { QtyChangeTip } from "@/components/orders/qty-change-tip";
 import { DeliveryCell } from "@/components/orders/delivery-cell";
 import { OpenOrderContext, OrderDetailsLink } from "@/components/orders/order-details-modal";
 import { RelatedLink } from "@/components/orders/related-popover";
@@ -163,9 +164,9 @@ const invoiceTitle = (r: OrderRow, kind: InvoiceKind) => (r.invoice_moves ?? [])
   .map((m) => `${m.invoice_number} (${formatDate(m.invoice_date)}): Qty ${formatQty(m.qty)}`).join("\n") || undefined;
 const INVOICE_COLUMNS: Column[] = [
   { key: "file", label: "File", sortable: false, render: (r) => <FileCell row={r} /> },
-  { key: "order_qty", label: "Order Qty", align: "right", sortable: false, render: (r) => qty(r.order_qty ?? r.qty) },
+  { key: "order_qty", label: "Order Qty", align: "right", sortable: false, render: (r) => <span className="inline-flex items-center gap-0.5">{qty(r.order_qty ?? r.qty)}<QtyChangeTip change={r.qty_change} field="ordered" /></span> },
   { key: "shipped_qty", label: "Shipped Qty", align: "right", sortable: false,
-    render: (r) => <span title={invoiceTitle(r, "india")}>{qty(r.shipped_qty ?? null)}</span> },
+    render: (r) => <span className="inline-flex items-center gap-0.5"><span title={invoiceTitle(r, "india")}>{qty(r.shipped_qty ?? null)}</span><QtyChangeTip change={r.qty_change} field="dispatched" /></span> },
   { key: "balance_qty", label: "Balance Qty", align: "right", sortable: false, render: (r) => qty(r.balance_qty ?? r.qty) },
   { key: "outbound_qty", label: "Outbound Qty", align: "right", sortable: false,
     render: (r) => <span title={invoiceTitle(r, "inc")}>{qty(r.outbound_qty ?? null)}</span> },

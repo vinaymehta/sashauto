@@ -1,5 +1,6 @@
 "use client";
 
+import { QtyChangeTip } from "@/components/orders/qty-change-tip";
 import { useState } from "react";
 import type { PoSummary, PoSummaryLine } from "@/lib/types";
 import { formatCount, formatDate, formatQty } from "@/lib/format";
@@ -134,9 +135,9 @@ export function PoSummaryPanel({ po, uploadId }: { po: string; uploadId?: number
                     <td className="px-3 py-2 text-ink">{l.order_type}</td>
                     <td className="whitespace-nowrap px-3 py-2 text-ink">{formatDate(l.ship_date)}</td>
                     <td className="px-3 py-2"><StatusPill kind={l.status} /></td>
-                    <td className="px-2 py-2 text-right tabular text-ink">{formatQty(l.ordered)}</td>
+                    <td className="px-2 py-2 text-right tabular text-ink">{formatQty(l.ordered)}<QtyChangeTip change={l.qty_change} field="ordered" /></td>
                     <td className={`px-2 py-2 text-right tabular font-semibold ${Number(l.pending) > 0 ? "text-amber-700" : "text-ink-faint"}`}>{formatQty(l.pending)}</td>
-                    <td className="px-2 py-2 text-right tabular text-violet-700">{formatQty(l.dispatched)}</td>
+                    <td className="px-2 py-2 text-right tabular text-violet-700">{formatQty(l.dispatched)}<QtyChangeTip change={l.qty_change} field="dispatched" /></td>
                     <td className="px-2 py-2 text-right tabular text-green-700">{formatQty(l.delivered)}</td>
                     <td className="px-3 py-2 text-right tabular text-ink">{l.unpriced ? <span className="text-ink-faint">—</span> : money(l.revenue_ordered)}</td>
                     <td className="whitespace-nowrap px-5 py-2">

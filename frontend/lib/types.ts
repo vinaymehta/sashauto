@@ -482,6 +482,7 @@ export interface OrderRow {
   order_qty?: string | null;
   shipped_qty?: string | null;
   balance_qty?: string | null;
+  qty_change?: QtyChange | null; // set when the system changed Order / Shipped Qty (see QtyChangeTip)
   outbound_qty?: string | null;
   invoice_moves?: InvoiceMove[];
 }
@@ -905,7 +906,15 @@ export interface PartSummary {
 }
 
 // PO summary (PO Number link): each Firm / Order line of one PO with the Product summary figures, and the PO's totals.
+// The system changed a row's Ordered / Dispatched Qty ([was, now]), with the causes (red i).
+export interface QtyChange {
+  ordered: [string, string];
+  dispatched: [string, string];
+  causes: string[];
+}
+
 export interface PoSummaryLine extends PartSummaryFigures {
+  qty_change?: QtyChange | null;
   part_number: string;
   description: string | null;
   po_line_number: string;
