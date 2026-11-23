@@ -4,19 +4,16 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { BoxIcon, CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, DashboardIcon, DownloadIcon, FileIcon, HelpIcon, PlayIcon,
-  SearchIcon, TableIcon, TrashIcon, TruckIcon, UploadIcon } from "@/components/icons";
+  SearchIcon, TableIcon, TruckIcon, UploadIcon } from "@/components/icons";
 import { TINTS, type Tint } from "@/components/ui/tint";
-import { useToast } from "@/components/toast";
 import { useApi } from "@/components/use-api";
 import { Button } from "@/components/ui/button";
 import { Alert, EmptyState } from "@/components/ui/feedback";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, ApiError } from "@/lib/api";
-import { formatDateOnly } from "@/lib/format";
 import type { HelpResponse, HelpSection, HelpStep, HelpTopic } from "@/lib/types";
 
 // Help: how to use each part of the app, one topic at a time (the topics the user's permissions allow). Each topic has
-// its steps, the messages the app can show, a PDF of the same text and, when an admin has uploaded one, a short video.
+// its steps, the messages the app can show, a PDF of the same text and a short video.
 // ?topic=<key> opens a topic (the "?" links on other pages).
 export default function HelpPage() {
   return (
@@ -49,7 +46,7 @@ const styleOf = (category: string) => CATEGORY_STYLE[category] ?? CATEGORY_STYLE
 function Help() {
   const router = useRouter();
   const params = useSearchParams();
-  const { data, error, loading, reload } = useApi<HelpResponse>("/api/help");
+  const { data, error, loading } = useApi<HelpResponse>("/api/help");
   const [search, setSearch] = useState("");
   const topics = useMemo(() => data?.data ?? [], [data]);
   const found = useMemo(() => filterTopics(topics, search), [topics, search]);
@@ -73,7 +70,7 @@ function Help() {
           <div className="flex min-w-0 flex-1 flex-col md:p-6">
             <div className="flex-1 overflow-hidden bg-white md:rounded-xl md:border md:border-line md:shadow-card">
               {current
-                ? <TopicView key={current.key} topic={current} canManage={!!data?.can_manage_videos} maxMb={data?.max_video_mb ?? 0} onChanged={reload} />
+                ? <TopicView key={current.key} topic={current} />
                 : <EmptyState title="No Help guides" description="Your account has no pages yet: ask an admin for access." />}
             </div>
           </div>
@@ -169,7 +166,7 @@ function TopicNav({ topics, current, searching, onOpen }: { topics: HelpTopic[];
   );
 }
 
-function TopicView({ topic, canManage, maxMb, onChanged }: { topic: HelpTopic; canManage: boolean; maxMb: number; onChanged: () => void }) {
+function TopicView({ topic }: { topic: HelpTopic }) {
   const pdf = `/api/help/${encodeURIComponent(topic.key)}/pdf`;
   // Every numbered step of the guide, in order (shown one at a time), and the rest of each section below them.
   const steps = (topic.sections ?? []).flatMap((s) => (s.steps ?? []).map((step) => ({ ...asStep(step), section: s.heading })));
@@ -192,7 +189,7 @@ function TopicView({ topic, canManage, maxMb, onChanged }: { topic: HelpTopic; c
         </div>
       </header>
       <div className="space-y-7 px-6 py-6">
-        <VideoBlock topic={topic} canManage={canManage} maxMb={maxMb} onChanged={onChanged} />
+        <VideoBlock topic={topic} />
         {steps.length > 0 && <Walkthrough steps={steps} />}
         {others.map((s, i) => <SectionView key={i} section={s} />)}
         {topic.messages && topic.messages.length > 0 && (
@@ -398,82 +395,12 @@ function Rich({ text }: { text: string }) {
   return <>{parts}</>;
 }
 
-// The topic's video, and for admins: upload (or replace) and remove, with what the video should show.
-function VideoBlock({ topic, canManage, maxMb, onChanged }: { topic: HelpTopic; canManage: boolean; maxMb: number; onChanged: () => void }) {
-  const notify = useToast();
-  const input = useRef<HTMLInputElement>(null);
-  const [busy, setBusy] = useState<"upload" | "remove" | null>(null);
-  const path = `/api/help/${encodeURIComponent(topic.key)}/video`;
-
-  async function upload(file: File | undefined) {
-    if (!file) return;
-    if (maxMb && file.size > maxMb * 1024 * 1024) {
-      notify(`The video is larger than ${maxMb} MB. Record it shorter or at a lower resolution.`, "error");
-      return;
-    }
-    setBusy("upload");
-    const form = new FormData();
-    form.append("file", file);
-    try {
-      await api.post(path, form);
-      notify(`Video ${topic.video ? "replaced" : "added"}.`);
-      onChanged();
-    } catch (err) {
-      notify(err instanceof ApiError ? err.message : "The video could not be uploaded.", "error");
-    } finally {
-      setBusy(null);
-      if (input.current) input.current.value = "";
-    }
-  }
-
-  async function remove() {
-    if (!window.confirm(`Remove the video of “${topic.title}”?`)) return;
-    setBusy("remove");
-    try {
-      await api.delete(path);
-      notify("Video removed.");
-      onChanged();
-    } catch (err) {
-      notify(err instanceof ApiError ? err.message : "The video could not be removed.", "error");
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  if (!topic.video && !canManage) return null;
+// The guide's video (shipped with the app), when it has one.
+function VideoBlock({ topic }: { topic: HelpTopic }) {
+  if (!topic.video) return null;
   return (
-    <section>
-      {topic.video ? (
-        <video key={topic.video.url} controls preload="metadata" className="aspect-video w-full rounded-md border border-line bg-black" src={topic.video.url}>
-          Your browser cannot play this video.
-        </video>
-      ) : (
-        <div className="flex items-center gap-3 rounded-md border border-dashed border-neutral-300 px-4 py-5 text-sm text-ink-muted">
-          <PlayIcon size={20} /> No video for this topic yet.
-        </div>
-      )}
-      {canManage && (
-        <div className="mt-3 rounded-md bg-neutral-50 px-4 py-3 text-sm">
-          {topic.video_hint && <p className="text-ink-muted"><b className="font-semibold text-ink">What the video should show:</b> {topic.video_hint}</p>}
-          {topic.video && (
-            <p className="mt-1 text-xs text-ink-faint">
-              {topic.video.filename} · {(topic.video.size / 1024 / 1024).toFixed(1)} MB · uploaded {formatDateOnly(topic.video.uploaded_at)}{topic.video.uploaded_by ? ` by ${topic.video.uploaded_by}` : ""}
-            </p>
-          )}
-          <div className="mt-2 flex flex-wrap gap-2">
-            <input ref={input} type="file" accept="video/mp4,video/webm,video/quicktime" className="hidden" onChange={(e) => upload(e.target.files?.[0])} />
-            <Button size="sm" variant="secondary" disabled={busy !== null} onClick={() => input.current?.click()}>
-              <UploadIcon size={15} /> {busy === "upload" ? "Uploading…" : topic.video ? "Replace video" : "Upload video"}
-            </Button>
-            {topic.video && (
-              <Button size="sm" variant="ghost" disabled={busy !== null} onClick={remove}>
-                <TrashIcon size={15} /> {busy === "remove" ? "Removing…" : "Remove"}
-              </Button>
-            )}
-            <span className="self-center text-xs text-ink-faint">MP4, WebM or MOV, up to {maxMb} MB</span>
-          </div>
-        </div>
-      )}
-    </section>
+    <video key={topic.video.url} controls preload="metadata" className="aspect-video w-full rounded-md border border-line bg-black" src={topic.video.url}>
+      Your browser cannot play this video.
+    </video>
   );
 }

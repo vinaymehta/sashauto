@@ -6,11 +6,12 @@ module Help
   #   sections  [{ heading, text, steps (numbered), bullets, table: { columns, rows } }] in reading order; a step is its
   #             text, or { text, image (a screenshot: public/help/<image>.jpg), page (the app page it happens on) }
   #   messages  [{ message, meaning }]: messages the app can show, and what to do
-  #   video     what the topic's video should show (a hint for the admin recording it)
+  #   video     what the topic's video shows (its file: public/help/videos/<key>.mp4)
   # The page (Api::HelpController#index) and the PDF (Help::PdfBuilder) both read them, so they always say the same.
   module Topics
     FILE = Rails.root.join("config/help_topics.yml")
     IMAGES = Rails.root.join("public/help")
+    VIDEOS = Rails.root.join("public/help/videos")
     ACCESS = ([ "all", "admin" ] + User::SECTIONS).freeze
 
     module_function
@@ -39,6 +40,12 @@ module Help
     def find(key, user)
       topic = all.find { |t| t[:key] == key.to_s }
       topic if topic && visible?(topic, user)
+    end
+
+    # The topic's video file (public/help/videos/<key>.mp4), or nil.
+    def video_path(key)
+      path = VIDEOS.join("#{key}.mp4")
+      path if key.to_s.match?(/\A[a-z0-9-]+\z/) && File.file?(path)
     end
 
     def load_file

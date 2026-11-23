@@ -1,6 +1,7 @@
 module Api
   # The Help page: the topics the user may see (Help::Topics, config/help_topics.yml), each as a PDF, and each topic's
-  # video (HelpVideo). Every signed-in user reads the topics of the sections they have; admins upload, replace and remove
+  # video (shipped with the app in public/help/videos, or uploaded as a HelpVideo, which then comes first; the page has
+  # no upload buttons, the upload and remove endpoints stay). Every signed-in user reads the topics of the sections they have; admins upload, replace and remove
   # the videos. Videos are served here in ranges (the browser's player asks for parts as it plays), never from a public
   # link.
   class HelpController < ApplicationController
@@ -34,8 +35,11 @@ module Api
                                                      disposition: params[:download] == "1" ? "attachment" : "inline"
     end
 
+    # The topic's uploaded video, else the one shipped with the app (public/help/videos/<topic>.mp4).
     def video
-      blob = HelpVideo.find_by(topic: @topic[:key])&.file&.blob or return render_error("This topic has no video yet.", :not_found)
+      blob = HelpVideo.find_by(topic: @topic[:key])&.file&.blob
+      return bundled_video unless blob
+
       response.headers["Accept-Ranges"] = "bytes"
       range = byte_range(request.headers["Range"], blob.byte_size)
       return head(:range_not_satisfiable, "Content-Range" => "bytes */#{blob.byte_size}") if range == :invalid
@@ -84,6 +88,23 @@ module Api
 
     private
 
+    # The video shipped with the app, in ranges as #video.
+    def bundled_video
+      path = Help::Topics.video_path(@topic[:key]) or return render_error("This topic has no video yet.", :not_found)
+      size = File.size(path)
+      response.headers["Accept-Ranges"] = "bytes"
+      range = byte_range(request.headers["Range"], size)
+      return head(:range_not_satisfiable, "Content-Range" => "bytes */#{size}") if range == :invalid
+
+      expires_in 1.day, private: true
+      if range
+        response.headers["Content-Range"] = "bytes #{range.begin}-#{range.end}/#{size}"
+        send_data File.open(path, "rb") { |f| f.seek(range.begin); f.read(range.size) }, type: "video/mp4", disposition: "inline", status: :partial_content
+      else
+        send_file path, type: "video/mp4", disposition: "inline"
+      end
+    end
+
     def load_topic
       @topic = Help::Topics.find(params[:topic], current_user) or render_error("Not found.", :not_found)
     end
@@ -107,7 +128,10 @@ module Api
 
     def topic_json(topic, video, admin)
       json = topic.slice(:key, :title, :category, :summary, :sections, :messages, :access)
-      json[:video] = video&.file&.attached? ? video_json(video) : nil
+      path = Help::Topics.video_path(topic[:key])
+      json[:video] = if video&.file&.attached? then video_json(video)
+      elsif path then { url: "/api/help/#{topic[:key]}/video?v=#{File.mtime(path).to_i}", size: File.size(path) }
+      end
       json[:video_hint] = topic[:video] if admin
       json
     end
