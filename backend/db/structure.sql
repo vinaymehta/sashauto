@@ -407,6 +407,39 @@ ALTER SEQUENCE public.audit_logs_id_seq OWNED BY public.audit_logs.id;
 
 
 --
+-- Name: help_videos; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.help_videos (
+    id bigint NOT NULL,
+    topic character varying NOT NULL,
+    title character varying,
+    uploaded_by_id bigint,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: help_videos_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.help_videos_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: help_videos_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.help_videos_id_seq OWNED BY public.help_videos.id;
+
+
+--
 -- Name: import_issues; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1649,6 +1682,13 @@ ALTER TABLE ONLY public.audit_logs ALTER COLUMN id SET DEFAULT nextval('public.a
 
 
 --
+-- Name: help_videos id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.help_videos ALTER COLUMN id SET DEFAULT nextval('public.help_videos_id_seq'::regclass);
+
+
+--
 -- Name: import_issues id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -1886,6 +1926,14 @@ ALTER TABLE ONLY public.ar_internal_metadata
 
 ALTER TABLE ONLY public.audit_logs
     ADD CONSTRAINT audit_logs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: help_videos help_videos_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.help_videos
+    ADD CONSTRAINT help_videos_pkey PRIMARY KEY (id);
 
 
 --
@@ -2240,6 +2288,20 @@ CREATE INDEX index_audit_logs_on_subject_type_and_subject_id ON public.audit_log
 --
 
 CREATE INDEX index_audit_logs_on_user_id ON public.audit_logs USING btree (user_id);
+
+
+--
+-- Name: index_help_videos_on_topic; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_help_videos_on_topic ON public.help_videos USING btree (topic);
+
+
+--
+-- Name: index_help_videos_on_uploaded_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_help_videos_on_uploaded_by_id ON public.help_videos USING btree (uploaded_by_id);
 
 
 --
@@ -3560,6 +3622,14 @@ ALTER TABLE ONLY public.products
 
 
 --
+-- Name: help_videos fk_rails_fb1b505a49; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.help_videos
+    ADD CONSTRAINT fk_rails_fb1b505a49 FOREIGN KEY (uploaded_by_id) REFERENCES public.users(id);
+
+
+--
 -- Name: address_changes fk_rails_fcc4488252; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3590,6 +3660,7 @@ ALTER TABLE ONLY public.address_changes
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261123000002'),
 ('20261123000001'),
 ('20261120000001'),
 ('20261119000001'),

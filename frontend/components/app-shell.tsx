@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { BoxIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, DashboardIcon, FileIcon, MenuIcon, TableIcon, TruckIcon, UsersIcon, SettingsIcon } from "./icons";
+import { BoxIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, DashboardIcon, FileIcon, HelpIcon, MenuIcon, TableIcon, TruckIcon, UsersIcon, SettingsIcon } from "./icons";
 import { BrandLogo } from "./brand-logo";
 import { BusinessProvider, useBusiness } from "./business-switch";
 import { ChangePasswordForm } from "./users/change-password-form";
@@ -18,8 +18,9 @@ import { useDismiss } from "./use-dismiss";
 import { Alert } from "./ui/feedback";
 import { UserMenu } from "./user-menu";
 
-// Each page's section (Users → a user → Permissions); Users itself is for admins only.
-const NAV: { href: string; label: string; icon: typeof DashboardIcon; match: (p: string) => boolean; section?: Section }[] = [
+// Each page's section (Users → a user → Permissions); Users itself is for admins only; Help is for everyone (it shows
+// each user the topics of their sections).
+const NAV: { href: string; label: string; icon: typeof DashboardIcon; match: (p: string) => boolean; section?: Section; everyone?: boolean }[] = [
   { href: "/", label: "Dashboard", icon: DashboardIcon, match: (p: string) => p === "/", section: "dashboard" },
   { href: "/orders", label: "Orders", icon: TableIcon, match: (p: string) => p.startsWith("/orders") || p.startsWith("/uploads"), section: "orders" },
   { href: "/products", label: "Products", icon: BoxIcon, match: (p: string) => p.startsWith("/products"), section: "products" },
@@ -27,8 +28,9 @@ const NAV: { href: string; label: string; icon: typeof DashboardIcon; match: (p:
   { href: "/vendors", label: "Vendors", icon: TruckIcon, match: (p: string) => p.startsWith("/vendors"), section: "vendors" },
   { href: "/users", label: "Users", icon: UsersIcon, match: (p: string) => p.startsWith("/users") },
   { href: "/settings", label: "Admin Settings", icon: SettingsIcon, match: (p: string) => p.startsWith("/settings"), section: "settings" },
+  { href: "/help", label: "Help", icon: HelpIcon, match: (p: string) => p.startsWith("/help"), everyone: true },
 ];
-const allowed = (user: User, item: (typeof NAV)[number]) => (item.section ? can(user, item.section) : user.role === "admin");
+const allowed = (user: User, item: (typeof NAV)[number]) => (item.everyone ? true : item.section ? can(user, item.section) : user.role === "admin");
 
 // The desktop sidebar folds to an icon rail; the choice is remembered in this browser, expanded until folded.
 // Read after hydration (the server renders it expanded), so the first paint always matches.
@@ -72,8 +74,8 @@ function Shell({ children }: { children: ReactNode }) {
   const { user, loading, signOut } = useSession();
   const router = useRouter();
   const pathname = usePathname();
-  // A settings page (/settings/<page>) opens as its own window: no app menu or top bar (it has its own).
-  const fullWindow = /^\/settings\/[^/]+/.test(pathname);
+  // A settings page (/settings/<page>) and Help open as their own window: no app menu or top bar (they have their own).
+  const fullWindow = /^\/settings\/[^/]+/.test(pathname) || pathname.startsWith("/help");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawer = useRef<HTMLDivElement>(null);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);

@@ -105,6 +105,14 @@ export const ArrowUpIcon = (p: IconProps) => (
 export const ArrowDownIcon = (p: IconProps) => (
   <Icon {...p}><path d="M12 5v14" /><path d="m19 12-7 7-7-7" /></Icon>
 );
+// A question mark in a circle: Help.
+export const HelpIcon = (p: IconProps) => (
+  <Icon {...p}><circle cx="12" cy="12" r="9" /><path d="M9.5 9.5a2.5 2.5 0 0 1 4.9.7c0 1.7-2.4 2.1-2.4 3.8" /><path d="M12 17h.01" /></Icon>
+);
+// A triangle in a frame: a video.
+export const PlayIcon = (p: IconProps) => (
+  <Icon {...p}><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m10 9 5 3-5 3z" /></Icon>
+);
 export const SearchIcon = (p: IconProps) => (
   <Icon {...p}><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></Icon>
 );

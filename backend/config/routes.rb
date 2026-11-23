@@ -98,6 +98,14 @@ Rails.application.routes.draw do
     end
     # Every vendor's parts with their "Available" tick, vendor-wise (Products page, Available parts tab).
     resources :available_parts, only: :index
+    # Help page: topics (config/help_topics.yml), each as a PDF, and each topic's video (admins upload).
+    get "help", to: "help#index"
+    get "help/images/:name", to: "help#image", as: :help_image
+    get "help/:topic/pdf", to: "help#pdf", as: :help_pdf, defaults: { format: :pdf }
+    get "help/:topic/video", to: "help#video", as: :help_video
+    post "help/:topic/video", to: "help#upload_video"
+    delete "help/:topic/video", to: "help#remove_video"
+
     # Business settings (Admin Settings, admins).
     get "settings", to: "settings#index"
     patch "settings", to: "settings#update"

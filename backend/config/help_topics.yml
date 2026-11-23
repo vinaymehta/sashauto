@@ -1,0 +1,340 @@
+# Help page topics (Help::Topics, Api::HelpController, Help::PdfBuilder). English, written for everyday users: short,
+# plain words, no technical terms. Text may mark **bold** words (button and menu names).
+# access: all | admin | dashboard | orders | products | vendors | settings (the page the user needs to see the topic)
+# hide_for: roles that never see the topic. video: what the topic's video should show (shown to admins only).
+# A step is its text, or { text, image (public/help/<image>.jpg, a screenshot with the place to click marked), page (the
+# app page the step happens on: the guide's "Go to this page" button) }.
+
+- key: dashboard
+  title: Reading the Dashboard
+  category: Dashboard
+  access: dashboard
+  summary: "What the boxes on the Dashboard tell you."
+  sections:
+    - heading: How to use it
+      steps:
+        - text: "Open **Dashboard** and pick **DTP**, **GMBH** or **All** at the top."
+          image: dashboard-cards
+          page: /
+        - text: "Click a box, for example **Past ship date**, to see the orders behind it."
+          image: dashboard-past-ship
+          page: /
+    - heading: The main boxes
+      table:
+        columns: [Box, What it tells you]
+        rows:
+          - ["Total Open Value (Sale)", "How much John Deere still has to receive from us."]
+          - ["Total Open Value (Supplier)", "How much our vendors still have to deliver to us, in rupees."]
+          - ["YTD Customer Spend", "What we have billed John Deere since 1 April."]
+          - ["Open orders", "Orders not yet delivered to John Deere."]
+          - ["Shipping in 30 days", "Orders due in the next month."]
+          - ["Past ship date", "Late orders that have not been sent yet. Check these first."]
+          - ["PO coverage", "How much of our open orders we have already ordered from vendors."]
+          - ["Partial outbound / Outbound", "Orders partly or fully delivered to John Deere."]
+    - heading: Tips
+      bullets:
+        - "Hover the small **i** on a box for a short explanation."
+        - "The red, yellow and green chart shows how old the open orders are: red means waiting more than 90 days."
+  video: "Clicking a few boxes, the i tips, the Past ship date list."
+
+- key: fulfilment
+  title: "Where are my goods? (ordered, sent, delivered)"
+  category: Dashboard
+  access: orders
+  summary: "The six numbers that follow an order from John Deere to delivery."
+  sections:
+    - heading: Where to find them
+      steps:
+        - text: "Open **Dashboard** and scroll down to **Fulfilment**. Click a number to see the orders behind it."
+          image: fulfilment-figures
+          page: /
+    - heading: The journey of an order
+      bullets:
+        - "John Deere orders a part."
+        - "SASH buys it from a vendor."
+        - "SASH India sends it from Faridabad (**Dispatched**)."
+        - "It travels to the USA or Germany (**In transit**)."
+        - "John Deere receives it (**Delivered to Deere**)."
+    - heading: The six numbers
+      table:
+        columns: [Number, What it means]
+        rows:
+          - ["Total ordered", "Everything John Deere ordered."]
+          - ["Delivered to Deere", "What John Deere has already received."]
+          - ["In transit", "Sent from India, not yet received by John Deere."]
+          - ["Dispatched", "Everything sent from India so far."]
+          - ["Pending as per DTP", "What John Deere is still waiting for."]
+          - ["Pending to dispatch", "What we still have to send from India."]
+  video: "The Fulfilment section on the Dashboard, clicking In transit and Pending to dispatch."
+
+- key: deere-upload
+  title: Uploading John Deere's order file
+  category: John Deere orders
+  access: orders
+  hide_for: [warehouse_manager]
+  summary: "Load John Deere's daily order file into the app. The app does this by itself every morning; use this when you need to load a file by hand."
+  sections:
+    - heading: Steps
+      steps:
+        - text: "Go to **Orders** and pick **DTP** or **GMBH** at the top (not All)."
+          image: upload-business
+          page: /orders
+        - text: "Click **Actions**, then **Upload file**."
+          image: upload-actions
+          page: /orders
+        - text: "Click **Choose file** and pick the file you downloaded from John Deere (Excel .xlsx)."
+          image: upload-panel
+          page: /orders
+        - text: "Wait a moment. The app shows what changed since the last file, and emails the team."
+          image: upload-result
+    - heading: Tips
+      bullets:
+        - "Upload the file exactly as you downloaded it. Do not rename or delete columns."
+        - "The file must be Excel .xlsx (not .xls or .csv)."
+  messages:
+    - message: "Choose whether the file is for DTP or GMBH."
+      meaning: "At the top, switch from All to DTP or GMBH, then upload again."
+    - message: "Could not find the header row…"
+      meaning: "This is not John Deere's order file, or its columns were changed. Download it again from John Deere."
+    - message: "The upload was rejected. Nothing was imported."
+      meaning: "The list below shows which rows have a problem. Fix them in the file and upload again, or ask your admin."
+  video: "Switching to DTP, Orders → Actions → Upload file, the result screen."
+
+- key: deere-sync
+  title: The daily John Deere download and the SMS code
+  category: John Deere orders
+  access: all
+  summary: "Every morning at 8:00 the app downloads John Deere's order files by itself. Sometimes John Deere asks for an SMS code."
+  sections:
+    - heading: When a code is needed
+      steps:
+        - "A window opens saying **Deere is asking for the SMS OTP**."
+        - "Type the code from the SMS and click **Submit OTP**."
+        - "You have 8 minutes. If the time runs out, click **Sync again** for a new code."
+    - heading: Start it by hand (admins)
+      steps:
+        - text: "Go to **Admin Settings** and click **Sync now**."
+          image: sync-now
+          page: /settings
+    - heading: Good to know
+      bullets:
+        - "You only get these messages if your admin turned them on for you."
+  messages:
+    - message: "The sync is not waiting for a code any more."
+      meaning: "The time ran out. Click **Sync again**."
+  video: "The sync window and typing an SMS code."
+
+- key: orders-page
+  title: Finding an order
+  category: Orders
+  access: orders
+  summary: "Search, filter and open the details of any order."
+  sections:
+    - heading: Steps
+      steps:
+        - text: "Go to **Orders** and type a PO number or part number in the search box."
+          image: orders-search
+          page: /orders
+        - text: "Or click **Filter**, for example to see only late orders (**Past ship date**)."
+          image: orders-filters
+          page: /orders
+        - text: "Click the **PO number** to see everything about that order."
+          image: orders-details
+          page: /orders
+    - heading: The tabs
+      bullets:
+        - "**All Orders**: every order."
+        - "**Dispatched**: sent from India, not yet delivered."
+        - "**Orders fulfilled**: delivered to John Deere."
+        - "**Changes**: what changed in the latest John Deere file."
+    - heading: Tip
+      text: "Click **Columns** to choose which columns you see. Your choice is saved for you."
+  video: "Searching a PO, using the Past ship date filter, opening an order."
+
+- key: order-statuses
+  title: "Order status: what each one means"
+  category: Orders
+  access: orders
+  summary: "The status shows where an order is right now."
+  sections:
+    - heading: Change a status
+      steps:
+        - text: "On **Orders**, click the order's status and choose the new one."
+          image: status-menu
+          page: /orders
+        - "Enter the date and save."
+    - heading: The statuses
+      table:
+        columns: [Status, Meaning]
+        rows:
+          - ["No status", "Nothing has happened yet."]
+          - ["Received", "The goods arrived at SASH Faridabad."]
+          - ["Dispatched", "Sent from SASH Faridabad (Dispatch = part of it sent)."]
+          - ["Inbound", "Arrived at SASH US."]
+          - ["Partial outbound", "Part of it delivered to John Deere."]
+          - ["Outbound", "Fully delivered to John Deere. Done."]
+    - heading: Good to know
+      bullets:
+        - "Statuses go in order: an order must be Received before Dispatched, and so on."
+        - "Most statuses also change by themselves when an invoice or dispatch list is uploaded."
+  messages:
+    - message: "Set “…” first."
+      meaning: "Statuses go in order. Set the earlier one first."
+  video: "Clicking a status, setting Received and Dispatched."
+
+- key: combined-orders
+  title: "Small orders joined together (combined orders)"
+  category: Orders
+  access: orders
+  summary: "Why some orders show Combined, and what the order's age means."
+  sections:
+    - heading: Combined orders
+      bullets:
+        - "Vendors sell parts in a minimum quantity (MOQ). Small orders of the same PO and part are joined until they reach it."
+        - "They are ordered from the vendor together and ship together. You see **Combined** on them."
+        - "To add or remove an order, open the order and use **Add orders** or **Take out of the combined order**."
+    - heading: How old is an order?
+      text: "The colour of an order shows how long it has waited: green 30–59 days, yellow 60–89, red more than 90."
+  video: "A combined order, adding one more order to it."
+
+- key: manual-orders
+  title: Adding an order yourself
+  category: Orders
+  access: orders
+  hide_for: [warehouse_manager]
+  summary: "Add an order that is not in John Deere's file."
+  sections:
+    - heading: Steps
+      steps:
+        - "Go to **Orders** and pick **DTP** or **GMBH** at the top."
+        - text: "Click **Actions**, then **Create order**."
+          image: create-order-actions
+          page: /orders
+        - text: "Fill in the PO number, part number, ship date and quantity, then save."
+          image: create-order-panel
+          page: /orders
+      bullets:
+        - "If the app warns you, read it and click **Save anyway** if the order is right."
+        - "Your order shows **Manual**. Open it to edit or delete it."
+  video: "Creating an order and saving it."
+
+- key: dispatched-list
+  title: Uploading the dispatched list from SASH India
+  category: Shipping and invoices
+  access: admin
+  summary: "Mark many orders as Dispatched at once, using SASH India's list."
+  sections:
+    - heading: Steps
+      steps:
+        - text: "Go to **Orders**, click **Actions**, then **Import dispatched list**."
+          image: dispatch-actions
+          page: /orders
+        - text: "Choose SASH India's dispatched list (Excel file)."
+          image: dispatch-panel
+          page: /orders
+        - "The app marks the matching orders as **Dispatched** and lists any rows it could not match."
+      bullets:
+        - "Uploading the same list twice is safe: nothing is counted twice."
+  messages:
+    - message: "Could not find the header row…"
+      meaning: "This is not the dispatched list. Check you picked the right file and the right upload."
+  video: "Orders → Actions → Import dispatched list, the result."
+
+- key: invoices
+  title: Uploading invoices
+  category: Shipping and invoices
+  access: orders
+  summary: "Upload SASH India and SASH Inc invoices so orders show as sent and delivered."
+  sections:
+    - heading: Steps
+      steps:
+        - text: "Go to **Orders**, click **Actions**, then **Upload invoice**."
+          image: invoice-actions
+          page: /orders
+        - text: "Choose the invoice PDF."
+          image: invoice-panel
+          page: /orders
+        - "Check the list of orders it goes to, then click **Save invoice**."
+    - heading: Two kinds of invoice
+      table:
+        columns: [Invoice, From, To, Effect]
+        rows:
+          - ["SASH India", "SASH Faridabad", "SASH US warehouse", "Orders show as **Dispatched**."]
+          - ["SASH Inc", "SASH US", "John Deere", "Orders show as **Delivered to Deere**."]
+      text: "Both are numbered like EX/26-27/…, so look at who sent it (top left of the invoice). The app checks this for you."
+  messages:
+    - message: "No text could be read from the file (a scanned PDF cannot be read)."
+      meaning: "Upload the original PDF, not a scan or photo."
+    - message: "… was already uploaded on …"
+      meaning: "This invoice is already in the app."
+  video: "Uploading a SASH Inc invoice and saving it."
+
+- key: place-order
+  title: Ordering parts from a vendor
+  category: Purchasing
+  access: orders
+  summary: "Create a purchase order (PO) for a vendor from a John Deere order."
+  sections:
+    - heading: Steps
+      steps:
+        - text: "On **Orders**, open the order and click **Place order**."
+          image: place-order
+          page: /orders
+        - "Pick the vendor and the quantity, then click **Generate PO**."
+        - "Download or print the PO, and copy the email text to send it to the vendor."
+        - "Tick **Order placed** once the vendor has it."
+  video: "Placing an order, opening the PO PDF, copying the email."
+
+- key: purchase-orders
+  title: Vendor orders and goods received
+  category: Purchasing
+  access: orders
+  summary: "See every order placed with vendors and record what they delivered."
+  sections:
+    - heading: Steps
+      steps:
+        - text: "Go to **Purchase orders**. It lists every vendor order and how much has been received."
+          image: po-list
+          page: /purchase-orders
+        - text: "To upload files, pick **DTP** or **GMBH**, click **Upload**, and first upload the **Vendor PO list**, then the **Purchase received** file."
+          image: po-upload
+          page: /purchase-orders
+        - text: "Rows the app could not record wait on the **Import issues** tab. Pick the right vendor there, or dismiss them."
+          image: po-issues
+          page: /purchase-orders
+  messages:
+    - message: "no vendor PO of … with …"
+      meaning: "Upload the Vendor PO list first, then upload the Purchase received file again."
+  video: "Uploading the vendor PO list, then the purchase received file, and checking Received."
+
+- key: products
+  title: Products
+  category: Products and vendors
+  access: products
+  summary: "See and update parts: prices, minimum order quantity and photos."
+  sections:
+    - heading: Steps
+      steps:
+        - text: "Go to **Products** and click a part."
+          image: products-panel
+          page: /products
+        - "Change what you need, for example the MOQ or a vendor price, and save."
+        - "Click **Add images** to add photos of the part."
+      bullets:
+        - "A part no longer made can be marked **discontinued**."
+  video: "Opening a part, changing its MOQ, adding a photo."
+
+- key: vendors
+  title: Vendors
+  category: Products and vendors
+  access: vendors
+  summary: "See and update vendor details and the parts they supply."
+  sections:
+    - heading: Steps
+      steps:
+        - text: "Go to **Vendors** and click a vendor to see their details and parts."
+          image: vendors-panel
+          page: /vendors
+        - "Click **Add vendor** to add a new one, or edit an existing one."
+        - "Use **Import** to load the vendor Excel file."
+  video: "Opening a vendor, adding a vendor."

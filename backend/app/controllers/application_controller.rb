@@ -69,7 +69,7 @@ class ApplicationController < ActionController::Base
   # The section of the app each controller belongs to (User::SECTIONS; several: any of them). Reading (GET) needs view,
   # anything else edit (User#can?). :all = every signed-in user; a controller not listed is for admins only.
   SECTION_OF = {
-    "api/sessions" => :all, "api/activity" => :all,
+    "api/sessions" => :all, "api/activity" => :all, "api/help" => :all, # HelpController shows each user their topics
     "api/dashboard" => %w[dashboard], "api/stats" => %w[dashboard],
     "api/orders" => %w[orders], "api/uploads" => %w[orders], "api/manual_orders" => %w[orders], "api/vendor_orders" => %w[orders], "api/purchase_orders" => %w[orders], "api/purchase_issues" => %w[orders],
     "api/order_merges" => %w[orders], "api/order_deliveries" => %w[orders], "api/invoices" => %w[orders],

@@ -992,3 +992,36 @@ export interface ShipToAlerts {
   files: { business: string; name: string }[];
   defaults: Record<string, string>;
 }
+
+// Help page (GET /api/help): the topics the user may see, written in backend config/help_topics.yml. Text may mark
+// **bold** words.
+// A step: its text, or with a screenshot (GET /api/help/images/<image>) and the app page it happens on.
+export type HelpStep = string | { text: string; image?: string; page?: string };
+export interface HelpSection {
+  heading?: string;
+  text?: string;
+  steps?: HelpStep[]; // numbered
+  bullets?: string[];
+  table?: { columns: string[]; rows: string[][] };
+}
+export interface HelpVideo {
+  title: string | null;
+  filename: string;
+  size: number;
+  content_type: string;
+  uploaded_at: string;
+  uploaded_by: string | null;
+  url: string; // served by the backend in ranges, for the page's player
+}
+export interface HelpTopic {
+  key: string;
+  title: string;
+  category: string;
+  summary?: string;
+  sections?: HelpSection[];
+  messages?: { message: string; meaning: string }[];
+  access: string;
+  video: HelpVideo | null;
+  video_hint?: string; // admins: what the topic's video should show
+}
+export interface HelpResponse { data: HelpTopic[]; can_manage_videos: boolean; max_video_mb: number }
