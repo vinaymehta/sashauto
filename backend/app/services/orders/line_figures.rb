@@ -22,8 +22,12 @@ module Orders
     LIST_RECEIVED_NOTE = "Set by the dispatched orders list".freeze
     STATUSES = %w[none received dispatch dispatched inbound delivery outbound].freeze
 
-    # Businesses whose deliveries to Deere are not on SASH Inc invoices: Deere's receipts tell what arrived.
+    # Businesses whose deliveries to Deere are not on SASH Inc invoices: Deere's receipts tell what arrived (and when, for
+    # YTD: Dashboard::Money).
     RECEIPT_BUSINESSES = %w[gmbh].freeze
+    # Businesses whose Delivered also follows Deere's receipts (Cumulative Receipt Qty, up to what was dispatched): DTP's
+    # SASH Inc invoices can lag behind what Deere has already received, so a row's Delivered is the more of the two.
+    RECEIPT_CHECKED = %w[dtp gmbh].freeze
 
     private
 
@@ -130,11 +134,14 @@ module Orders
         elsif info[:status] == "outbound" then ordered
         else 0.to_d
         end
+        charge = charges.include?(row.part_number)
         # Ordered = what Deere has received + what Deere still lists as open (pending as per DTP). Deere's Qty is the
         # open Qty, so a row's Qty at dispatch overstates it once goods arrive, and a kept row (no longer in Deere's file)
-        # has nothing open: its dispatches count, its Qty does not. A manual order is SASH's own: its Qty stays.
+        # has nothing open: its dispatches count, its Qty does not. A manual order is SASH's own: its Qty stays. A charge
+        # (freight) already billed on SASH Inc invoices is not open, even while Deere's file still lists it.
         open = if row[:manual] then [ ordered - delivered, 0.to_d ].max
         elsif row[:kept] then 0.to_d
+        elsif charge && billed_charge?(row) then 0.to_d
         else row.qty.to_d
         end
         # One price for every figure: Deere's price under the price model of Admin Settings (Orders::DeerePrices: its
@@ -142,14 +149,15 @@ module Orders
         price = deere_prices.price(business: row[:business], po_number: row.po_number, part_number: row.part_number,
                                    order_key: row[:manual] ? nil : own_keys[i], unit: row.source_data&.dig("Unit Price")) || fallback[row.part_number]
         # Prices are per 100 pieces; a charge's Unit Price is the charge itself (Product.charge_parts).
-        charge = charges.include?(row.part_number)
         price *= 100 if price && charge
         { row: row, open: open, shipped: shipped, delivered: delivered, price: price, status: info[:status], charge: charge,
-          order_qty_was: ordered, shipped_was: shipped, kept: row[:kept] ? true : false }
+          billed: charge && !row[:manual] && billed_charge?(row), order_qty_was: ordered, shipped_was: shipped, kept: row[:kept] ? true : false }
       end.then { |lines| receipts_delivered(lines, receipts) }.each do |l|
         l[:ordered] = l[:open] + l[:delivered]
-        l[:status] = further(l[:status], receipt_status(l))
       end.then { |lines| allocate_pending(lines) }.each do |l|
+        # Deere's receipts' status by what the row keeps after #allocate_pending (as #receipt_statuses, so the Status
+        # column and the status filter agree).
+        l[:status] = further(l[:status], receipt_status(l))
         l[:qty_change] = qty_change(l)
         # A charge (freight) is billed by Deere, not dispatched by SASH: nothing of it is pending to dispatch.
         l[:pending] = 0.to_d if l[:charge]
@@ -178,38 +186,51 @@ module Orders
       end
     end
 
-    # Delivered of RECEIPT_BUSINESSES rows from Deere's Cumulative Receipt Qty of their PO line: shared over the line's
+    # Delivered of RECEIPT_CHECKED rows from Deere's Cumulative Receipt Qty of their PO line: shared over the line's
     # rows earliest ship date first, each up to what it was dispatched (an Outbound mark or invoice keeps its Qty when
     # more). A kept row whose PO line Deere no longer lists was received in full: its dispatched Qty is delivered.
+    # Receipts beyond what SASH dispatched are not counted (Deere's own, to reconcile with Deere).
     def receipts_delivered(lines, receipts)
-      lines.select { |l| RECEIPT_BUSINESSES.include?(l[:row][:business]) && !l[:row][:manual] && !l[:charge] }
+      lines.select { |l| RECEIPT_CHECKED.include?(l[:row][:business]) && !l[:row][:manual] && !l[:charge] }
            .group_by { |l| [ l[:row][:business], l[:row].po_number, l[:row].part_number, l[:row].po_line_number ] }.each do |key, group|
-        left = receipts[key]
-        group.sort_by { |l| l[:row].ship_date }.each do |l|
-          if left.nil?
-            l[:delivered] = [ l[:delivered], l[:shipped] ].max if l[:row][:kept]
-          else
-            l[:delivered] = [ l[:delivered], [ l[:shipped], left ].min ].max
-            left = [ left - l[:delivered], 0.to_d ].max
-          end
+        received = receipts[key]
+        group = group.sort_by { |l| l[:row].ship_date }
+        if received.nil?
+          group.each { |l| l[:delivered] = [ l[:delivered], l[:shipped] ].max if l[:row][:kept] }
+          next
+        end
+        # What Deere received beyond what is already delivered on the line (invoices, Outbound marks) goes to the rows
+        # sent but not yet delivered, earliest ship date first.
+        extra = received - group.sum(0.to_d) { |l| l[:delivered] }
+        group.each do |l|
+          break unless extra.positive?
+
+          add = [ l[:shipped] - l[:delivered], extra ].min
+          next unless add.positive?
+
+          l[:delivered] += add
+          extra -= add
         end
       end
       lines
     end
 
-    # Status of a summary line from Deere's receipts (RECEIPT_BUSINESSES, #receipts_delivered), nil when Deere has received
+    # Status of a summary line from Deere's receipts (RECEIPT_CHECKED, #receipts_delivered), nil when Deere has received
     # nothing of it: Partial outbound while Deere's latest file still lists Qty open on the row; Outbound once Deere has
-    # received all that was dispatched for it (a row Deere dropped, or lists at Qty 0); else Partial outbound.
+    # received all that was dispatched for it (a row Deere dropped, or lists at Qty 0); else Partial outbound. A billed
+    # charge is Outbound too (its status reaches the Orders list, the Dashboard and the cards the same way).
     def receipt_status(line)
       row = line[:row]
-      return nil unless RECEIPT_BUSINESSES.include?(row[:business]) && !row[:manual] && !line[:charge] && line[:delivered].positive?
+      # A charge (freight) billed on SASH Inc invoices: Outbound, as nothing of it is left to deliver (#billed_charge?).
+      return "outbound" if line[:billed]
+      return nil unless RECEIPT_CHECKED.include?(row[:business]) && !row[:manual] && !line[:charge] && line[:delivered].positive?
       return "delivery" if !row[:kept] && row.qty.to_d.positive?
 
       line[:delivered] >= line[:shipped] ? "outbound" : "delivery"
     end
 
     # Own order key => status from Deere's receipts (#receipt_status) of the rows of the current order data of the
-    # RECEIPT_BUSINESSES (Orders::CurrentLines), once per request.
+    # RECEIPT_CHECKED businesses (Orders::CurrentLines), once per request.
     def receipt_statuses
       @receipt_statuses ||= Orders::CurrentLines.receipt_statuses
     end
@@ -306,9 +327,24 @@ module Orders
     end
 
     # Whether a listed row is still open in Deere's latest file (Qty above 0; not a manual order nor a kept row): its
-    # invoices cannot make it Outbound, Deere still waits for that Qty.
+    # invoices cannot make it Outbound, Deere still waits for that Qty. A charge (freight) is not goods Deere receives:
+    # once billed on SASH Inc invoices it is Outbound, even while Deere's file still lists it.
     def deere_open?(row)
-      row.has_attribute?(:kept) && !row[:kept] && !row[:manual] && row.qty.to_d.positive?
+      row.has_attribute?(:kept) && !row[:kept] && !row[:manual] && row.qty.to_d.positive? && !charge_part?(row.part_number)
+    end
+
+    # Whether a charge row (freight) is billed in full on SASH Inc invoices: their Qty on its PO + PO Line + Part (whatever
+    # the Type or ship date it was matched to: Deere relists a billed charge, e.g. Firm as Order) covers its Qty.
+    def billed_charge?(row)
+      @billed_charges ||= InvoiceAllocation.active.where(invoices: { kind: "inc" }, manual_order_id: nil)
+                                           .group(:po_number, :po_line_number, :part_number).sum(:qty)
+      billed = @billed_charges[[ row.po_number, row.po_line_number, row.part_number ]].to_d
+      billed.positive? && billed >= row.qty.to_d
+    end
+
+    # Whether a part is a charge (freight, Product.charge_parts), looked up once per request.
+    def charge_part?(part_number)
+      (@charge_part_numbers ||= Product.charge_parts(Product.distinct.pluck(:part_number))).include?(part_number)
     end
 
     # Whether a listed row is in Deere's latest file with Qty 0: what was delivered on it is all Deere wants there (its

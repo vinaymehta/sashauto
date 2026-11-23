@@ -11,22 +11,28 @@ module Orders
 
     attr_reader :businesses
 
-    # Statuses from Deere's receipts (LineFigures#receipt_status) of every row of the businesses whose deliveries are
-    # not on SASH Inc invoices (GMBH), by the row's own order key.
+    # Statuses from Deere's receipts (LineFigures#receipt_status) of every row of the businesses whose Delivered follows
+    # Deere's receipts (LineFigures::RECEIPT_CHECKED), by the row's own order key.
     def self.receipt_statuses
-      new(LineFigures::RECEIPT_BUSINESSES).receipt_status_map
+      new(LineFigures::RECEIPT_CHECKED).receipt_status_map
     end
 
-    # Qty delivered by Deere's receipts (LineFigures#receipts_delivered) of every row of the businesses whose deliveries
-    # are not on SASH Inc invoices (GMBH), by the row's own order key (rows with nothing delivered left out).
+    # Qty delivered (LineFigures#receipts_delivered: SASH Inc invoices or Deere's receipts, the more) of every row of the
+    # RECEIPT_CHECKED businesses, by the row's own order key (rows with nothing delivered left out).
     def self.receipt_delivered
-      new(LineFigures::RECEIPT_BUSINESSES).receipt_delivered_map
+      new(LineFigures::RECEIPT_CHECKED).receipt_delivered_map
     end
 
     # Own order keys of the rows still waiting to be dispatched: Qty open at Deere and nothing dispatched for them, also
     # not by goods recorded on an earlier ship date of their PO line (LineFigures#allocate_pending); never a charge.
     def self.undispatched_keys(businesses)
       new(businesses).undispatched
+    end
+
+    # Own order key => [Qty still to dispatch, its value] of the rows dispatched in part that still have Qty to dispatch
+    # (Qty open at Deere; never a charge).
+    def self.partly_sent(businesses)
+      new(businesses).partly_sent_map
     end
 
     def initialize(businesses)
@@ -43,7 +49,7 @@ module Orders
       cached("receipt_delivered") do |lines|
         lines.each_with_object({}) do |l, map|
           row = l[:row]
-          next unless RECEIPT_BUSINESSES.include?(row[:business]) && !row[:manual] && !l[:charge] && l[:delivered].positive?
+          next unless RECEIPT_CHECKED.include?(row[:business]) && !row[:manual] && !l[:charge] && l[:delivered].positive?
 
           map[own_key(row)] = l[:delivered]
         end
@@ -56,12 +62,19 @@ module Orders
       end
     end
 
+    def partly_sent_map
+      cached("partly_sent") do |lines|
+        lines.select { |l| !l[:charge] && l[:open].positive? && l[:shipped].positive? && l[:pending].positive? }
+             .to_h { |l| [ own_key(l[:row]), [ l[:pending], l[:price] ? l[:pending] * l[:price] / 100 : 0.to_d ] ] }
+      end
+    end
+
     private
 
     # The block's result for the summary lines of the current order data, cached under `name` until the data changes.
     def cached(name)
       batches = latest_batches
-      Rails.cache.fetch([ "orders/current_lines/#{name}/v1", businesses, lines_version(batches) ], expires_in: 30.minutes) do
+      Rails.cache.fetch([ "orders/current_lines/#{name}/v2", businesses, lines_version(batches) ], expires_in: 30.minutes) do
         yield lines(batches)
       end
     end

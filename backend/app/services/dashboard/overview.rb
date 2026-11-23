@@ -107,9 +107,15 @@ module Dashboard
                                       .distinct.pluck(:order_key).to_set
     end
 
-    # Whether a row of `order` is still open in Deere's latest file (Qty above 0; not a manual order nor a kept row).
+    # Whether a row of `order` is still open in Deere's latest file (Qty above 0; not a manual order nor a kept row). A
+    # charge (freight) billed in full on SASH Inc invoices is Outbound whatever Deere's Qty (as OrdersController).
     def deere_open?(order, qty)
-      !order.manual && !@kept_ids.include?(order.id) && qty.to_d.positive?
+      !order.manual && !@kept_ids.include?(order.id) && qty.to_d.positive? && !charge_parts.include?(order.part_number)
+    end
+
+    # Part numbers of the charges (freight, Product.charge_parts) among the listed orders, once.
+    def charge_parts
+      @charge_parts ||= Product.charge_parts(listed_orders.map(&:part_number))
     end
 
     # Whether a row of `order` is in Deere's latest file with Qty 0: delivered on it is all Deere wants there, so its
@@ -299,18 +305,42 @@ module Dashboard
     end
 
     def kpis(open, placed)
-      covered = open.select { |o| placed.include?(o.key) }
-      total = open.sum(BigDecimal("0"), &:value)
+      total, covered, covered_value = coverage(open, placed)
       firm_order = listed_orders.select { |o| TYPES.include?(o.order_type) }
       {
         open: bucket(open),
         due_30: bucket(current(open).select { |o| o.ship_date >= @today && o.ship_date <= @today + 30 }),
         overdue: late_rows(current(open)).then { |rows| { count: rows.size, value: money(rows.sum(BigDecimal("0")) { |m| m[1] }) } },
-        po_coverage: { percent: total.positive? ? (covered.sum(BigDecimal("0"), &:value) / total * 100).round(1).to_f : 0.0,
-                       covered: bucket(covered), without_po: bucket(without_po(open, placed)) },
+        overdue_partial: late_partial(current(open)),
+        po_coverage: { percent: total.positive? ? (covered_value / total * 100).round(1).to_f : 0.0,
+                       covered: { count: covered.sum(&:rows), value: money(covered_value) }, without_po: bucket(without_po(open, placed)) },
         partial_outbound: bucket(firm_order.select { |o| statuses[o.key] == "delivery" }),
         outbound: bucket(firm_order.select { |o| statuses[o.key] == "outbound" })
       }
+    end
+
+    # PO coverage: [open value of goods (freight left out: no vendor buys it), the open orders with a vendor PO, the part
+    # of their value the vendor POs cover]. A vendor PO covers its order up to its Qty: a PO for 500 of 1,000 pcs open
+    # covers half the order's value.
+    def coverage(open, placed)
+      goods = open.reject { |o| charge_parts.include?(o.part_number) }
+      covered = goods.select { |o| placed.include?(o.key) }
+      vendor_qty = VendorOrder.joins(:vendor_order_placement).where(vendor_order_placements: { order_key: covered.map(&:key) })
+                              .group("vendor_order_placements.order_key").sum(:qty)
+      value = covered.sum(BigDecimal("0")) do |o|
+        qty = o.members.sum(BigDecimal("0")) { |m| m[3] ? m[2] : BigDecimal("0") }
+        qty.positive? ? o.value * [ vendor_qty[o.key].to_d / qty, BigDecimal("1") ].min : o.value
+      end
+      [ goods.sum(BigDecimal("0"), &:value), covered, value ]
+    end
+
+    # Rows of the open orders past their ship date (a combined order's by its last ship date) that were dispatched in
+    # part and still have Qty to dispatch (Orders::CurrentLines.partly_sent): { count, qty, value } of what is still to
+    # dispatch. Kept apart from Past ship date (nothing dispatched yet, #late_rows).
+    def late_partial(open)
+      partly = Orders::CurrentLines.partly_sent(businesses)
+      rows = open.select { |o| o.ship_date < @today }.flat_map { |o| o.members.filter_map { |key, *| partly[key] } }
+      { count: rows.size, qty: Serializers.qty(rows.sum(BigDecimal("0"), &:first)), value: money(rows.sum(BigDecimal("0"), &:last)) }
     end
 
     # Open orders with no vendor PO yet, by their rows with a Qty that SASH India has not dispatched (nothing is left to

@@ -41,7 +41,9 @@ export interface FigureRow {
   status?: OrderStatus;
   file?: string;
   file_name?: string | null;
-  qty: string | null; // null: a charge (freight), not a piece
+  qty: string | null; // null: a charge (freight), not a piece; supplier: what the vendor still owes
+  po_qty?: string; // supplier: the vendor PO's Qty
+  received_qty?: string; // supplier: received at SASH so far
   price: string | null;
   currency?: string;
   price_source?: string;
@@ -158,7 +160,7 @@ export function FigureSlider({ config, onClose, onOpenOrder }: { config: FigureS
                     {supplier && !oneVendor && th("Vendor", "vendor")}
                     {th("Part", "part_number")}
                     {!supplier && th("PO", "po_number")}
-                    {th(lines ? config.qtyLabel : "Qty", "qty", "right")}
+                    {th(lines ? config.qtyLabel : supplier ? "Still owed" : "Qty", "qty", "right")}
                     {th("Price / pc", "price", "right")}
                     {th("Revenue", "value", "right")}
                     {supplier && th("Price from", "price_source")}
@@ -190,7 +192,10 @@ export function FigureSlider({ config, onClose, onOpenOrder }: { config: FigureS
                           {r.po_number ? <RelatedLink kind="po" value={r.po_number}><span className="font-medium text-ink hover:text-accent">{r.po_number}</span></RelatedLink> : "—"}
                           {r.order_type && <span className="block text-2xs text-ink-muted">{r.order_type}{r.manual ? " · Manual" : ""}{r.business ? ` · ${r.business.toUpperCase()}` : ""}</span>}
                         </td>}
-                        <td className="tabular whitespace-nowrap px-3 py-2.5 text-right font-medium text-ink">{formatQty(r.qty)}</td>
+                        <td className="tabular whitespace-nowrap px-3 py-2.5 text-right font-medium text-ink">
+                          {formatQty(r.qty)}
+                          {supplier && r.po_qty && <span className="block text-2xs font-normal text-ink-muted">of {formatQty(r.po_qty)} · {formatQty(r.received_qty ?? "0")} received</span>}
+                        </td>
                         <td className="tabular whitespace-nowrap px-3 py-2.5 text-right text-xs text-ink-muted">
                           {r.price === null ? "—" : money(supplier ? r.price : Number(r.price) / 100, supplier ? r.currency : currency)}
                         </td>

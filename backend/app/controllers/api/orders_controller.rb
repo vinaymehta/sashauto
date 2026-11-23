@@ -189,7 +189,7 @@ module Api
       progress = Invoices::Progress.for_keys(keys)
       delivered = Hash.new(0.to_d)
       delivered_value = Hash.new(0.to_d)
-      # Delivered as the Delivered to Deere card counts it: SASH Inc invoices, or Deere's receipts for GMBH
+      # Delivered as the Delivered to Deere card counts it: SASH Inc invoices or Deere's receipts, the more
       # (Orders::CurrentLines.receipt_delivered); its value at Deere's price under the price model of Admin Settings
       # (Orders::DeerePrices), freight (a charge) left out.
       received = Orders::CurrentLines.receipt_delivered
@@ -230,9 +230,9 @@ module Api
       imported = OrderRow.where(upload_batch_id: batch_ids).or(OrderRow.where(id: kept_ids(batches))).where(order_type: %w[Firm Order])
       # The Dashboard's cards (dashboard=1) leave out GMBH's 45… POs and excluded parts (Business.dashboard_excluded?).
       imported = imported.where.not(Business.dashboard_excluded_sql("(SELECT b.business FROM upload_batches b WHERE b.id = order_rows.upload_batch_id)", "order_rows.po_number", "order_rows.part_number")) if dashboard?
-      imported = imported.pluck(:id, :group_key, :po_line_number, :ship_date, :qty)
-      keys = imported.to_h { |id, g, line, ship, _| [ id, Digest::SHA256.hexdigest([ g, line, ship.iso8601 ].join(OrderRows::Normalizer::KEY_SEPARATOR)) ] }
-      rows = imported.map { |id, *, qty| [ id, keys[anchor_of.fetch(id, id)], qty, false ] }
+      imported = imported.pluck(:id, :group_key, :po_line_number, :ship_date, :qty, :part_number)
+      keys = imported.to_h { |id, g, line, ship, *| [ id, Digest::SHA256.hexdigest([ g, line, ship.iso8601 ].join(OrderRows::Normalizer::KEY_SEPARATOR)) ] }
+      rows = imported.map { |id, _, _, _, qty, _| [ id, keys[anchor_of.fetch(id, id)], qty, false ] }
       manual = manual_orders.where(order_type: %w[Firm Order])
       manual = manual.where.not(Business.dashboard_excluded_sql("manual_orders.business", "manual_orders.po_number", "manual_orders.part_number")) if dashboard?
       rows += manual.pluck(:id, :qty)
@@ -240,15 +240,17 @@ module Api
       delivered = OrderDelivery.active.where(kind: "outbound", order_key: rows.map { |r| r[1] }).distinct.pluck(:order_key).to_set
       # Each row's own key (the invoices are recorded per row, a combined order's rows too).
       own = rows.map { |id, key, _, manual| manual ? key : keys[id] }
-      # A row Deere's latest file still lists with Qty open is not fulfilled by its invoices (#deere_open?).
+      # A row Deere's latest file still lists with Qty open is not fulfilled by its invoices (#deere_open?), unless it is a
+      # charge (freight): billed in full, it is fulfilled.
       kept = kept_ids(batches).to_set
-      fulfilled = Invoices::Progress.fulfilled_keys(rows.each_with_index.reject { |(id, _, qty, manual), _| !manual && !kept.include?(id) && qty.to_d.positive? }
+      charge_ids = imported.select { |*, part| charge_part?(part) }.to_set(&:first)
+      fulfilled = Invoices::Progress.fulfilled_keys(rows.each_with_index.reject { |(id, _, qty, manual), _| !manual && !kept.include?(id) && qty.to_d.positive? && !charge_ids.include?(id) }
                                                         .map { |r, i| [ own[i], r[2] ] })
       # A row Deere lists with Qty 0 and Qty delivered on it is fulfilled (#deere_closed?).
       closed = rows.each_index.select { |i| id, _, qty, manual = rows[i]; !manual && !kept.include?(id) && qty.to_d.zero? }
       closed_progress = Invoices::Progress.for_keys(closed.map { |i| own[i] })
       fulfilled += closed.map { |i| own[i] }.select { |key| closed_progress[key]&.outbound&.positive? }
-      # Delivered in full by Deere's receipts (GMBH, #receipt_statuses).
+      # Delivered in full by Deere's receipts (LineFigures::RECEIPT_CHECKED, #receipt_statuses).
       fulfilled += own.select { |key| receipt_statuses[key] == "outbound" }
       open = rows.each_with_index.reject { |(_, key, *), i| delivered.include?(key) || fulfilled.include?(own[i]) }.map(&:first)
       placed = VendorOrderPlacement.where(order_key: open.map { |r| r[1] }).distinct.pluck(:order_key).to_set
@@ -629,9 +631,10 @@ module Api
       outbound = "COALESCE(SUM(a.qty) FILTER (WHERE i.kind = 'inc'), 0)"
       total = "GREATEST(COALESCE(MAX(a.order_qty), 0), COALESCE(order_rows.qty, 0))"
       # A row in Deere's latest file: Deere's Qty decides (#deere_open?). Qty still open: Partial outbound at most; Qty 0
-      # with Qty delivered: Deere has all it wants on that ship date, Outbound.
+      # with Qty delivered: Deere has all it wants on that ship date, Outbound. A charge (freight) billed in full is
+      # Outbound whatever Deere's Qty.
       latest = "(NOT order_rows.kept AND NOT order_rows.manual)"
-      open = "(#{latest} AND COALESCE(order_rows.qty, 0) > 0)"
+      open = "(#{latest} AND COALESCE(order_rows.qty, 0) > 0 AND order_rows.part_number NOT IN (#{Product::CHARGE_PARTS_SQL}))"
       closed = "(#{latest} AND COALESCE(order_rows.qty, 0) = 0)"
       position = "CASE WHEN #{outbound} > 0 AND (#{outbound} >= #{total} OR #{closed}) AND NOT #{open} THEN 7 WHEN #{outbound} > 0 THEN 6 " \
                  "WHEN #{shipped} <= 0 THEN 1 WHEN #{shipped} >= #{total} THEN 4 ELSE 3 END"

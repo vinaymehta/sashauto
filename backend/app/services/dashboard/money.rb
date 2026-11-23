@@ -7,10 +7,11 @@ module Dashboard
   #   delivered to Deere, as the Orders list shows them), `orders` counting their rows as the list does. Value = Qty ×
   #   Unit Price ÷ 100 (Deere prices per 100 pcs; in the business's currency, Settings). by_date: value per ship date
   #   (the graph groups it by week or month).
-  # - open_supplier: vendor POs whose order has no status mark yet (not Received at SASH Faridabad). Value = PO qty ×
-  #   the vendor's unit price, per currency (there is no exchange rate). by_vendor: value per vendor and currency.
+  # - open_supplier: what vendors still owe: each vendor PO's Qty not yet received at SASH (PO Qty − goods received) ×
+  #   the vendor's unit price, per currency and in rupees (Settings exchange rates); a PO without a price is counted in
+  #   without_price (value unknown). by_vendor: value per vendor and currency.
   # - ytd_customer_spend: goods delivered to Deere from the start of the financial year (1 April) to today (#deliveries):
-  #   DTP on SASH Inc invoices (by invoice date), GMBH by Deere's Cumulative Receipt Qty (by the day it rose in Deere's
+  #   DTP on SASH Inc invoices (by invoice date, at the invoice's price), GMBH by Deere's Cumulative Receipt Qty (by the day it rose in Deere's
   #   daily file). Freight is left out, as in the Fulfilment's Delivered to Deere. by_date: value per delivery day from
   #   series_from (the earlier of the financial year start and six months ago) to today, for the graph's Month /
   #   6 months / Year views.
@@ -82,7 +83,7 @@ module Dashboard
 
     # Goods delivered to Deere from `since` to today, as Delivered to Deere counts them (OrdersController#summary_lines):
     # - the businesses with SASH Inc invoices (DTP): each invoice line's Qty on the order it delivered, on the invoice's
-    #   date, at Deere's price of that order;
+    #   date, at the invoice line's price (what SASH Inc billed; Deere's price of that order when the line has none);
     # - the businesses whose deliveries are Deere's receipts (GMBH): each rise of a PO line's Cumulative Receipt Qty in
     #   Deere's daily files (#receipt_rises), on that file's day, at Deere's price of the PO + Part (under price by order
     #   date: the price in that file, as a receipt is not one order).
@@ -113,14 +114,18 @@ module Dashboard
 
       allocations = InvoiceAllocation.active.where(invoices: { kind: "inc", business: businesses, invoice_date: since..@today })
                                      .pluck(:order_key, :order_row_id, :manual_order_id, :po_number, :po_line_number, :part_number, :order_type, :qty,
-                                            "invoices.business", "invoices.invoice_number", "invoices.invoice_date", "invoices.original_filename")
+                                            "invoices.business", "invoices.invoice_number", "invoices.invoice_date", "invoices.original_filename",
+                                            Arel.sql("invoices.lines -> invoice_allocations.line_index ->> 'price'"))
       units = OrderRow.where(id: allocations.map { |a| a[1] }.compact.uniq).pluck(:id, Arel.sql("source_data->>'Unit Price'")).to_h
       manual_units = ManualOrder.where(id: allocations.map { |a| a[2] }.compact.uniq).pluck(:id, Arel.sql("source_data->>'Unit Price'")).to_h
-      allocations.map do |key, row_id, manual_id, po, line, part, type, qty, business, number, date, filename|
+      allocations.map do |key, row_id, manual_id, po, line, part, type, qty, business, invoice_no, date, filename, billed|
         unit = manual_id ? manual_units[manual_id] : units[row_id]
+        # Customer spend is what SASH Inc billed: the invoice line's price per piece (as a price per 100 pcs, like
+        # Deere's); Deere's price only when the line has none.
+        billed = number(billed)
         { business: business, date: date, id: manual_id || row_id, manual: manual_id.present?, po_number: po, po_line_number: line,
-          order_type: type, part: part, qty: qty.to_d, file: "SASH Inc #{number} · #{date.strftime('%d %b %Y')}", file_name: filename,
-          price: prices.price(business: business, po_number: po, part_number: part, order_key: manual_id ? nil : key, unit: unit) }
+          order_type: type, part: part, qty: qty.to_d, file: "SASH Inc #{invoice_no} · #{date.strftime('%d %b %Y')}", file_name: filename,
+          price: billed&.positive? ? billed * 100 : prices.price(business: business, po_number: po, part_number: part, order_key: manual_id ? nil : key, unit: unit) }
       end
     end
 
@@ -198,20 +203,31 @@ module Dashboard
         in_inr: inr_total(priced), by_vendor_inr: by_vendor_inr }
     end
 
-    # The open vendor POs behind open_supplier, one row each: vendor PO, vendor, the order it is for, Qty, the price used
-    # and where it comes from (the PO's own; else the vendor's price per piece in Products; else another vendor's price
-    # of the product; a set price is per set, not per piece: not used), and the value (nil without a price).
+    # The open vendor POs behind open_supplier, one row each: vendor PO, vendor, the order it is for, the Qty the vendor
+    # still owes (PO Qty − goods received, VendorOrderReceipt), the price used and where it comes from (the PO's own;
+    # else the vendor's price per piece in Products; else another vendor's price of the product; a set price is per set,
+    # not per piece: not used), and the value of what is still owed (nil without a price: unknown, not 0). Whatever the
+    # Deere order's status: a vendor owes its goods until SASH receives them. Orders the Dashboard leaves out
+    # (Business.dashboard_excluded?: GMBH's 45… POs, excluded parts) are left out here too.
     def supplier_rows
-      # POs of the view's businesses: placed for one of their uploads' rows or manual orders, with no status yet.
       own = VendorOrderPlacement.where(upload_batch_id: UploadBatch.where(business: @overview.businesses).select(:id))
                                 .or(VendorOrderPlacement.where(manual_order_id: ManualOrder.where(business: @overview.businesses).select(:id)))
       orders = VendorOrder.includes(:vendor, vendor_order_placement: :product).where(vendor_order_placement_id: own.select(:id)).to_a
-      marked = OrderDelivery.active.where(order_key: orders.map { |o| o.vendor_order_placement.order_key }.uniq).distinct.pluck(:order_key).to_set
-      open = orders.reject { |o| marked.include?(o.vendor_order_placement.order_key) }
+      received = VendorOrderReceipt.where(vendor_order_id: orders.map(&:id)).group(:vendor_order_id).sum(:qty)
+      batch_business = UploadBatch.where(id: orders.map { |o| o.vendor_order_placement.upload_batch_id }.compact.uniq).pluck(:id, :business).to_h
+      manual_business = ManualOrder.where(id: orders.map { |o| o.vendor_order_placement.manual_order_id }.compact.uniq).pluck(:id, :business).to_h
+      open = orders.filter_map do |o|
+        pl = o.vendor_order_placement
+        business = pl.manual_order_id ? manual_business[pl.manual_order_id] : batch_business[pl.upload_batch_id]
+        next if Business.dashboard_excluded?(business, pl.po_number, pl.part_number || pl.product&.part_number)
+
+        owed = [ o.qty.to_d - received[o.id].to_d, 0.to_d ].max
+        [ o, owed ] if owed.positive?
+      end
       piece = VendorProduct.includes(:vendor).where("price_amount > 0").to_a
       vendor_price = piece.index_by { |vp| [ vp.product_id, vp.vendor_id ] }
       by_product = piece.group_by(&:product_id)
-      open.map do |o|
+      open.map do |o, owed|
         pl = o.vendor_order_placement
         price, currency, source = if o.unit_price.to_d.positive?
           [ o.unit_price, o.price_currency, "PO" ]
@@ -224,8 +240,9 @@ module Dashboard
         end
         { id: o.id, number: o.number, vendor: o.vendor.name, vendor_id: o.vendor_id, po_number: pl.po_number, po_line_number: pl.po_line_number,
           part_number: pl.part_number || pl.product&.part_number, description: pl.product&.description, ship_date: pl.ship_date,
-          qty: o.qty, price: price, currency: currency.presence || "INR", price_source: source, value: price && o.qty * price,
-          order_row_id: pl.order_row_id, manual_order_id: pl.manual_order_id, file: file_label(pl.upload_batch_id, manual: pl.manual_order_id.present?) }
+          qty: owed, po_qty: o.qty, received_qty: received[o.id].to_d, price: price, currency: currency.presence || "INR", price_source: source,
+          value: price && owed * price, order_row_id: pl.order_row_id, manual_order_id: pl.manual_order_id,
+          file: file_label(pl.upload_batch_id, manual: pl.manual_order_id.present?) }
       end
     end
 

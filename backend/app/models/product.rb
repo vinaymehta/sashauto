@@ -43,6 +43,12 @@ class Product < ApplicationRecord
   # itself, not a price per 100 pieces, and it is delivered without being dispatched from India.
   # (Not a part that only has the word: "Transmission Charge Pump".)
   CHARGE = /\b(?:freight|labell?ing|packing|handling|courier|shipping|transport(?:ation)?)\s+charges?\b/i
+  # The same in SQL: the part numbers of the charges (PostgreSQL regex, \y = word boundary; written without "?", which
+  # a where("… IN (?)", …) around it would take for a bind variable).
+  CHARGE_PARTS_SQL = <<~'SQL'.squish.freeze
+    SELECT cp.part_number FROM products cp
+    WHERE cp.description ~* '\y(freight|labeling|labelling|packing|handling|courier|shipping|transport|transportation)\s+charges{0,1}\y'
+  SQL
 
   # The part numbers among `parts` that are charges (by their Description).
   def self.charge_parts(parts)

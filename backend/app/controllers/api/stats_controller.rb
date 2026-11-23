@@ -15,7 +15,8 @@ module Api
       # Totals of the POs found (all pages): per currency, and in rupees as the card shows them.
       by_currency = found.select { |r| r[:value] }.group_by { |r| r[:currency] }
                          .map { |c, l| { currency: c, amount: l.sum { |r| r[:value] }.round(2).to_s("F") } }.sort_by { |t| -t[:amount].to_d }
-      render json: { data: with_images(page.map { |r| r.merge(qty: Serializers.qty(r[:qty]), price: r[:price]&.to_s("F"), value: r[:value]&.round(2)&.to_s("F")) }),
+      render json: { data: with_images(page.map { |r| r.merge(qty: Serializers.qty(r[:qty]), po_qty: Serializers.qty(r[:po_qty]), received_qty: Serializers.qty(r[:received_qty]),
+                                                              price: r[:price]&.to_s("F"), value: r[:value]&.round(2)&.to_s("F")) }),
                      meta: meta, totals: { qty: Serializers.qty(found.sum(0.to_d) { |r| r[:qty].to_d }), by_currency: by_currency,
                                            in_inr: calc.inr_total(found) } }
     end

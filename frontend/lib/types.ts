@@ -407,6 +407,8 @@ export interface DashboardOrder {
 export type PipelineStatus = "none" | "received" | "dispatched" | "inbound" | "delivery" | "outbound";
 export interface DashboardOverview {
   kpis: { open: OrderBucket; due_30: OrderBucket; overdue: OrderBucket;
+          // Late rows partly sent that still have quantity to dispatch (kept apart from overdue: nothing sent yet).
+          overdue_partial?: { count: number; qty: string; value: string };
           po_coverage: { percent: number; covered: OrderBucket; without_po: OrderBucket };
           partial_outbound?: OrderBucket; outbound?: OrderBucket };
   pipeline: (OrderBucket & { status: PipelineStatus })[];
