@@ -78,7 +78,8 @@ module Dashboard
     # A row's status as the Orders list shows it: its order's furthest status mark (a combined order's, unless the row
     # shipped nothing of it: #list_lines), or further its own uploaded invoices (Invoices::Progress, by its own Qty).
     # A row Deere's latest file still lists with Qty open is not delivered in full: its invoices make it Partial
-    # outbound (delivery), not Outbound (as OrdersController#invoice_info).
+    # outbound (delivery), not Outbound (as OrdersController#invoice_info). GMBH's deliveries come from Deere's receipts
+    # (Orders::CurrentLines.receipt_statuses), as the Orders list shows them.
     def row_status(order, key, qty)
       listed, named = list_lines
       # A combined order's row the dispatched orders list does not name has sent nothing: of the combined order's marks
@@ -91,7 +92,12 @@ module Dashboard
       own = row_progress[key]&.status(qty)
       own = "delivery" if own == "outbound" && deere_open?(order, qty)
       own = "outbound" if own == "delivery" && deere_closed?(order, qty)
-      [ mark, own ].compact.max_by { |k| STATUSES.index(k) || 0 }
+      [ mark, own, (receipt_statuses[key] unless order.manual) ].compact.max_by { |k| STATUSES.index(k) || 0 }
+    end
+
+    # Own order key => status from Deere's receipts (GMBH: Orders::CurrentLines.receipt_statuses), once.
+    def receipt_statuses
+      @receipt_statuses ||= Orders::CurrentLines.receipt_statuses
     end
 
     # Order keys with an active Received mark set by hand (not by the dispatched orders list), once.
@@ -169,11 +175,15 @@ module Dashboard
       rows.reject! { |r| Business.dashboard_excluded?(business_of[r[9]], r[2], r[4]) }
       prices = price_lookup(rows.map { |r| r[4] })
       charges = Product.charge_parts(rows.map { |r| r[4] })
-      # Values are what Deere still has open (its latest files' Qty, as Pending as per DTP): a kept row is listed (and
-      # counted) for its shipments, but Deere no longer lists it, so nothing of it is open in value.
-      values = rows.to_h { |r| [ r[0], @kept_ids.include?(r[0]) ? BigDecimal("0") : value(r[7], r[8], prices[r[4]], charge: charges.include?(r[4])) ] }
-      groups = rows.group_by { |r| anchor_of[r[0]] || r[0] }
       row_key = ->(r) { Digest::SHA256.hexdigest([ r[1], r[3], r[6].iso8601 ].join(OrderRows::Normalizer::KEY_SEPARATOR)) }
+      # Values are what Deere still has open (its latest files' Qty, as Pending as per DTP): a kept row is listed (and
+      # counted) for its shipments, but Deere no longer lists it, so nothing of it is open in value. Priced by the price
+      # model of Admin Settings (Orders::DeerePrices).
+      values = rows.to_h do |r|
+        price = deere_prices.price(business: business_of[r[9]], po_number: r[2], part_number: r[4], order_key: row_key.(r), unit: r[8])
+        [ r[0], @kept_ids.include?(r[0]) ? BigDecimal("0") : value(r[7], price, prices[r[4]], charge: charges.include?(r[4])) ]
+      end
+      groups = rows.group_by { |r| anchor_of[r[0]] || r[0] }
       groups.map do |anchor_id, members|
         row = members.find { |r| r[0] == anchor_id }
         key = row_key.(row)
@@ -189,11 +199,12 @@ module Dashboard
 
     def manual_orders
       list = ManualOrder.active.where(business: Business.of(@view)).where.not(Business.dashboard_excluded_sql("manual_orders.business", "manual_orders.po_number", "manual_orders.part_number"))
-                        .pluck(:id, :po_number, :po_line_number, :part_number, :order_type, :ship_date, :qty, Arel.sql("source_data->>'Unit Price'"))
+                        .pluck(:id, :po_number, :po_line_number, :part_number, :order_type, :ship_date, :qty, Arel.sql("source_data->>'Unit Price'"), :business)
       prices = price_lookup(list.map { |m| m[3] })
       charges = Product.charge_parts(list.map { |m| m[3] })
-      list.map do |id, po, line, part, type, ship, qty, price|
+      list.map do |id, po, line, part, type, ship, qty, unit, business|
         key = VendorOrderPlacement.order_key(ManualOrder.new(id: id))
+        price = deere_prices.price(business: business, po_number: po, part_number: part, order_key: nil, unit: unit)
         amount = value(qty, price, prices[part], charge: charges.include?(part))
         Order.new(id: id, manual: true, key: key, firm_key: key, po_number: po, po_line_number: line, part_number: part, order_type: type,
                   ship_date: ship, qty: qty.to_d, value: amount || BigDecimal("0"), unpriced: amount.nil?, rows: 1,
@@ -204,6 +215,7 @@ module Dashboard
     # order key => furthest status, for the Firm / Order orders listed: its furthest active status mark, or further its
     # uploaded invoices' (see #invoice_statuses). An order with a row Deere still lists open is Partial outbound at most
     # by its invoices (#deere_open?); one whose rows are all Outbound by their own (#row_status, #deere_closed?) is Outbound.
+    # Deere's receipts (GMBH, #receipt_statuses) count as its invoices: Outbound when every row is, else Partial outbound.
     def statuses
       @statuses ||= begin
         orders = listed_orders.select { |o| TYPES.include?(o.order_type) }.index_by(&:key)
@@ -214,7 +226,11 @@ module Dashboard
           s = "outbound" if s == "delivery" && o && o.members.all? { |k, _, qty| row_status(o, k, qty) == "outbound" }
           [ key, s ]
         end
-        marks.merge(invoices) { |_, mark, invoice| [ mark, invoice ].max_by { |k| STATUSES.index(k) || 0 } }
+        received = orders.values.select { |o| !o.manual && o.members.any? { |k, *| receipt_statuses.key?(k) } }.to_h do |o|
+          [ o.key, o.members.all? { |k, _, qty| row_status(o, k, qty) == "outbound" } ? "outbound" : "delivery" ]
+        end
+        further = ->(_, a, b) { [ a, b ].max_by { |k| STATUSES.index(k) || 0 } }
+        marks.merge(invoices, &further).merge(received, &further)
       end
     end
 
@@ -233,8 +249,11 @@ module Dashboard
     # combined order may be dispatched in part). As the Orders list shows them (Past ship date, status none / received).
     # A row of a combined order that no dispatched orders list line names, while its combined order's Dispatched mark
     # came from such a list, has shipped nothing: its combined order's mark is not its own (as the Orders list,
-    # OrdersController#not_sent_ids).
+    # OrdersController#not_sent_ids). Only rows still waiting to be dispatched (Orders::CurrentLines.undispatched_keys:
+    # Qty open at Deere, nothing sent for them, also not on an earlier ship date of their PO line; not a charge), as the
+    # Past ship date list (Orders list `late=1`).
     def late_rows(open)
+      waiting = Orders::CurrentLines.undispatched_keys(businesses)
       late = open.select { |o| o.ship_date < @today }
       progress = Invoices::Progress.for_keys(late.flat_map { |o| o.members.map(&:first) })
       kinds = OrderDelivery::KINDS
@@ -243,7 +262,7 @@ module Dashboard
         o.members.select do |key, _|
           invoice = "dispatched" if progress[key] && (progress[key].shipped.positive? || progress[key].outbound.positive?)
           mark = o.rows > 1 && listed.include?(o.key) && !named.include?(key) ? nil : marks[o.key]
-          NOT_DISPATCHED.include?([ mark, invoice ].compact.max_by { |k| kinds.index(k) })
+          waiting.include?(key) && NOT_DISPATCHED.include?([ mark, invoice ].compact.max_by { |k| kinds.index(k) })
         end
       end
     end
@@ -368,12 +387,16 @@ module Dashboard
       { count: list.sum(&:rows), value: money(list.sum(BigDecimal("0"), &:value)) }
     end
 
-    # Qty × price per 100 pcs ÷ 100: the order's own Unit Price, else the part's customer price; nil without either.
+    # Qty × price per 100 pcs ÷ 100: `price` (Orders::DeerePrices), else the part's customer price; nil without either.
     # (A charge's Unit Price is the charge itself: Qty × price.)
-    def value(qty, price_text, fallback, charge: false)
-      text = price_text.to_s.delete(",").strip
-      price = text.match?(/\A\d+(\.\d+)?\z/) ? BigDecimal(text) : fallback
+    def value(qty, price, fallback, charge: false)
+      price ||= fallback
       price && qty.to_d * price / (charge ? 1 : 100)
+    end
+
+    # Deere's prices under the price model of Admin Settings, once per overview.
+    def deere_prices
+      @deere_prices ||= Orders::DeerePrices.new
     end
 
     def price_lookup(parts)

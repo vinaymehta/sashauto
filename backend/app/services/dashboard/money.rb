@@ -9,16 +9,15 @@ module Dashboard
   #   (the graph groups it by week or month).
   # - open_supplier: vendor POs whose order has no status mark yet (not Received at SASH Faridabad). Value = PO qty ×
   #   the vendor's unit price, per currency (there is no exchange rate). by_vendor: value per vendor and currency.
-  # - ytd_customer_spend: Deere's Firm and Order orders with a ship date from the start of the financial year
-  #   (1 April) to today: the last version of each order across every upload (rows of a combined order of the latest
-  #   upload counted as that one order), plus manual orders. Same value as open_sale. by_date: value per ship date from
+  # - ytd_customer_spend: goods delivered to Deere from the start of the financial year (1 April) to today (#deliveries):
+  #   DTP on SASH Inc invoices (by invoice date), GMBH by Deere's Cumulative Receipt Qty (by the day it rose in Deere's
+  #   daily file). Freight is left out, as in the Fulfilment's Delivered to Deere. by_date: value per delivery day from
   #   series_from (the earlier of the financial year start and six months ago) to today, for the graph's Month /
   #   6 months / Year views.
-  # The Unit Price is the order's own (file column "Unit Price"), else the part's customer price (Products).
+  # The Unit Price is Deere's under the price model of Admin Settings (Orders::DeerePrices: the price the order came
+  # with, or its latest price), else the order's own (file column "Unit Price"), else the part's customer price (Products).
   class Money
     TYPES = %w[Firm Order].freeze
-    # One sale order: part, Qty, Unit Price text (per 100 pcs) and ship date.
-    Sale = Data.define(:part, :qty, :price, :ship_date)
 
     def self.call(today: Time.find_zone!(AppConfig.ageing_time_zone).today, overview: nil)
       new(today, overview || Overview.new(today)).call
@@ -55,54 +54,115 @@ module Dashboard
     end
 
     def ytd_customer_spend
-      from, orders = ytd_orders
-      shipped = orders.select { |o| o[:ship] >= from }
-      ytd = shipped.map { |o| [ o[:ship], o[:value], o[:unpriced] ] }
-      # Counted in order lines, as the card's list (a combined order is several lines).
-      rows = shipped.flat_map { |o| o[:rows] }
-      totals(ytd).merge(orders: rows.size, without_price: rows.count { |r| r[:value].nil? },
-                        from: from, to: @today, series_from: from_series(from), by_date: by_date(orders.map { |o| [ o[:ship], o[:value], o[:unpriced] ] }))
+      from, deliveries = ytd_deliveries
+      ytd = deliveries.select { |d| d[:date] >= from }
+      totals(ytd.map { |d| [ d[:date], d[:value], d[:value].nil? ] })
+        .merge(from: from, to: @today, series_from: from_series(from), by_date: by_date(deliveries.map { |d| [ d[:date], d[:value], d[:value].nil? ] }))
     end
 
-    # The order rows behind ytd_customer_spend: every row of the orders shipping from 1 April to today (a combined
-    # order by its last ship date), with Qty, Unit Price (per 100 pcs) and value.
+    # The deliveries behind ytd_customer_spend (1 April to today), one row each: the order (or PO line) delivered, Qty,
+    # Unit Price (per 100 pcs), value, and the invoice or Deere file it is from.
     def ytd_rows
-      from, orders = ytd_orders
-      orders.select { |o| o[:ship] >= from }.flat_map { |o| o[:rows] }
+      from, deliveries = ytd_deliveries
+      deliveries.select { |d| d[:date] >= from }.map { |d| d[:row] }
     end
 
     def from_series(from)
       [ from, (@today << 5).beginning_of_month ].min
     end
 
-    # [1 April of the financial year, orders shipping from the series start to today: { ship, value, unpriced, rows }].
-    def ytd_orders
-      @ytd_orders ||= begin
+    # [1 April of the financial year, the deliveries to Deere from the series start to today: { date, value, row }]
+    # (#deliveries).
+    def ytd_deliveries
+      @ytd_deliveries ||= begin
         from = @today.month >= 4 ? Date.new(@today.year, 4, 1) : Date.new(@today.year - 1, 4, 1)
-        series_from = from_series(from)
-        # Every row of each order's last version (the latest upload that has it); an order the file lists twice (e.g. once
-        # without a Qty) counts once, with all of its rows.
-        latest = OrderRow.where(order_type: TYPES, ship_date: series_from..@today)
-                         .select("order_rows.*, MAX(upload_batch_id) OVER (PARTITION BY group_key, po_line_number, ship_date) AS latest_batch_id")
-        rows = OrderRow.from(latest, :order_rows).where("order_rows.upload_batch_id = order_rows.latest_batch_id")
-                       .where(upload_batch_id: UploadBatch.where(business: @overview.businesses).select(:id))
-                       .where.not(Business.dashboard_excluded_sql("(SELECT b.business FROM upload_batches b WHERE b.id = order_rows.upload_batch_id)", "order_rows.po_number", "order_rows.part_number"))
-                       .pluck(:group_key, :po_line_number, :part_number, :qty, :ship_date, Arel.sql("source_data->>'Unit Price'"), :id, :po_number, :order_type, :upload_batch_id)
-                       .map { |g, line, part, qty, ship, price, id, po, type, batch| [ order_key(g, line, ship), Sale.new(part, qty, price, ship), { id: id, manual: false, po_number: po, po_line_number: line, order_type: type, file: file_label(batch) } ] }
-        manual = ManualOrder.active.where(business: @overview.businesses, order_type: TYPES, ship_date: series_from..@today)
-                            .where.not(Business.dashboard_excluded_sql("manual_orders.business", "manual_orders.po_number", "manual_orders.part_number"))
-                            .pluck(:id, :part_number, :qty, Arel.sql("source_data->>'Unit Price'"), :ship_date, :po_number, :po_line_number, :order_type)
-                            .map { |id, part, qty, price, ship, po, line, type| [ VendorOrderPlacement.order_key(ManualOrder.new(id: id)), Sale.new(part, qty, price, ship), { id: id, manual: true, po_number: po, po_line_number: line, order_type: type, file: file_label(nil, manual: true) } ] }
-        sales = rows + manual
-        values = values_of(sales.map { |s| s[1] })
-        descriptions = Product.where(part_number: sales.map { |s| s[1].part }.uniq).pluck(:part_number, :description).to_h
-        # Rows of one combined order count as one order: its last ship date, the total value.
-        anchors = @overview.anchor_keys
-        orders = sales.zip(values).group_by { |(key, *), _| anchors[key] || key }.values.map do |list|
-          { ship: list.map { |(_, sale, _), _| sale.ship_date }.max, value: list.sum(BigDecimal("0")) { |_, v| v || 0 }, unpriced: list.any? { |_, v| v.nil? },
-            rows: list.map { |(_, sale, info), v| info.merge(part_number: sale.part, description: descriptions[sale.part], ship_date: sale.ship_date, qty: sale.qty, price: number(sale.price), value: v) } }
+        [ from, deliveries(from_series(from)) ]
+      end
+    end
+
+    # Goods delivered to Deere from `since` to today, as Delivered to Deere counts them (OrdersController#summary_lines):
+    # - the businesses with SASH Inc invoices (DTP): each invoice line's Qty on the order it delivered, on the invoice's
+    #   date, at Deere's price of that order;
+    # - the businesses whose deliveries are Deere's receipts (GMBH): each rise of a PO line's Cumulative Receipt Qty in
+    #   Deere's daily files (#receipt_rises), on that file's day, at Deere's price of the PO + Part (under price by order
+    #   date: the price in that file, as a receipt is not one order).
+    # Orders the Dashboard leaves out (Business.dashboard_excluded?) and freight (charges) are not counted.
+    def deliveries(since)
+      prices = Orders::DeerePrices.new
+      receipt_businesses = @overview.businesses & Orders::LineFigures::RECEIPT_BUSINESSES
+      list = invoice_deliveries(since, @overview.businesses - receipt_businesses, prices) +
+             receipt_businesses.flat_map { |b| receipt_deliveries(b, since, prices) }
+      fallback = Product.where(part_number: list.map { |d| d[:part] }.uniq).pluck(:part_number, :customer_price).to_h
+      charges = Product.charge_parts(list.map { |d| d[:part] }.uniq)
+      descriptions = Product.where(part_number: list.map { |d| d[:part] }.uniq).pluck(:part_number, :description).to_h
+      list.filter_map do |d|
+        next if charges.include?(d[:part]) || Business.dashboard_excluded?(d[:business], d[:po_number], d[:part])
+
+        price = d[:price] || fallback[d[:part]]
+        value = price && d[:qty] * price / 100
+        { date: d[:date], value: value,
+          row: { id: d[:id], manual: d[:manual], business: d[:business], po_number: d[:po_number], po_line_number: d[:po_line_number],
+                 order_type: d[:order_type], part_number: d[:part], description: descriptions[d[:part]], ship_date: d[:date],
+                 qty: d[:qty], price: price, value: value, file: d[:file], file_name: d[:file_name] } }
+      end
+    end
+
+    # SASH Inc invoice deliveries (see #deliveries) of `businesses`, before the price fallback.
+    def invoice_deliveries(since, businesses, prices)
+      return [] if businesses.empty?
+
+      allocations = InvoiceAllocation.active.where(invoices: { kind: "inc", business: businesses, invoice_date: since..@today })
+                                     .pluck(:order_key, :order_row_id, :manual_order_id, :po_number, :po_line_number, :part_number, :order_type, :qty,
+                                            "invoices.business", "invoices.invoice_number", "invoices.invoice_date", "invoices.original_filename")
+      units = OrderRow.where(id: allocations.map { |a| a[1] }.compact.uniq).pluck(:id, Arel.sql("source_data->>'Unit Price'")).to_h
+      manual_units = ManualOrder.where(id: allocations.map { |a| a[2] }.compact.uniq).pluck(:id, Arel.sql("source_data->>'Unit Price'")).to_h
+      allocations.map do |key, row_id, manual_id, po, line, part, type, qty, business, number, date, filename|
+        unit = manual_id ? manual_units[manual_id] : units[row_id]
+        { business: business, date: date, id: manual_id || row_id, manual: manual_id.present?, po_number: po, po_line_number: line,
+          order_type: type, part: part, qty: qty.to_d, file: "SASH Inc #{number} · #{date.strftime('%d %b %Y')}", file_name: filename,
+          price: prices.price(business: business, po_number: po, part_number: part, order_key: manual_id ? nil : key, unit: unit) }
+      end
+    end
+
+    # Deere receipt deliveries (see #deliveries) of one business, before the price fallback.
+    def receipt_deliveries(business, since, prices)
+      receipt_rises(business).filter_map do |date, po, part, line, qty, unit, filename|
+        next if date < since || date > @today
+
+        { business: business, date: date, id: nil, manual: false, po_number: po, po_line_number: line, order_type: nil, part: part,
+          qty: qty, file: "Deere receipt · #{date.strftime('%d %b %Y')}", file_name: filename,
+          price: prices.price(business: business, po_number: po, part_number: part, order_key: nil, unit: unit) }
+      end
+    end
+
+    # Each rise of a PO line's Cumulative Receipt Qty in the business's Deere files, oldest first: [file day, PO, Part, PO
+    # Line, Qty received, the PO line's Unit Price in that file, file name]. The first file is where counting starts (what
+    # it lists was received before); a PO line that first appears later with Qty received counts it on that day. Uploads
+    # never change once completed, so this is cached until the next upload.
+    def receipt_rises(business)
+      batches = UploadBatch.where(business: business, status: "completed").order(:completed_at, :id).pluck(:id, :completed_at, :original_filename)
+      return [] if batches.empty?
+
+      Rails.cache.fetch([ "dashboard/receipt_rises/v1", business, batches.last.first, batches.size ]) do
+        zone = Time.find_zone!(AppConfig.ageing_time_zone)
+        rows = OrderRow.where(upload_batch_id: batches.map(&:first))
+                       .pluck(:upload_batch_id, :po_number, :part_number, :po_line_number,
+                              Arel.sql("source_data->>'Cumulative Receipt Qty'"), Arel.sql("source_data->>'Unit Price'")).group_by(&:first)
+        last = {}
+        batches.each_with_index.flat_map do |(id, at, filename), i|
+          now = {}
+          (rows[id] || []).each do |_, po, part, line, received, unit|
+            key = [ po, part, line ]
+            qty = number(received) || 0.to_d
+            now[key] = [ [ now[key]&.first || 0.to_d, qty ].max, now[key]&.last || unit ]
+          end
+          rises = i.zero? ? [] : now.filter_map do |(po, part, line), (qty, unit)|
+            rise = qty - (last[[ po, part, line ]] || 0.to_d)
+            [ at.in_time_zone(zone).to_date, po, part, line, rise, unit, filename ] if rise.positive?
+          end
+          now.each { |key, (qty, _)| last[key] = [ last[key] || 0.to_d, qty ].max }
+          rises
         end
-        [ from, orders ]
       end
     end
 
@@ -167,22 +227,6 @@ module Dashboard
           qty: o.qty, price: price, currency: currency.presence || "INR", price_source: source, value: price && o.qty * price,
           order_row_id: pl.order_row_id, manual_order_id: pl.manual_order_id, file: file_label(pl.upload_batch_id, manual: pl.manual_order_id.present?) }
       end
-    end
-
-    # Each sale's value (Qty × price per 100 pcs ÷ 100), nil without a price. Cached per list.
-    def values_of(sales)
-      @values ||= {}.compare_by_identity
-      @values[sales] ||= begin
-        fallback = Product.where(part_number: sales.map(&:part).uniq).pluck(:part_number, :customer_price).to_h
-        sales.map do |sale|
-          price = number(sale.price) || fallback[sale.part]
-          price && sale.qty.to_d * price / 100
-        end
-      end
-    end
-
-    def order_key(group_key, po_line_number, ship_date)
-      Digest::SHA256.hexdigest([ group_key, po_line_number, ship_date.iso8601 ].join(OrderRows::Normalizer::KEY_SEPARATOR))
     end
 
     def number(text)

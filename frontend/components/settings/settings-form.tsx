@@ -101,7 +101,7 @@ export function SettingsHeader({ title, description, category, children }: {
 function effectiveValue(item: AppSettingItem) {
   const env = item.kind === "textarea" ? item.env_value?.replace(/\\n/g, "\n") : item.env_value;
   // A choice, or a text with a default wording (e.g. the PO terms), starts from its default so it can be edited.
-  return item.value || env || (item.kind === "select" || item.kind === "textarea" ? item.default_value : null) || "";
+  return item.value || env || (item.kind === "select" || item.kind === "toggle" || item.kind === "textarea" ? item.default_value : null) || "";
 }
 
 // One setting: its label (the hint in an "i" tooltip) on the left, the input with the value in use on the right (the
@@ -127,12 +127,30 @@ function SettingRow({ item, value, onChange }: { item: AppSettingItem; value: st
           {!current && <option value="">Choose…</option>}
           {(item.options ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
         </Select>
+      ) : item.kind === "toggle" ? (
+        <ToggleSetting id={id} item={item} value={current} onChange={change} />
       ) : item.kind === "secret" ? (
         <Input id={id} type="password" autoComplete="new-password" className="w-full" value={value ?? ""}
                placeholder={item.set ? "•••••••• (type a new value to replace it)" : ""} onChange={(e) => onChange(e.target.value || undefined)} />
       ) : (
         <Input id={id} className="w-full" value={current} placeholder={placeholder} onChange={(e) => change(e.target.value)} />
       )}
+    </div>
+  );
+}
+
+// A switch between a setting's two options (off, on), with what the chosen one means beside it.
+function ToggleSetting({ id, item, value, onChange }: { id: string; item: AppSettingItem; value: string; onChange: (value: string) => void }) {
+  const [off, on] = item.options ?? [];
+  const checked = value === on;
+  return (
+    <div className="flex items-start gap-3 @2xl:pt-1.5">
+      <button id={id} type="button" role="switch" aria-checked={checked} onClick={() => onChange(checked ? off : on)}
+              className={`relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${
+                checked ? "bg-violet-600" : "bg-neutral-300"}`}>
+        <span aria-hidden className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${checked ? "translate-x-5" : "translate-x-0.5"}`} />
+      </button>
+      <span className="text-sm text-ink">{item.labels?.[value] ?? value}</span>
     </div>
   );
 }

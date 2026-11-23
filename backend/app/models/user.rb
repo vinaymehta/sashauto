@@ -29,20 +29,22 @@ class User < ApplicationRecord
 
   # Sessions authenticated before this moment are no longer valid (see ApplicationController#session_user).
   before_save -> { self.password_changed_at = Time.current }, if: :will_save_change_to_password_digest?
+  # A new admin gets the Deere sync alerts until someone unticks them (Users → Permissions).
+  before_create -> { self.deere_sync_alerts = true }, if: :admin?
 
   scope :active, -> { where(active: true) }
   scope :admins, -> { where(role: "admin") }
-  # Get the Deere portal sync alerts (#deere_sync_alerts?): active admins and the users ticked for them.
-  scope :deere_sync_recipients, -> { active.where(deleted_at: nil).where("users.role = 'admin' OR users.deere_sync_alerts") }
+  # Get the Deere portal sync alerts (#deere_sync_alerts?): the active users ticked for them, admins included.
+  scope :deere_sync_recipients, -> { active.where(deleted_at: nil, deere_sync_alerts: true) }
 
   def admin?
     role == "admin"
   end
 
-  # Gets the Deere portal sync alerts (OTP needed, OTP timed out, sync failed): the popup in the app, the bell and an
-  # email (PortalAlerts). Admins always; another user when an admin ticks it (Users → Permissions).
+  # Gets the Deere portal sync alerts (OTP timed out, sync failed): the popup in the app, the bell and an email
+  # (PortalAlerts). Any user an admin ticks it for (Users → Permissions), admins too; a new admin starts ticked.
   def deere_sync_alerts?
-    admin? || self[:deere_sync_alerts]
+    self[:deere_sync_alerts]
   end
 
   # "none", "view" or "edit" for a section (User::SECTIONS).

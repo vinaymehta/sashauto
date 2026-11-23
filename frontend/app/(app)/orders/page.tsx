@@ -266,9 +266,9 @@ const OrderTr = memo(function OrderTr({ row, columns, open, today, role, onChang
 });
 
 // ?tab=changes opens the Changes tab (e.g. "View all" on the Dashboard).
-// Filter keys a link to the Orders page may set.
+// Filter keys a link to the Orders page may set (late=1: the Dashboard's Past ship date list, rows still to dispatch).
 const LINKABLE_FILTERS = ["type", "status", "source", "timing", "ship_date_from", "ship_date_to", "firm_date_from", "firm_date_to", "age",
-  "po", "vendor", "moq", "combined", "ship_to"];
+  "po", "vendor", "moq", "combined", "ship_to", "late"];
 
 export default function OrdersPage() {
   return (

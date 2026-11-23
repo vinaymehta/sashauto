@@ -159,7 +159,7 @@ export default function DashboardPage() {
   const attention = [
     overview.kpis.overdue.count > 0 && {
       text: `${plural(overview.kpis.overdue.count, "order")} past the ship date and not dispatched yet`,
-      onClick: () => setOrdersSlider({ title: "Past ship date", description: "Late open orders not dispatched yet", filters: { type: "Firm,Order", timing: "overdue", status: "none,received" }, icon: <AlertIcon size={18} /> , shipDate: true }),
+      onClick: () => setOrdersSlider({ title: "Past ship date", description: "Late open orders not dispatched yet", filters: { type: "Firm,Order", timing: "overdue", status: "none,received", late: 1 }, icon: <AlertIcon size={18} /> , shipDate: true }),
     },
     totals.open_conflicts > 0 && { text: `${totals.open_conflicts} Commodity Type conflict${totals.open_conflicts === 1 ? "" : "s"} to review`, href: "/products?conflicts=open" },
     totals.in_progress > 0 && { text: `${totals.in_progress} upload${totals.in_progress === 1 ? " is" : "s are"} processing`, href: "/orders" },
@@ -198,17 +198,17 @@ export default function DashboardPage() {
             </div>
           )}
           <StatCard size="lg" label="Total Open Value (Sale)" info={<>Value of Deere orders <b>not yet delivered</b>: the Firm and Order rows the Orders page lists as open (latest upload, orders kept from an older Deere file, and manual orders), without a &quot;Delivered to Deere&quot; (Outbound) status. Value = the Qty Deere still lists open × Unit Price ÷ 100 (Deere prices are per 100 pcs), so it equals Pending as per DTP; an order kept from an older Deere file is counted but has no open value. In the business&apos;s currency (Settings). Forecast is not counted.</>} icon={<BoxIcon size={16} />} tint="violet"
-                    onClick={() => setFigureSlider({ kind: "lines", figure: "pending_dtp", qtyLabel: "Open Qty", title: "Total Open Value (Sale)", description: "The Qty John Deere still lists open on each order line, at its current price", icon: <BoxIcon size={18} /> })}
+                    onClick={() => setFigureSlider({ kind: "lines", figure: "pending_dtp", qtyLabel: "Open Qty", title: "Total Open Value (Sale)", description: "The Qty John Deere still lists open on each order line, at John Deere's price (Admin Settings → Businesses)", icon: <BoxIcon size={18} /> })}
                     value={usd(sale.amount)}
                     detail={ordersText(sale.orders, sale.without_price)} />
           <StatCard size="lg" label="Total Open Value (Supplier)" info={<>Value of the vendor POs generated in the app whose order has <b>no status yet</b> (not received at SASH Faridabad). Value = PO quantity × the vendor&apos;s unit price. POs priced in USD, EUR or GBP are turned into rupees at the exchange rates in Admin Settings → Businesses.</>} icon={<TruckIcon size={16} />} tint="amber"
                     onClick={() => setFigureSlider({ kind: "supplier", title: "Total Open Value (Supplier)", description: "Vendor POs not yet received at SASH Faridabad, with the price used for each", icon: <TruckIcon size={18} /> })}
                     value={supplier.by_currency.length ? formatMoney(supplier.in_inr.amount, "INR") : "—"}
                     detail={plural(supplier.orders, "vendor PO")} />
-          <StatCard size="lg" label="YTD Customer Spend with SASH" info={<>Value of Deere&apos;s Firm and Order orders with a <b>ship date from 1 April</b> (start of the financial year) to today, from every upload (the latest version of each order) and manual orders. Value = Qty × Unit Price ÷ 100, in the business&apos;s currency (Settings).</>} icon={<CalendarIcon size={16} />} tint="aqua"
-                    onClick={() => setFigureSlider({ kind: "ytd", title: "YTD Customer Spend with SASH", description: `John Deere's Firm and Order orders shipping from ${formatDate(ytd.from)} to ${formatDate(ytd.to)}`, icon: <CalendarIcon size={18} /> })}
+          <StatCard size="lg" label="YTD Customer Spend with SASH" info={<>Value of the goods <b>delivered to Deere from 1 April</b> (start of the financial year) to today: DTP on SASH Inc invoices (by invoice date), GMBH by Deere&apos;s Cumulative Receipt Qty (by the day it rose in Deere&apos;s daily file). Value = Qty × Deere&apos;s Unit Price ÷ 100 (the price setting in Admin Settings → Businesses), in the business&apos;s currency (Settings). Freight is not counted.</>} icon={<CalendarIcon size={16} />} tint="aqua"
+                    onClick={() => setFigureSlider({ kind: "ytd", title: "YTD Customer Spend with SASH", description: `Goods delivered to John Deere from ${formatDate(ytd.from)} to ${formatDate(ytd.to)}`, icon: <CalendarIcon size={18} /> })}
                     value={usd(ytd.amount)}
-                    detail={`${formatDate(ytd.from)} – ${formatDate(ytd.to)} · ${ordersText(ytd.orders, ytd.without_price)}`} />
+                    detail={`${formatDate(ytd.from)} – ${formatDate(ytd.to)} · ${formatCount(ytd.orders)} ${ytd.orders === 1 ? "delivery" : "deliveries"}${ytd.without_price ? ` · ${formatCount(ytd.without_price)} without a price` : ""}`} />
         </div>
 
         {/* Operations (Dashboard::Overview). */}
@@ -219,8 +219,8 @@ export default function DashboardPage() {
           <StatCard label="Shipping in 30 days" info={<>Open orders with a <b>ship date from today to 30 days ahead</b>, and their value. They are listed in Next shipments.</>} icon={<CalendarIcon size={16} />} tint="violet"
                     onClick={() => setOrdersSlider({ title: "Shipping in 30 days", description: `Open orders due by ${formatDate(addDays(30))}`, filters: { type: "Firm,Order", timing: "next30" }, icon: <CalendarIcon size={18} /> , shipDate: true })}
                     value={formatCount(kpis.due_30.count)} detail={`${usd(kpis.due_30.value, true)} due by ${formatDate(addDays(30))}`} />
-          <StatCard label="Past ship date" info={<>Orders whose <b>ship date has passed</b> and that are <b>not dispatched yet</b> (still with SASH India or the vendor): the late orders that still need action, and their value. Dispatched orders are on Orders → Dispatched. A combined order counts by its last ship date.</>} icon={<AlertIcon size={16} />} tint="dec" tone={kpis.overdue.count ? "bad" : undefined}
-                    onClick={() => setOrdersSlider({ title: "Past ship date", description: "Late open orders not dispatched yet", filters: { type: "Firm,Order", timing: "overdue", status: "none,received" }, icon: <AlertIcon size={18} /> , shipDate: true })}
+          <StatCard label="Past ship date" info={<>Orders whose <b>ship date has passed</b> and that are <b>not dispatched yet</b> (still with SASH India or the vendor): the late orders that still need action, and their value. Rows covered by goods sent on an earlier ship date of the same PO line, rows Deere lists at Qty 0 and freight charges are not counted. Dispatched orders are on Orders → Dispatched. A combined order counts by its last ship date.</>} icon={<AlertIcon size={16} />} tint="dec" tone={kpis.overdue.count ? "bad" : undefined}
+                    onClick={() => setOrdersSlider({ title: "Past ship date", description: "Late open orders not dispatched yet", filters: { type: "Firm,Order", timing: "overdue", status: "none,received", late: 1 }, icon: <AlertIcon size={18} /> , shipDate: true })}
                     value={formatCount(kpis.overdue.count)} detail={`${usd(kpis.overdue.value, true)} not dispatched yet`} />
           <StatCard label="PO coverage" info={<>Share of the <b>open order value that already has a vendor PO</b> (Generate PO). Below: open orders with a Qty and no PO yet.</>} icon={<CheckIcon size={16} />} tint="aqua"
                     onClick={() => setOrdersSlider({ title: "Orders without vendor PO", description: "Open orders without a vendor PO generated yet", filters: { type: "Firm,Order", po: "none" }, icon: <CheckIcon size={18} />, noVendorPo: true })}
@@ -228,10 +228,10 @@ export default function DashboardPage() {
                     detail={`${plural(kpis.po_coverage.without_po.count, "open order")} without a vendor PO`}>
             <Progress percent={kpis.po_coverage.percent} />
           </StatCard>
-          <StatCard label="Partial outbound" info={<>Firm and Order orders with <b>part of the quantity delivered to Deere</b> on SASH Inc invoices. The remaining balance is still to deliver.</>} icon={<TruckIcon size={16} />} tint="amber"
+          <StatCard label="Partial outbound" info={<>Firm and Order orders with <b>part of the quantity delivered to Deere</b>: on SASH Inc invoices (DTP) or by Deere&apos;s receipts (GMBH). The remaining balance is still to deliver.</>} icon={<TruckIcon size={16} />} tint="amber"
                     onClick={() => setPoSlider({ title: "Partial outbound", description: "Orders with part of the quantity delivered to Deere", filters: { status: "delivery" }, icon: <TruckIcon size={18} /> , view: "partial" })}
                     value={formatCount(listed.data?.partial_outbound ?? kpis.partial_outbound?.count ?? 0)} detail="Part delivered to Deere, as listed on Orders" />
-          <StatCard label="Outbound (fulfilled)" info={<>Orders <b>delivered to Deere in full</b> (Outbound mark or fulfilled on SASH Inc invoices).</>} icon={<CheckIcon size={16} />} tint="inc"
+          <StatCard label="Outbound (fulfilled)" info={<>Orders <b>delivered to Deere in full</b>: Outbound mark, fulfilled on SASH Inc invoices (DTP), or all that was sent received by Deere (GMBH, Deere&apos;s Cumulative Receipt Qty).</>} icon={<CheckIcon size={16} />} tint="inc"
                     onClick={() => setPoSlider({ title: "Outbound (fulfilled)", description: "Orders delivered to Deere in full", filters: { status: "outbound" }, icon: <CheckIcon size={18} /> , view: "outbound" })}
                     value={formatCount(listed.data?.fulfilled ?? kpis.outbound?.count ?? 0)} detail="Delivered to Deere in full: the Orders fulfilled tab" />
         </div>
@@ -813,7 +813,7 @@ function FulfilmentSection({ onSelectFigure }: { onSelectFigure?: (config: Figur
     );
   });
   return (
-    <Card title="Fulfilment" info={<>Totals of every Firm and Order order in the current order data, as the Product and PO summaries count them. Value = Qty × Deere&apos;s current Unit Price ÷ 100 (the price in Deere&apos;s latest file, for older orders too). Freight is counted only in Pending as per DTP.</>}>
+    <Card title="Fulfilment" info={<>Totals of every Firm and Order order in the current order data, as the Product and PO summaries count them. Value = Qty × Deere&apos;s Unit Price ÷ 100, by the price setting in Admin Settings → Businesses: the price each order came with, or (Latest price for every order on) Deere&apos;s latest price for every order. Freight is counted only in Pending as per DTP.</>}>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {figures.map((fig) => {
           const config = getFilter(fig.key);

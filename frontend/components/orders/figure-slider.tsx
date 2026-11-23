@@ -17,7 +17,7 @@ import { FileIcon } from "@/components/icons";
 // The rows behind one Dashboard money figure, each with its own share of the figure, adding up to the card:
 //   lines     a Fulfilment figure (GET /api/orders/fulfilment_lines?figure=…): the order lines with that figure's Qty
 //   supplier  Total Open Value (Supplier) (GET /api/stats/supplier_orders): the open vendor POs, the price used and its source
-//   ytd       YTD Customer Spend (GET /api/stats/ytd_orders): the order rows shipping from 1 April to today
+//   ytd       YTD Customer Spend (GET /api/stats/ytd_orders): the deliveries to Deere from 1 April to today
 export type FigureSliderConfig =
   | { kind: "lines"; title: string; description?: string; icon?: ReactNode; figure: string; qtyLabel: string; business?: string; part_number?: string }
   | { kind: "supplier"; title: string; description?: string; icon?: ReactNode; vendor_id?: number } // vendor_id: one vendor's POs

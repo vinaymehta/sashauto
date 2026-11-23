@@ -56,7 +56,7 @@ module Api
       env = ENV[definition.key].presence
       secret = definition.kind == :secret
       { key: definition.key, label: definition.label, group: definition.group, kind: definition.kind, hint: definition.hint,
-        options: definition.options, default_value: definition.default, source: saved ? "app" : env ? "env" : "none",
+        options: definition.options, labels: definition.labels, default_value: definition.default, source: saved ? "app" : env ? "env" : "none",
         value: secret ? nil : saved || "", env_value: secret ? nil : env, set: (saved || env).present? }
     end
   end

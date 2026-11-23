@@ -14,7 +14,7 @@ import { ROLE_LABEL } from "./user-form-panel";
 // Users → a user: for each section of the app a View and an Edit checkbox — View = see it ("view"), View + Edit = see and
 // change it ("edit"), neither = the page is hidden ("none"). Edit needs View: ticking Edit ticks View, unticking View
 // unticks Edit. Admins always have everything. The server enforces the same rules. Below: whether the user gets the John
-// Deere sync alerts (the sync popup with the OTP box, bell items and emails; admins always do).
+// Deere sync alerts (the sync popup, bell items and emails), for admins too.
 export function PermissionsPanel({ user, onClose, onSaved }: { user: User; onClose: () => void; onSaved: (user: User) => void }) {
   const notify = useToast();
   const admin = user.role === "admin";
@@ -34,8 +34,9 @@ export function PermissionsPanel({ user, onClose, onSaved }: { user: User; onClo
     setSaving(true);
     setError(null);
     try {
-      const res = await api.patch<{ data: User }>(`/api/users/${user.id}`, { permissions: levels, deere_sync_alerts: syncAlerts });
-      notify(`Permissions of ${user.name} saved.`);
+      // An admin's permissions are always everything: only the alerts are saved.
+      const res = await api.patch<{ data: User }>(`/api/users/${user.id}`, admin ? { deere_sync_alerts: syncAlerts } : { permissions: levels, deere_sync_alerts: syncAlerts });
+      notify(`${admin ? "Alerts" : "Permissions"} of ${user.name} saved.`);
       onSaved(res.data);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not save the permissions.");
@@ -46,9 +47,9 @@ export function PermissionsPanel({ user, onClose, onSaved }: { user: User; onClo
   return (
     <Sheet open onClose={onClose} title={user.name} icon={<KeyIcon size={18} />}
            description={<>{ROLE_LABEL[user.role]} · {user.email}</>}
-           footer={admin ? <Button onClick={onClose}>Close</Button> : <>
+           footer={<>
              <Button variant="ghost" onClick={onClose} disabled={saving}>Cancel</Button>
-             <Button variant="primary" onClick={save} disabled={!changed || saving}>{saving ? "Saving…" : "Save permissions"}</Button>
+             <Button variant="primary" onClick={save} disabled={!changed || saving}>{saving ? "Saving…" : admin ? "Save alerts" : "Save permissions"}</Button>
            </>}>
       <section className="overflow-hidden rounded-lg border border-line bg-white shadow-card">
         <header className="border-b border-neutral-100 px-5 py-3">
@@ -92,16 +93,16 @@ export function PermissionsPanel({ user, onClose, onSaved }: { user: User; onClo
         <header className="border-b border-neutral-100 px-5 py-3">
           <h3 className="text-sm font-semibold text-ink">Alerts</h3>
         </header>
-        <label className={`flex items-center justify-between gap-6 px-5 py-3.5 ${admin ? "" : "cursor-pointer"}`}>
+        <label className="flex cursor-pointer items-center justify-between gap-6 px-5 py-3.5">
           <span className="min-w-0 flex-1">
             <span className="block text-sm font-medium text-ink">John Deere sync</span>
             <span className="block text-xs text-ink-muted">
-              {admin ? "Admins always get them: " : ""}a notification and an email when the sync fails (also when nobody entered the SMS OTP in
+              A notification and an email when the sync fails (also when nobody entered the SMS OTP in
               time), and the sync popup on each visit until a sync succeeds. From it they run the sync again and enter the OTP.
             </span>
           </span>
           <span className="flex w-12 justify-center">
-            <input type="checkbox" checked={admin || syncAlerts} disabled={admin} onChange={() => setSyncAlerts((v) => !v)}
+            <input type="checkbox" checked={syncAlerts} onChange={() => setSyncAlerts((v) => !v)}
                    aria-label="John Deere sync alerts" className="h-4 w-4 accent-[var(--color-accent)]" />
           </span>
         </label>

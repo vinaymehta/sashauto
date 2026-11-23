@@ -11,7 +11,7 @@ export interface User {
   created_at: string;
   permissions: Record<"dashboard" | "orders" | "products" | "vendors" | "settings", "none" | "view" | "edit">; // in effect (admin: edit)
   orders_columns: string[] | null; // keys of the Orders table columns this user shows (null: not chosen, the default ones)
-  deere_sync_alerts: boolean; // gets the John Deere sync popup, bell items and emails (admins always)
+  deere_sync_alerts: boolean; // gets the John Deere sync popup, bell items and emails (ticked in Users → Permissions, admins too)
 }
 
 // Response of creating a user or resetting a password. When the email could not be sent, the password is
@@ -838,9 +838,10 @@ export interface AppSettingItem {
   key: string;
   label: string;
   group: string;
-  kind: "text" | "textarea" | "secret" | "select" | "html";
+  kind: "text" | "textarea" | "secret" | "select" | "toggle" | "html";
   hint: string | null;
-  options: string[] | null;
+  options: string[] | null; // a toggle's two: [off, on]
+  labels: Record<string, string> | null; // option => what it means (shown beside a toggle)
   default_value: string | null; // what applies when not set (shown on the page)
   source: "app" | "env" | "none";
   value: string | null;

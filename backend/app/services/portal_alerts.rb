@@ -1,5 +1,5 @@
 # Alerts when the Deere portal sync (SecurePortalSyncJob) fails, for the people who look after it
-# (User.deere_sync_recipients: admins and the users ticked in Users → Permissions): an item in their notification bell
+# (User.deere_sync_recipients: the users ticked in Users → Permissions, admins included): an item in their notification bell
 # (read from the audit log by Activity::Feed; it opens the Deere sync popup), one email (PortalSyncMailer) and a Slack
 # post (SlackNotifier; its link opens the popup too). From the popup they run the sync again and enter the OTP. Only
 # failures alert (nobody entered the OTP in time, or any other failure); Deere asking for the OTP does not.

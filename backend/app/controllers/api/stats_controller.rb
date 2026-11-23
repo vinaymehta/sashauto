@@ -20,9 +20,9 @@ module Api
                                            in_inr: calc.inr_total(found) } }
     end
 
-    # The order rows behind the Dashboard's YTD Customer Spend (Dashboard::Money#ytd_rows).
+    # The deliveries behind the Dashboard's YTD Customer Spend (Dashboard::Money#ytd_rows).
     def ytd_orders
-      found, page, meta = search_sort_page(money.ytd_rows, search: %i[part_number description po_number], numeric: %i[qty price value],
+      found, page, meta = search_sort_page(money.ytd_rows, search: %i[part_number description po_number file], numeric: %i[qty price value],
                                                  default_sort: "value")
       # Totals of the unrounded values of the rows found, as the card adds them up.
       totals = { qty: Serializers.qty(found.sum(0.to_d) { |r| r[:qty].to_d }), value: found.sum(0.to_d) { |r| r[:value] || 0 }.round(2).to_s("F") }

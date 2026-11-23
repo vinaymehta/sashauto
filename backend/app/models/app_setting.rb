@@ -3,17 +3,19 @@
 class AppSetting < ApplicationRecord
   belongs_to :updated_by, class_name: "User", optional: true
 
-  # default: what applies when neither the page nor .env has a value (shown on the page).
-  Definition = Data.define(:key, :label, :group, :kind, :hint, :options, :default)
-  def self.define(key, label, group, kind: :text, hint: nil, options: nil, default: nil)
-    Definition.new(key: key, label: label, group: group, kind: kind, hint: hint, options: options, default: default)
+  # default: what applies when neither the page nor .env has a value (shown on the page). labels: option => what it
+  # means, shown beside a toggle.
+  Definition = Data.define(:key, :label, :group, :kind, :hint, :options, :default, :labels)
+  def self.define(key, label, group, kind: :text, hint: nil, options: nil, default: nil, labels: nil)
+    Definition.new(key: key, label: label, group: group, kind: kind, hint: hint, options: options, default: default, labels: labels)
   end
   private_class_method :define
 
   CURRENCIES = %w[USD EUR INR GBP].freeze
 
   # Every setting the page shows, in page order. kind: text, textarea (address lines), secret (never sent back to the
-  # browser), select (options), html (rich text, VendorOrders::RichText).
+  # browser), select (options), toggle (a switch between its two options: off, on), html (rich text,
+  # VendorOrders::RichText).
   DEFINITIONS = [
     define("COMPANY_NAME", "Company name", "Company", hint: "On purchase orders, Intimation Letters and emails"),
     define("COMPANY_ADDRESS", "Address", "Company", kind: :textarea, hint: "Delivery and invoice address on purchase orders"),
@@ -64,6 +66,11 @@ class AppSetting < ApplicationRecord
            default: "USD"),
     define("CURRENCY_GMBH", "GMBH currency", "Businesses", kind: :select, options: CURRENCIES, hint: "Currency of GMBH's Deere Unit Price",
            default: "USD"),
+    define("PRICE_MODEL", "Latest price for every order", "Businesses", kind: :toggle, options: AppConfig::PRICE_MODELS, default: AppConfig::PRICE_MODELS.first,
+           labels: { "order_date" => "Off: each order at the price it came with (an order that came before a price change keeps the old price)",
+                     "latest" => "On: every order at Deere's latest price, whatever its date" },
+           hint: "Which Deere price values the orders on the Dashboard, the Orders list and the Product and PO summaries. " \
+                 "Off: the price in Deere's file on the day the order first came. On: Deere's latest price for every order"),
     # Rupees per unit of each foreign currency: vendor POs priced in USD, EUR or GBP are turned into ₹ so the Dashboard
     # shows one supplier total and one vendor chart.
     define("RATE_USD", "1 USD in ₹", "Businesses", hint: "Exchange rate for vendor POs priced in US dollars (Dashboard supplier value)", default: "88.50"),

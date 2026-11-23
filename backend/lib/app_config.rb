@@ -179,6 +179,16 @@ module AppConfig
     setting("CURRENCY_#{business.to_s.upcase}", "USD")
   end
 
+  # Which Deere price values every order (Orders::DeerePrices): "order_date" (the price the order came with: an order
+  # that came before a price change keeps the old price) or "latest" (Deere's latest price, whatever the order's date).
+  # The first is the default (the Admin Settings toggle off).
+  PRICE_MODELS = %w[order_date latest].freeze
+
+  def price_model
+    value = setting("PRICE_MODEL", PRICE_MODELS.first).to_s
+    PRICE_MODELS.include?(value) ? value : PRICE_MODELS.first
+  end
+
   def max_upload_bytes
     Integer(env("MAX_UPLOAD_BYTES", 20.megabytes))
   end
