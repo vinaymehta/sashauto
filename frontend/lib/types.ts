@@ -1007,6 +1007,7 @@ export interface HelpSection {
 export interface HelpVideo {
   url: string; // served by the backend in ranges, for the page's player
   size: number;
+  captions?: string; // WebVTT captions of the narration (bundled videos)
 }
 export interface HelpTopic {
   key: string;

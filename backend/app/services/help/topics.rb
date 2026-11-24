@@ -6,7 +6,8 @@ module Help
   #   sections  [{ heading, text, steps (numbered), bullets, table: { columns, rows } }] in reading order; a step is its
   #             text, or { text, image (a screenshot: public/help/<image>.jpg), page (the app page it happens on) }
   #   messages  [{ message, meaning }]: messages the app can show, and what to do
-  #   video     what the topic's video shows (its file: public/help/videos/<key>.mp4)
+  #   video     what the topic's video shows (its file: public/help/videos/<key>.mp4, narrated; its captions:
+  #             public/help/videos/<key>.vtt)
   # The page (Api::HelpController#index) and the PDF (Help::PdfBuilder) both read them, so they always say the same.
   module Topics
     FILE = Rails.root.join("config/help_topics.yml")
@@ -45,6 +46,12 @@ module Help
     # The topic's video file (public/help/videos/<key>.mp4), or nil.
     def video_path(key)
       path = VIDEOS.join("#{key}.mp4")
+      path if key.to_s.match?(/\A[a-z0-9-]+\z/) && File.file?(path)
+    end
+
+    # The captions of the topic's bundled video (public/help/videos/<key>.vtt, WebVTT: the narration as text).
+    def captions_path(key)
+      path = VIDEOS.join("#{key}.vtt")
       path if key.to_s.match?(/\A[a-z0-9-]+\z/) && File.file?(path)
     end
 

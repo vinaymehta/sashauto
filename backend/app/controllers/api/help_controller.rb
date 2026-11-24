@@ -29,6 +29,14 @@ module Api
       send_file path, type: "image/jpeg", disposition: "inline"
     end
 
+    # Captions of the topic's bundled video (the narration as WebVTT text, for the player's CC button).
+    def captions
+      path = Help::Topics.captions_path(@topic[:key]) or return render_error("Not found.", :not_found)
+
+      expires_in 1.day, private: true
+      send_file path, type: "text/vtt", disposition: "inline"
+    end
+
     def pdf
       expires_in 0, private: true
       send_data Help::PdfBuilder.new(@topic).render, filename: "SASH Help - #{@topic[:title].tr('/', '-')}.pdf", type: "application/pdf",
@@ -130,10 +138,17 @@ module Api
       json = topic.slice(:key, :title, :category, :summary, :sections, :messages, :access)
       path = Help::Topics.video_path(topic[:key])
       json[:video] = if video&.file&.attached? then video_json(video)
-      elsif path then { url: "/api/help/#{topic[:key]}/video?v=#{File.mtime(path).to_i}", size: File.size(path) }
+      elsif path then bundled_video_json(topic[:key], path)
       end
       json[:video_hint] = topic[:video] if admin
       json
+    end
+
+    # The bundled video, and its captions when it has them (an uploaded video has none: they would not match it).
+    def bundled_video_json(key, path)
+      captions = Help::Topics.captions_path(key)
+      { url: "/api/help/#{key}/video?v=#{File.mtime(path).to_i}", size: File.size(path),
+        captions: captions && "/api/help/#{key}/captions?v=#{File.mtime(captions).to_i}" }.compact
     end
 
     def video_json(video)

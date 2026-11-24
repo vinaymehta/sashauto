@@ -103,6 +103,7 @@ Rails.application.routes.draw do
     get "help/images/:name", to: "help#image", as: :help_image
     get "help/:topic/pdf", to: "help#pdf", as: :help_pdf, defaults: { format: :pdf }
     get "help/:topic/video", to: "help#video", as: :help_video
+    get "help/:topic/captions", to: "help#captions", as: :help_captions
     post "help/:topic/video", to: "help#upload_video"
     delete "help/:topic/video", to: "help#remove_video"
 

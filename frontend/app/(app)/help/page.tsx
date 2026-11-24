@@ -400,10 +400,11 @@ const imageUrl = (name: string) => `/api/help/images/${encodeURIComponent(name)}
 
 // The guide's steps one at a time: a progress bar, the step with its screenshot (the place to click is marked; click
 // the picture to enlarge it), Back / Next (or the arrow keys), dots to jump, and a button to the page it happens on.
-// The last step has no Next: the guide simply ends there. "Show all steps" lists them together.
+// The last step has no Next: the guide simply ends there. It opens on all the steps listed together.
 function Walkthrough({ steps }: { steps: Step[] }) {
   const [index, setIndex] = useState(0);
-  const [all, setAll] = useState(false);
+  // Every step listed at first; "Show one step at a time" walks through them.
+  const [all, setAll] = useState(true);
   const [zoom, setZoom] = useState<{ name: string; alt: string } | null>(null);
   const step = steps[Math.min(index, steps.length - 1)];
   const last = index >= steps.length - 1;
@@ -530,11 +531,12 @@ function Rich({ text }: { text: string }) {
   return <>{parts}</>;
 }
 
-// The guide's video (shipped with the app), when it has one.
+// The guide's video (shipped with the app, narrated), when it has one, with its captions (the player's CC button).
 function VideoBlock({ topic }: { topic: HelpTopic }) {
   if (!topic.video) return null;
   return (
     <video key={topic.video.url} controls preload="metadata" width={1440} height={760} className="mt-3 h-auto w-full rounded-md border border-line bg-black" src={topic.video.url}>
+      {topic.video.captions && <track kind="captions" src={topic.video.captions} srcLang="en" label="English" />}
       Your browser cannot play this video.
     </video>
   );

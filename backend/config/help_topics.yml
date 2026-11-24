@@ -19,22 +19,44 @@
         - text: "Click a box, for example **Past ship date**, to see the orders behind it."
           image: dashboard-past-ship
           page: /
-    - heading: The main boxes
+    - heading: "What you can do here"
+      bullets:
+        - "Pick **DTP**, **GMBH** or **All** in the **Business** menu at the top: every box and chart follows your choice."
+        - "Click **Upload new file** to load a John Deere order file (needs the Orders edit permission)."
+        - "When something needs a look, the **Needs attention** bar links to late orders, Commodity Type conflicts and uploads still being processed."
+        - "Click **Total Open Value (Sale)** to see each open order line with its open quantity and value."
+        - "Click **Total Open Value (Supplier)** to see each vendor PO still to be delivered, with the price used for it."
+        - "Click **YTD Customer Spend with SASH** to see each delivery since 1 April and the SASH Inc invoice or John Deere file it comes from."
+        - "Click **Open orders**, **Partial outbound** or **Outbound (fulfilled)** to see those orders by PO; click a PO number to open its summary."
+        - "Click **Shipping in 30 days** or **Past ship date** to see the orders behind it, or **PO coverage** to see the open orders without a vendor PO."
+        - "In these lists, search with the search box and click an order to open its details; in the order lists, **Open in Orders page →** shows the same orders on **Orders**."
+        - "**Fulfilment** shows what was ordered, sent and delivered; click a number to see the order lines behind it (needs access to **Orders**)."
+        - "**Open Value (Sale) by ship date** shows the open value by ship date: **Month** (this month by week), **6 months** or **Year** ahead, with overdue value shown apart in red."
+        - "**Open Value (Supplier) by vendor** splits what vendors still owe by vendor; click a vendor's name to see its open POs."
+        - "**Order pipeline** counts the open orders at each status; click a status to list its orders."
+        - "**Ageing since Effective Firm Date** shows how old the open orders are; click red, yellow or green to list those orders."
+        - "**Demand outlook** shows confirmed orders and **Forecast** by ship date for the months ahead (**Month**, **6 months** or **Year**)."
+        - "**Top parts by open value** lists the 8 parts with the most open value; click a part to see its open orders, MOQ, John Deere price and vendors."
+        - "**Next shipments** lists the next 8 orders to ship, late ones first; click one to open it, or click **All orders →** for the full list."
+        - "**Customer Spend with SASH** shows the value delivered to John Deere by delivery day: **Month** (by week), **6 months** or **Year** (this financial year by month)."
+    - heading: "Words on this page"
       table:
-        columns: [Box, What it tells you]
+        columns: ["Word", "What it means"]
         rows:
-          - ["Total Open Value (Sale)", "How much John Deere still has to receive from us."]
-          - ["Total Open Value (Supplier)", "How much our vendors still have to deliver to us, in rupees."]
-          - ["YTD Customer Spend", "What we have billed John Deere since 1 April."]
-          - ["Open orders", "Orders not yet delivered to John Deere."]
-          - ["Shipping in 30 days", "Orders due in the next month."]
-          - ["Past ship date", "Late orders that have not been sent yet. Check these first."]
-          - ["PO coverage", "How much of our open orders we have already ordered from vendors."]
-          - ["Partial outbound / Outbound", "Orders partly or fully delivered to John Deere."]
+          - ["**Total Open Value (Sale)**", "What John Deere's open Firm and Order orders are still worth: the quantity its latest file lists as open, at John Deere's price."]
+          - ["**Total Open Value (Supplier)**", "What vendors still have to deliver to SASH Faridabad on vendor POs, at the vendor's price, in rupees."]
+          - ["**YTD Customer Spend with SASH**", "Goods delivered to John Deere since 1 April: for DTP what SASH Inc invoiced, for GMBH what John Deere's file says it received."]
+          - ["**Open orders**", "Firm and Order order lines not yet delivered to John Deere in full."]
+          - ["**Shipping in 30 days**", "Open orders with a ship date from today to 30 days ahead."]
+          - ["**Past ship date**", "Orders whose ship date has passed and that have not been dispatched from SASH Faridabad yet, so check these first."]
+          - ["**PO coverage**", "How much of the open order value already has a vendor PO."]
+          - ["**Partial outbound** / **Outbound (fulfilled)**", "Orders delivered to John Deere in part, or in full."]
+          - ["**Effective Firm Date**", "The date an order's age is counted from: the Firm Date in John Deere's file, or else the day the order reached the part's MOQ."]
+          - ["Red, yellow, green", "Days since the Effective Firm Date: green 30–59, yellow 60–89, red 90 or more; under 30 days, or no date, is grey."]
+          - ["**Forecast**", "What John Deere expects to order later; it is not an order yet, so it is not in the open values."]
     - heading: Tips
       bullets:
         - "Hover the small **i** on a box for a short explanation."
-        - "The red, yellow and green chart shows how old the open orders are: red means waiting more than 90 days."
   video: "Clicking a few boxes, the i tips, the Past ship date list."
 
 - key: fulfilment
@@ -48,6 +70,29 @@
         - text: "Open **Dashboard** and scroll down to **Fulfilment**. Click a number to see the orders behind it."
           image: fulfilment-figures
           page: /
+    - heading: "What you can do here"
+      bullets:
+        - "Pick **DTP**, **GMBH** or **All** in the **Business** menu at the top: the six numbers follow your choice."
+        - "Each box shows the value and, under it, the number of pieces (**pcs**)."
+        - "Click a box to see the order lines behind it, each with its quantity and value; they add up to the box."
+        - "In that list, search a part, PO or description, and click a line to open the order's details."
+        - "With **All** picked, the **By business** table shows the six numbers for DTP and GMBH apart; click a number to see its lines."
+        - "Click **Show top … parts by value ordered** to list the parts (up to 10) with the most ordered value, with the six numbers for each."
+        - "In that table, click a column heading to sort, a number to see that part's lines, or a part number to open its summary."
+        - "Hover the small **i** on a box for how it is counted."
+    - heading: "Words on this page"
+      table:
+        columns: ["Word", "What it means"]
+        rows:
+          - ["**Total ordered**", "What John Deere has received plus what it still lists as open: **Delivered to Deere** plus **Pending as per DTP**."]
+          - ["**Delivered to Deere**", "What John Deere has already received, counted from SASH Inc invoices and John Deere's own receipts."]
+          - ["**In transit**", "Sent from SASH Faridabad but not yet delivered to John Deere: **Dispatched** less **Delivered to Deere**."]
+          - ["**Dispatched**", "Everything sent from SASH Faridabad so far, from SASH India invoices and the dispatched list."]
+          - ["**Pending as per DTP** / **GMBH**", "What John Deere's latest file still lists as open (Firm and Order); with **All** picked it reads **Pending as per Deere**."]
+          - ["**Pending to dispatch**", "What SASH still has to send from Faridabad: **Total ordered** less **Dispatched**."]
+          - ["Value (the big number)", "The quantity at John Deere's price, which is given per 100 pieces; orders without a price are left out."]
+          - ["**pcs**", "Pieces: the quantity behind the value."]
+          - ["**Firm** / **Order**", "Orders John Deere has confirmed; only these are counted here, not **Forecast**."]
     - heading: The journey of an order
       bullets:
         - "John Deere orders a part."
@@ -55,16 +100,6 @@
         - "SASH India sends it from Faridabad (**Dispatched**)."
         - "It travels to the USA or Germany (**In transit**)."
         - "John Deere receives it (**Delivered to Deere**)."
-    - heading: The six numbers
-      table:
-        columns: [Number, What it means]
-        rows:
-          - ["Total ordered", "Everything John Deere ordered."]
-          - ["Delivered to Deere", "What John Deere has already received."]
-          - ["In transit", "Sent from India, not yet received by John Deere."]
-          - ["Dispatched", "Everything sent from India so far."]
-          - ["Pending as per DTP", "What John Deere is still waiting for."]
-          - ["Pending to dispatch", "What we still have to send from India."]
   video: "The Fulfilment section on the Dashboard, clicking In transit and Pending to dispatch."
 
 - key: deere-upload
@@ -82,11 +117,39 @@
         - text: "Click **Actions**, then **Upload file**."
           image: upload-actions
           page: /orders
-        - text: "Click **Choose file** and pick the file you downloaded from John Deere (Excel .xlsx)."
+        - text: "Click **Choose file**, pick the file you downloaded from John Deere (Excel .xlsx), then click **Upload and compare**."
           image: upload-panel
           page: /orders
         - text: "Wait a moment. The app shows what changed since the last file, and emails the team."
           image: upload-result
+    - heading: "What you can do here"
+      bullets:
+        - "Click **Actions**, then **Upload file**, to open the upload panel (needs the Orders edit permission)."
+        - "On **Dashboard**, **Upload new file** opens the same panel."
+        - "In the panel, check **DTP** or **GMBH** next to **Business**: a file always belongs to one business."
+        - "Drag the file onto the panel or click **Choose file**; click **Remove** to pick another one."
+        - "Click **Upload and compare** to load it; loading goes on even if you leave the page."
+        - "When it is done, the panel closes, a message says how many changes were found, and they are on the **Changes** tab of **Orders**."
+        - "If the file is rejected, nothing is loaded and **Problems to fix** lists the Excel row, column and problem of each mistake."
+        - "Click **Version** to see the orders as they were in an earlier file; pick the one marked **Current** to go back."
+        - "Click **Actions**, then **Download .xlsx**, to download the file of the orders shown."
+        - "Click an upload in the bell (**Notifications**) to open its own page with its change boxes and the **Changes**, **MOQ alerts** and **Uploaded rows** tabs."
+        - "On an upload's page, **Download original .xlsx** downloads the file exactly as it was uploaded."
+        - "On an upload's page, the email labels show which emails were sent; if one shows **Failed**, click **Retry now**."
+    - heading: "Words on this page"
+      table:
+        columns: ["Word", "What it means"]
+        rows:
+          - ["**DTP**", "John Deere's orders that SASH delivers in the USA, through SASH Inc."]
+          - ["**GMBH**", "John Deere's orders for Germany (John Deere GmbH)."]
+          - ["**All**", "DTP and GMBH shown together; a file is always uploaded for **DTP** or **GMBH**."]
+          - ["Supplier Requirements file", "John Deere's Excel list of everything it wants from SASH, as an .xlsx file of up to 20 MB."]
+          - ["**Version**", "An earlier John Deere file; **Version** on **Orders** shows the orders as they were in it."]
+          - ["First upload", "The first file of a business: it has nothing to compare with, so changes show from the next file on."]
+          - ["**Rows processed**", "The order rows the app read from the file, and from how many Excel rows."]
+          - ["**Uploaded rows**", "The tab listing every order row stored from the file, with its Qty and its Qty in the previous file."]
+          - ["**Quantity**, **Address**, **MOQ**, **Ship To**, **Ageing**", "The emails sent for a file: quantity changes, Ship To address changes, parts below MOQ, orders going to another address, and open orders by age."]
+          - ["**Sent** / **Sending** / **Failed**", "Whether that email has gone out; a failed one is tried again by itself."]
     - heading: Tips
       bullets:
         - "Upload the file exactly as you downloaded it. Do not rename or delete columns."
@@ -116,6 +179,28 @@
         - text: "Go to **Admin Settings** and click **Sync now**."
           image: sync-now
           page: /settings
+    - heading: "What you can do here"
+      bullets:
+        - "The **John Deere sync** window shows the **Last sync** (or **Current sync**): when it ran, who started it, and the result for **DTP** and **GMBH**."
+        - "Click **Open upload** next to a business to see the file the sync loaded."
+        - "When John Deere asks for the code, type it in the **SMS code** box and click **Submit OTP**; the window shows the time left."
+        - "Click **Sync again** to run the sync straight away, for example after it failed."
+        - "Click **Close** to close the window; its items in the bell (**Notifications**) open it again."
+        - "After a failed sync, the window opens on each visit until a sync works."
+        - "On **Admin Settings**, **Sync now** starts the sync, and the line next to it shows when it last ran (needs the Admin Settings edit permission)."
+        - "An admin turns these alerts on for a person on **Users**: click the person and tick **John Deere sync** under **Alerts**."
+    - heading: "Words on this page"
+      table:
+        columns: ["Word", "What it means"]
+        rows:
+          - ["**John Deere sync**", "The app downloads the DTP and GMBH order files from John Deere's portal by itself every day at 8:00 (India time) and loads them."]
+          - ["**SMS OTP**", "A one-time code John Deere sometimes sends by SMS during the sync; type it within 8 minutes."]
+          - ["**Sync now** / **Sync again**", "Start the same download straight away, from **Admin Settings** or from the sync window."]
+          - ["**Starting** / **Running** / **Done**", "Where the sync is: just asked for, working, or finished."]
+          - ["**Uploaded**", "John Deere's file was new and has been loaded."]
+          - ["**No change**", "The file is the same as the last upload, so nothing new was loaded."]
+          - ["**Failed**", "The sync, or one business's file, did not work; the reason is shown, and **Sync again** tries once more."]
+          - ["**John Deere sync** tick (on **Users**)", "Gives a person the sync window, its bell items and its emails."]
     - heading: Good to know
       bullets:
         - "You also get an email as soon as John Deere asks for the code."
@@ -133,7 +218,7 @@
   sections:
     - heading: Steps
       steps:
-        - text: "After you upload a file, click **details** to open its page. On **Orders**, the **Changes** tab shows the same for the latest file."
+        - text: "After you upload a file, click it in the bell (**Notifications**) to open its page. On **Orders**, the **Changes** tab shows the same for the latest file."
           image: file-changes-boxes
           page: /orders
         - text: "The boxes count the changes: **Quantity up**, **Quantity down**, **Rows added** (new ship dates) and **Rescheduled** (same Qty, date moved). To list only one kind, click **Filter**, open **Change** and pick it, for example **↓ Qty down**."
@@ -146,19 +231,34 @@
         - text: "Pick the **Old version** on the left and the **New version** on the right. Click a coloured button, for example **Qty down**, to see only those lines."
           image: compare-page
           page: /orders/compare
-    - heading: The kinds of change
+    - heading: "What you can do here"
+      bullets:
+        - "On **Orders**, the **Changes** tab lists every change in the latest file, plus changes to orders added or edited by hand since then."
+        - "Pick an earlier file with **Version** to see that file's changes on the **Changes** tab."
+        - "An upload's own page shows the **↑ Quantity up**, **↓ Quantity down**, **Rows added** and **Rescheduled** boxes, and the **Changes**, **MOQ alerts** and **Uploaded rows** tabs."
+        - "The line above the list counts each kind of change and the net change in quantity."
+        - "Search a PO, part number, description, commodity or address in the search box."
+        - "Click **Filter** to sort by **Ship date**, **PO**, **Part number** or **Largest change**, or to show one **Change**, **Type** or **Age group**."
+        - "Click a PO or part number to open its summary."
+        - "On **Compare versions**, pick the **Old version** and the **New version**; the button between them swaps the two."
+        - "There, pick a **Type** (**Order**, **Firm** or **Forecast**), click **All changes** or a coloured button to see one kind, and search a PO, part number or description."
+        - "Each line there shows the old and new Qty and Ship date side by side: old in red, new in green."
+    - heading: "Words on this page"
       table:
-        columns: ["Change", "What it means"]
+        columns: ["Word", "What it means"]
         rows:
-          - ["Qty up", "John Deere wants more on this order line."]
-          - ["Qty down", "John Deere wants less. 0 means it wants none any more."]
-          - ["Row added / New line", "A new ship date for the order, not in the old file."]
-          - ["Row removed / Line removed", "The line is not in the new file any more."]
-          - ["Date moved", "Same quantity, new ship date (counted under Rescheduled)."]
-          - ["Address / Other change", "Something else changed, for example the Ship To address."]
+          - ["**↑ Qty up** / **↓ Qty down**", "John Deere wants more, or less, on this order line; a new Qty of 0 means it wants none any more."]
+          - ["**+ Row added** / **+ New line**", "A ship date or order line that was not in the old file."]
+          - ["**− Row removed** / **− Line removed**", "An order line that is not in the new file any more."]
+          - ["**Date moved** / **Rescheduled**", "The same quantity moved to a new ship date on the same PO line."]
+          - ["**Address**", "The Ship To address of the order line changed."]
+          - ["**Other change**", "On **Compare versions**: the Qty is the same, but the Type, Due Date or Ship To changed."]
+          - ["**Difference**", "How much the Qty went up (+) or down (−)."]
+          - ["**Old** / **New**", "The value in the earlier file and in the new one: old in red and struck through, new in green."]
+          - ["**Version**", "An earlier John Deere file; **Version** on **Orders** shows its orders and its changes."]
+          - ["**Compare versions**", "Shows what changed between any two files of one business."]
     - heading: Good to know
       bullets:
-        - "**Version** on **Orders** shows the order data of an earlier file."
         - "Compare versions works within one business: pick **DTP** or **GMBH** first. It needs the Orders edit permission."
         - "The **Quantity**, **Address**, **MOQ**, **Ship To** and **Ageing** labels on the upload's page show whether that email was sent for this file."
   messages:
@@ -187,15 +287,59 @@
         - text: "Click the **PO number** to see everything about that order."
           image: orders-details
           page: /orders
-    - heading: The tabs
+    - heading: "What you can do here"
       bullets:
-        - "**All Orders**: every order."
-        - "**Dispatched**: sent from India, not yet delivered."
-        - "**Orders fulfilled**: delivered to John Deere."
-        - "**Changes**: what changed in the latest John Deere file."
-        - "**MOQ alerts**: parts where the quantity still to order is less than the vendor's minimum (MOQ)."
-    - heading: Tip
-      text: "Click **Columns** to choose which columns you see. Your choice is saved for you."
+        - "Pick **DTP**, **GMBH** or **All** in the **Business** menu at the top to choose whose orders you see."
+        - "**Open orders**: Firm and Order orders not yet delivered to John Deere; click it to list them."
+        - "**PO to generate**: open orders with a quantity and no vendor PO yet; click it to list them."
+        - "**Below MOQ**: parts whose quantity still to order is below the vendor's minimum; click it to open the **MOQ alerts** tab."
+        - "**90+ days since Effective Firm Date**: open orders in the red age group; click it to list them."
+        - "**Different Ship To**: rows of the latest file going to another address than the usual one; click it to see them, search them and **Export** them."
+        - "**Changes** tab: what changed in the latest John Deere file."
+        - "**All Orders** tab: every order; orders already delivered to John Deere are hidden unless you pick them under **Status** in **Filter**."
+        - "**Dispatched** tab: sent from SASH Faridabad, not yet at SASH US."
+        - "**Orders fulfilled** tab: delivered to John Deere."
+        - "**MOQ alerts** tab: parts where the quantity still to order is less than the vendor's minimum (MOQ)."
+        - "The search box finds a PO number, part number, type or Ship To location."
+        - "**Filter** narrows the list by **Order** (Type, Status, Source), **Dates** (Ship timing, Ship date, Effective firm date, Age group), **Purchasing** (Vendor PO, Vendor, MOQ, Combined) and **Part & delivery** (Ship To Location)."
+        - "Click a column header to sort the list by it."
+        - "**Arrange**: drag the column headers into a new order, then click **Save**."
+        - "**Columns**: tick the columns you want, drag them into order and click **Save**; **Default** brings back the standard columns."
+        - "The **Age** boxes under the search box show only the orders of the age groups you tick."
+        - "**Version**: see the orders as they were in an earlier John Deere file (Orders edit permission)."
+        - "**Actions**, **Upload file**: load a John Deere order file by hand."
+        - "**Actions**, **Create order**: add an order yourself."
+        - "**Actions**, **Upload invoice**: load a SASH India or SASH Inc invoice (admins and the Warehouse Manager)."
+        - "**Actions**, **Import dispatched list**: mark many orders Dispatched from SASH India's list (admins)."
+        - "**Actions**, **Download .xlsx**: download the John Deere file whose orders are shown."
+        - "**Upload file**, **Create order** and **Download .xlsx** need the Orders edit permission and are not for the Warehouse Manager."
+        - "**Order summary**: each part's quantities day by day (for people who can see **Products**)."
+        - "**Compare versions**: compare two John Deere files of **DTP** or **GMBH** (not with **All**; not for the Warehouse Manager)."
+        - "Click a **PO Number** to open **Order details**: the order, its Ship To, its **Schedule** and its dispatches and deliveries."
+        - "Click a **Part Number** to open its **Product summary**: what was ordered, dispatched, delivered and is still to send, in total and per PO, with vendor prices."
+        - "Click a **Unit** to open **Place order** and make a vendor PO (Orders edit permission)."
+        - "Click a **Status** to record where the order is, or to see its history."
+    - heading: "Words on this page"
+      table:
+        columns: ["Word", "What it means"]
+        rows:
+          - ["**Firm** / **Order**", "Orders John Deere has confirmed; the app counts both the same way."]
+          - ["**Forecast**", "What John Deere expects to order later; it is not an order yet, so it is not counted in **Open orders** and has no age."]
+          - ["**PO Number**", "John Deere's purchase order number."]
+          - ["**PO Line Number**", "One line of a PO; a PO can have several lines, and a line can have several ship dates."]
+          - ["**Ship Date**", "The day John Deere wants the order shipped."]
+          - ["**Ship To**", "Where John Deere wants the order delivered, shown in the **Ship To Address** column."]
+          - ["**Different Ship To** / **Other Ship To**", "An order going to another address than the usual one for DTP or GMBH."]
+          - ["**Firm Date**", "The day the order first came as Firm or Order in a John Deere file; for a manual order, the day it was added."]
+          - ["**Effective Firm Date**", "The date an order's age is counted from; Forecast orders have none."]
+          - ["**Latest** / **Old file**", "In the **File** column: **Latest** is in John Deere's newest file, **Old file** is no longer there but is kept for its shipments, invoices or vendor POs."]
+          - ["**Manual**", "An order added by hand with **Create order**, not from John Deere's file."]
+          - ["**Combined**", "Small orders of the same PO and part joined together until they reach the vendor's minimum (MOQ)."]
+    - heading: Good to know
+      bullets:
+        - "The list starts with the oldest Effective Firm Date, and manual orders are always at the top."
+        - "Your **Columns** and **Arrange** choices are saved for you."
+        - "The boxes at the top and the **Dispatched** and **Orders fulfilled** tabs show only for the current orders, not for an older **Version**."
   video: "Searching a PO, using the Past ship date filter, opening an order."
 
 - key: order-statuses
@@ -210,16 +354,36 @@
           image: status-menu
           page: /orders
         - "Enter the date and save."
-    - heading: The statuses
+    - heading: "What you can do here"
+      bullets:
+        - "Click an order's **Status** to see the statuses you may set: a tick means done, **Waiting for …** means the step before is still missing."
+        - "Admins set **Received** and **Dispatched**, the Warehouse Manager sets **Inbound** and **Outbound**, and everyone else only sees the status."
+        - "Choosing a status opens **Order status**, where you pick the **Date** (today or earlier), add a **Note** if you like and click **Record**."
+        - "**Dispatched** also needs the **SASH India Invoice Number**."
+        - "**Details & history** shows every step with its date, invoice and who set it."
+        - "An admin can **Remove** a wrong status, starting with the latest one."
+        - "When the Warehouse Manager records a status, the India team gets an email."
+        - "Uploading a **SASH India** invoice sets **Dispatch** (part sent) or **Dispatched** (all sent) by itself."
+        - "Uploading a **SASH Inc** invoice sets **Partial outbound** or **Outbound** by itself."
+        - "**Import dispatched list** (admins) marks the matching orders **Dispatched**."
+        - "What John Deere's file says it has received can also move an order to **Partial outbound** or **Outbound**."
+        - "A status set on one row of a combined order is set for the whole combined order."
+        - "A red **i** beside **Order Qty** or **Shipped Qty** means the app changed that quantity itself; point at it to see why."
+        - "To list orders by status, use **Status** in **Filter**, or the **Dispatched** and **Orders fulfilled** tabs."
+    - heading: "Words on this page"
       table:
-        columns: [Status, Meaning]
+        columns: ["Word", "What it means"]
         rows:
-          - ["No status", "Nothing has happened yet."]
-          - ["Received", "The goods arrived at SASH Faridabad."]
-          - ["Dispatched", "Sent from SASH Faridabad (Dispatch = part of it sent)."]
-          - ["Inbound", "Arrived at SASH US."]
-          - ["Partial outbound", "Part of it delivered to John Deere."]
-          - ["Outbound", "Fully delivered to John Deere. Done."]
+          - ["**No status**", "Nothing has been recorded for the order yet."]
+          - ["**Received**", "The goods arrived at SASH Faridabad."]
+          - ["**Dispatch**", "Part of the order has been sent from SASH Faridabad."]
+          - ["**Dispatched**", "All of the order has been sent from SASH Faridabad."]
+          - ["**Inbound**", "The goods arrived at SASH US."]
+          - ["**Partial outbound**", "Part of the order has been delivered to John Deere."]
+          - ["**Outbound**", "All of the order has been delivered to John Deere: done."]
+          - ["**SASH India** invoice", "SASH Faridabad's invoice for goods it sends; it moves orders to **Dispatch** or **Dispatched**."]
+          - ["**SASH Inc** invoice", "SASH US's invoice to John Deere; it moves orders to **Partial outbound** or **Outbound**."]
+          - ["Dispatched list", "SASH India's Excel list of the orders sent from Faridabad."]
     - heading: Good to know
       bullets:
         - "Statuses go in order: an order must be Received before Dispatched, and so on."
@@ -240,8 +404,36 @@
         - "Vendors sell parts in a minimum quantity (MOQ). Small orders of the same PO and part are joined until they reach it."
         - "They are ordered from the vendor together and ship together. You see **Combined** on them."
         - "To add or remove an order, open the order and use **Add orders** or **Take out of the combined order**."
+    - heading: "What you can do here"
+      bullets:
+        - "The **Combined** tag beside the **PO Number** shows how many orders were joined; point at it to see the total quantity."
+        - "The **Low MOQ** tag means what is still to order for the part is below its MOQ; point at it to see how much."
+        - "Click the **PO Number** of any of its rows to open the combined order in **Order details**."
+        - "In the **Schedule**, the combined order is one shaded row: click it to list its orders."
+        - "**Add orders** joins later orders of the same PO and part to it by hand (Orders edit permission)."
+        - "The **✕** beside an order (**Take out of the combined order**) takes it out; the first order cannot be taken out."
+        - "Once its vendor PO is generated, a combined order can no longer change."
+        - "Orders joined or taken out by hand show **Added manually** or **Taken out**."
+        - "In **Order details**, a combined order still under the MOQ shows **Below MOQ**, and the **MOQ** column shows ✓ or ✗ for each quantity."
+        - "**Place order** on any of its rows orders the whole combined quantity from the vendor."
+        - "A status set on one of its rows is set for the whole combined order."
+        - "All rows of a combined order show the same **Effective Firm Date**."
+        - "In **Filter**, **Combined** under **Purchasing** lists only combined orders, or only the others."
+        - "Each order row is coloured by its age, and **Order details** shows the same colour as a dot."
+    - heading: "Words on this page"
+      table:
+        columns: ["Word", "What it means"]
+        rows:
+          - ["**Combined** order", "Small orders of the same PO, part and type joined in ship date order until together they reach the MOQ; it ships with its last order."]
+          - ["**MOQ**", "Minimum order quantity: the smallest quantity of a part the vendor sells, set on the part in **Products**."]
+          - ["**Low MOQ** / **Below MOQ**", "What is still to order for the part (its Firm and Order quantity less what is already on vendor POs) is less than its MOQ."]
+          - ["Sets", "Some parts are sold in sets: **Pieces per set** on the part says how many pieces a set has, and their MOQ is counted in sets."]
+          - ["**Effective Firm Date**", "The date an order's age is counted from; a combined order takes the latest one of its orders, or the day it reached the MOQ if none has one."]
+          - ["**PO generated**", "A vendor PO covers the whole quantity of the order."]
+          - ["**Added manually** / **Taken out**", "An order someone joined to a combined order by hand, or took out of it."]
+          - ["Green, yellow, red", "How long an order has waited since its Effective Firm Date: green 30–59 days, yellow 60–89 days, red 90 days or more; under 30 days has no colour."]
     - heading: How old is an order?
-      text: "The colour of an order shows how long it has waited: green 30–59 days, yellow 60–89, red more than 90."
+      text: "The colour of an order shows how long it has waited since its Effective Firm Date: green 30–59 days, yellow 60–89, red 90 or more. Under 30 days has no colour."
   video: "A combined order, adding one more order to it."
 
 - key: manual-orders
@@ -257,12 +449,39 @@
         - text: "Click **Actions**, then **Create order**."
           image: create-order-actions
           page: /orders
-        - text: "Fill in the PO number, part number, ship date and quantity, then save."
+        - text: "Fill in **Type**, **Ship Date**, **PO Number**, **PO Line Number**, **Part Number** and **Ship to Location** (**Qty** is optional), then click **Create order**."
           image: create-order-panel
           page: /orders
       bullets:
         - "If the app warns you, read it and click **Save anyway** if the order is right."
         - "Your order shows **Manual**. Open it to edit or delete it."
+    - heading: "What you can do here"
+      bullets:
+        - "**Create order** in **Actions** opens a form with every column of John Deere's file (Orders edit permission)."
+        - "With **All** picked at the top, choose **DTP** or **GMBH** under **Business** in the form."
+        - "Fill in the required fields under **Order**: **Type**, **Ship Date**, **PO Number**, **PO Line Number**, **Part Number** and **Ship to Location**."
+        - "**Qty** and the other columns are under **Other columns**."
+        - "The app warns you when an order with the same PO, part and type already exists, or when the **Qty** is below the part's MOQ."
+        - "Click **Save anyway** to keep the order as it is, or **Back** to change it."
+        - "Click the order's **PO Number** to open **Order details**, then **Edit** or **Delete** it (Orders edit permission)."
+        - "A manual order shows **Manual** in the **File** column and a **Manual** tag beside its type."
+        - "In **Filter**, **Source**, **Manual orders** lists only the orders added by hand."
+        - "**Place order** works for a manual order like any other order."
+        - "A manual order below its MOQ is listed on the **MOQ alerts** tab."
+    - heading: "Words on this page"
+      table:
+        columns: ["Word", "What it means"]
+        rows:
+          - ["**Manual** order", "An order added by hand with **Create order**, not from John Deere's file."]
+          - ["**Type**", "**Firm** and **Order** are confirmed orders; **Forecast** is only what John Deere expects to order later."]
+          - ["**PO Line Number**", "One line of a PO; a PO can have several lines, and a line can have several ship dates."]
+          - ["**Ship to Location**", "The place the order goes to, as John Deere's file names it; the form suggests the ones already used."]
+          - ["**MOQ**", "Minimum order quantity: the smallest quantity of a part the vendor sells, set on the part in **Products**."]
+          - ["**Firm Date**", "For a manual order, the day it was added."]
+    - heading: Good to know
+      bullets:
+        - "Manual orders are always listed at the top of **All Orders**."
+        - "Deleting a manual order removes it from **Orders**; its recorded changes and alerts stay in the history."
   video: "Creating an order and saving it."
 
 - key: moq-alerts
@@ -273,15 +492,37 @@
   sections:
     - heading: Steps
       steps:
-        - text: "Go to **Orders** and open the **MOQ alerts** tab. The **Below MOQ** box at the top shows how many parts are on it."
+        - text: "Go to **Orders** and open the **MOQ alerts** tab. The **Below MOQ** box at the top counts the parts below their MOQ right now."
           image: moq-tab
           page: /orders
         - "**Qty** is what is still to order for the part: John Deere's Firm quantity less what is already on vendor POs. **MOQ** is the vendor's minimum."
         - "Search a PO or part number, or click **Export** to download the list."
+    - heading: "What you can do here"
+      bullets:
+        - "**MOQ alerts** tab: one row for each part that was below its MOQ when the latest file was loaded, plus manual orders below their MOQ."
+        - "**Below MOQ** box: how many parts are below their MOQ right now; click it to open the tab."
+        - "The search box finds a PO or part number."
+        - "**Export** downloads the list as an Excel file, with each alert's **MOQ**, **Qty** and full order row."
+        - "Click a **PO Number** or **Part Number** to open its summary."
+        - "On **All Orders**, the **Low MOQ** tag and the **MOQ** filter (under **Purchasing** in **Filter**) show the parts below their MOQ right now."
+        - "Each upload's page has its own **MOQ alerts** tab for that file."
+        - "When a new file has MOQ alerts, the app sends a **Below MOQ** email with the list."
+    - heading: "Words on this page"
+      table:
+        columns: ["Word", "What it means"]
+        rows:
+          - ["**MOQ**", "Minimum order quantity: the smallest quantity of a part the vendor sells, set on the part in **Products**."]
+          - ["**Below MOQ** / **Low MOQ**", "What is still to order for the part is more than 0 but less than its MOQ."]
+          - ["**Qty**", "What is still to order for the part: its Firm quantity less PO issued; for a manual order, its own Qty."]
+          - ["Firm", "The part's quantity on all its Firm and Order rows in John Deere's file."]
+          - ["PO issued", "The quantity of the part already on vendor POs."]
+          - ["Sets", "For a part sold in sets, the MOQ and Qty are counted in sets."]
     - heading: Good to know
       bullets:
-        - "A part leaves the list once what is still to order reaches its MOQ, or is all on vendor POs."
+        - "The **MOQ alerts** tab is made when the file is loaded: a part leaves it with the next file once what is still to order reaches its MOQ or is all on vendor POs."
         - "Each upload's page has its own **MOQ alerts** tab, and shows whether the **MOQ** email was sent for that file."
+        - "**PO Number** lists every PO with the part; **Type** and **Ship Date** are those of its first order."
+        - "Parts marked discontinued are left off the list made from John Deere's file."
   video: "The Below MOQ box, the MOQ alerts tab, Export."
 
 - key: order-summary
@@ -301,17 +542,36 @@
           page: /orders/summary
         - "To see only some dates side by side, choose **Compare dates** under **Show**."
         - "Click **Export** to download it as an Excel file."
-    - heading: The columns of each day
+    - heading: "What you can do here"
+      bullets:
+        - "**Business**: pick **DTP** or **GMBH**; with **All** the summary asks you to choose one."
+        - "**Show**, **Date range**: every day with a file from **From** to **To**."
+        - "**Show**, **Compare dates**: only the dates you pick, side by side; remove one with its ✕, or click **Clear all**."
+        - "**Last 7 days**, **Last 30 days**, **Last 90 days** and **All days** set the days in one click; the page opens on the last 30 days."
+        - "**From** and **To** set the first and last day; leave **To** empty to go up to the newest day."
+        - "The search box finds a part number or description."
+        - "**Export** downloads the same days and parts as an Excel file laid out like SASH's."
+        - "The **Latest day** boxes show the newest day shown: its **Firm**, **Added**, **Taken off**, **Parts changed** and **Forecast**."
+        - "Point at a date to see which file it comes from."
+        - "Click a part to open its details."
+        - "It is also on **Products**, as the **Order summary** tab; both need the Products view permission."
+    - heading: "Words on this page"
       table:
-        columns: ["Column", "What it shows"]
+        columns: ["Word", "What it means"]
         rows:
-          - ["Firm", "The part's Firm and Order quantity in that day's file."]
-          - ["Addition", "Firm less the day before's Firm: green when it went up, red when it went down."]
-          - ["Forecast", "The part's Forecast quantity."]
+          - ["**Firm**", "The part's Firm and Order quantity in that day's file."]
+          - ["**Addition**", "Firm less the Firm of the day before with a file: green when it went up, red when it went down."]
+          - ["**vs**", "With **Compare dates**, the change in Firm since the next older date you picked."]
+          - ["**Forecast**", "The part's Forecast quantity in that day's file."]
+          - ["**Added**", "All the increases in Firm on the latest day shown, added up."]
+          - ["**Taken off**", "All the decreases in Firm on the latest day shown, added up."]
+          - ["**Parts changed**", "How many parts' Firm changed on the latest day shown."]
+          - ["**MOQ**", "The part's minimum order quantity from **Products**."]
+          - ["Day", "A day with a John Deere file; when several files came that day, the last one counts."]
     - heading: Good to know
       bullets:
-        - "The boxes at the top show the newest day at a glance: its **Firm**, what was **Added** and **Taken off** since the day before, how many **Parts changed**, and the **Forecast**."
-        - "Click a part to open its details."
+        - "The first day shown is still compared with the day before it, even when that day is not shown."
+        - "On the oldest file there is nothing to compare with, so its Addition is 0."
   messages:
     - message: "Choose DTP or GMBH"
       meaning: "The order summary shows the files of one business. Pick DTP or GMBH in the Business menu at the top."
@@ -334,6 +594,32 @@
         - "The app marks the matching orders as **Dispatched** and lists any rows it could not match."
       bullets:
         - "Uploading the same list twice is safe: nothing is counted twice."
+    - heading: "What you can do here"
+      bullets:
+        - "**Import dispatched list** is under **Actions** on **Orders**, for admins only."
+        - "It takes an Excel (.xlsx) file: SASH India's **List of Dispatched Orders** or **Book 38**."
+        - "DTP and GMBH orders are both matched, so you do not need to pick DTP or GMBH first."
+        - "Each row goes to the order with the same PO Number and Part Number whose Ship Date or Due Date is the row's date."
+        - "If the list names a PO that has no such order, the app uses the order of that part on that date, and shows it under **Matched under our PO**."
+        - "A matched order is marked **Dispatched** with its invoice number, and also **Received** if it was not marked yet."
+        - "A row of a combined order marks the whole combined order, and an order sent on several invoices gets all of them."
+        - "Rows the app could not mark are listed under **Skipped rows** with the reason, so you can set their status by hand."
+        - "Rows already loaded by an earlier list are counted as already recorded, not as problems; only new invoices are added."
+        - "Click **Import another file** to load the next list."
+        - "Afterwards the orders show on the **Dispatched** tab of **Orders**."
+    - heading: "Words on this page"
+      table:
+        columns: ["Word", "What it means"]
+        rows:
+          - ["Dispatched list", "SASH India's Excel list of the orders it sent from Faridabad, with their invoice numbers."]
+          - ["**List of Dispatched Orders**", "One kind of dispatched list: one row for each shipment, with PO, part, invoice number, invoice date and ship date."]
+          - ["**Book 38**", "The other kind of dispatched list: one row for each order with its shipments; it has no invoice date, so the app takes it from the uploaded SASH India invoice, or uses today."]
+          - ["**Dispatched**", "All of the order has been sent from SASH Faridabad."]
+          - ["**Dispatch**", "Only part of the order's quantity has been sent from SASH Faridabad so far, on SASH India invoices."]
+          - ["**Received**", "The goods arrived at SASH Faridabad; the import sets it too when an order does not have it yet."]
+          - ["**Matched under our PO**", "Rows where the list named another PO, so the app used the order of that part on that date in the app's orders."]
+          - ["**Skipped rows**", "Rows that were not marked: they match no order or several orders, or the order is already marked Dispatched by hand or is further on."]
+          - ["Already recorded", "A row an earlier upload of the list already marked; nothing more is done with it."]
   messages:
     - message: "Could not find the header row…"
       meaning: "This is not the dispatched list. Check you picked the right file and the right upload."
@@ -354,13 +640,33 @@
           image: invoice-panel
           page: /orders
         - "Check the list of orders it goes to, then click **Save invoice**."
-    - heading: Two kinds of invoice
+    - heading: "What you can do here"
+      bullets:
+        - "**Upload invoice** is under **Actions** on **Orders**, for admins and the Warehouse Manager."
+        - "Choose the invoice as a PDF, or as the Excel (.xlsx) file it is made in."
+        - "The app reads who issued the invoice and shows whether it is a **SASH India invoice** or a **SASH Inc invoice**."
+        - "Before anything is saved, it lists each invoice line with the orders of that PO and part it goes to, oldest Ship Date first."
+        - "Quantity that no order takes is shown as unmatched, with the reason."
+        - "Nothing changes until you click **Save invoice**, and it cannot be saved when no order takes any of its quantity."
+        - "A SASH India invoice counts its quantity as dispatched from India; a SASH Inc invoice counts dispatched quantity as delivered to John Deere."
+        - "An invoice number that was already uploaded is refused."
+        - "To see an order's invoices later, open its **Order details**: **Dispatches and deliveries** lists them, with **Preview** and a download button."
+        - "Only an admin can remove an invoice there; a SASH India invoice whose goods are on a later SASH Inc invoice is removed after that one."
+        - "The Warehouse Manager can upload SASH Inc invoices only, and cannot remove invoices."
+    - heading: "Words on this page"
       table:
-        columns: [Invoice, From, To, Effect]
+        columns: ["Word", "What it means"]
         rows:
-          - ["SASH India", "SASH Faridabad", "SASH US warehouse", "Orders show as **Dispatched**."]
-          - ["SASH Inc", "SASH US", "John Deere", "Orders show as **Delivered to Deere**."]
-      text: "Both are numbered like EX/26-27/…, so look at who sent it (top left of the invoice). The app checks this for you."
+          - ["**SASH India invoice**", "SASH Faridabad's export invoice for goods sent from India (the buyer on it is Lotus Automotive); uploading it shows those orders as **Dispatch** or **Dispatched**."]
+          - ["**SASH Inc invoice**", "SASH US's invoice to John Deere; uploading it shows those orders as **Delivered to Deere**."]
+          - ["**Dispatch** / **Dispatched**", "Part of the order (Dispatch) or all of it (Dispatched) has been sent from SASH Faridabad."]
+          - ["**Delivered to Deere**", "What John Deere has received, counted from SASH Inc invoices."]
+          - ["**Partial outbound** / **Outbound**", "Part of the order, or all of it, has been delivered to John Deere."]
+          - ["**Balance**", "On a SASH India invoice: the order's quantity less what was already sent from India."]
+          - ["**Not delivered yet**", "On a SASH Inc invoice: what was dispatched from India but not yet delivered to John Deere."]
+          - ["Unmatched", "Quantity on the invoice that no order takes; it is kept with the invoice."]
+    - heading: Good to know
+      text: "Both kinds are numbered like EX/26-27/…, so look at who issued it (the Exporter on the invoice). The app checks this for you."
   messages:
     - message: "No text could be read from the file (a scanned PDF cannot be read)."
       meaning: "Upload the original PDF, not a scan or photo."
@@ -382,6 +688,36 @@
         - "Pick the vendor and the quantity, then click **Generate PO**."
         - "Download or print the PO, and copy the email text to send it to the vendor."
         - "Tick **Order placed** once the vendor has it."
+    - heading: "What you can do here"
+      bullets:
+        - "**Place order** needs the Orders edit permission; others only see the POs already made."
+        - "The top line shows the **Order Qty**, what is already **Dispatched**, what is left **To order**, what is **Ordered**, what is still **Open** and the part's **MOQ**."
+        - "Only the vendors linked to the part (on **Products** or **Vendors**) are offered, each with its price and MOQ."
+        - "Tick one or more vendors and type each one's quantity; a part sold in sets can be ordered in **Sets** or **Pcs**."
+        - "Each ticked vendor gets a **Vendor Ship Due Date**: today plus the vendor's lead days, which you can change; it is printed on the PO."
+        - "You can order part of the quantity now; the rest stays open for a later PO."
+        - "A quantity below the MOQ only gives a warning; it does not stop the PO."
+        - "**Generate PO** saves each vendor's PO as a PDF and locks it, so it cannot be edited afterwards."
+        - "Each PO has **View**, **Download** and **Print**; a vendor at the 0.1% GST rate also gets an **Intimation Letter**."
+        - "Under **Email draft**, **Preview** shows the email for each vendor and **Copy** copies it; the app never sends it."
+        - "Tick **Order placed** once the PO is sent; taking the tick off asks you first."
+        - "The round-arrow button (**Regenerate PO**) makes the PDFs again from the current vendor and company details; PO number, date, quantity and price stay the same."
+        - "A discontinued part cannot be ordered."
+        - "POs recorded from an uploaded **Vendor PO list** show here too, without a PDF."
+    - heading: "Words on this page"
+      table:
+        columns: ["Word", "What it means"]
+        rows:
+          - ["**Vendor PO**", "SASH's purchase order to a vendor; its number is the John Deere PO, the vendor's code and the order's ship date, for example 5500936294/GR/30-04-26."]
+          - ["**Generate PO**", "Makes and saves the vendor POs for the quantities you entered."]
+          - ["**Order placed**", "A tick that the PO has been sent to the vendor."]
+          - ["**MOQ**", "Minimum order quantity: the smallest quantity of the part that should be ordered from the vendor."]
+          - ["**To order**", "The order's quantity less what SASH India has already dispatched."]
+          - ["**Open**", "What is still to order after the POs already made."]
+          - ["**Sets** / **Pcs**", "For a part sold in sets, the quantity can be entered in sets or in single pieces."]
+          - ["**Vendor Ship Due Date**", "The day the vendor should send the goods, printed on the PO."]
+          - ["Lead days", "The days a vendor needs from the PO to dispatch, set on the vendor."]
+          - ["**Intimation Letter**", "A letter that goes with the PO to vendors at the 0.1% GST rate for export."]
   video: "Placing an order, opening the PO PDF, copying the email."
 
 - key: purchase-orders
@@ -401,6 +737,33 @@
         - text: "Rows the app could not record wait on the **Import issues** tab. Pick the right vendor there, or dismiss them."
           image: po-issues
           page: /purchase-orders
+    - heading: "What you can do here"
+      bullets:
+        - "The **Vendor POs** tab lists every vendor PO, made with **Place order** or recorded from an uploaded **Vendor PO list**."
+        - "Its columns are **Vendor PO** (and where it came from), **Vendor**, **Order** (part, John Deere PO, line and ship date), **Order date**, **Qty** and **Received**."
+        - "The boxes at the top count **Vendor POs**, **From uploaded lists**, **Generated here** and **Goods not received in full**; click one to list only those."
+        - "Search a vendor PO, vendor, John Deere PO or part, and narrow the list with **All sources** and **Goods: all**."
+        - "Click a vendor to see its parts and details, or a part to see its Product summary."
+        - "Click the **Received** figure to see each delivery (date, vendor invoice and quantity) and to **Add receipt** by hand."
+        - "Only an admin can **Remove** a receipt."
+        - "**Upload** (pick DTP or GMBH first) loads a **Vendor PO list** or a **Purchase received** file as Excel (.xlsx); it needs the Orders edit permission."
+        - "After an upload, a summary shows how many rows were recorded and skipped, by reason; **Show skipped rows** lists them."
+        - "Nothing already recorded is overwritten: rows uploaded before with other values can be checked with **Review … changed rows**, then **Override … selected** or **Keep current values**."
+        - "The **Import issues** tab has **Open**, **Resolved** and **Dismissed** rows; an open row can get **Choose vendor**, **Add as vendor** or **Dismiss**, and a dismissed one **Reopen**."
+        - "PO PDFs and vendor emails are in **Place order**, not on this page."
+    - heading: "Words on this page"
+      table:
+        columns: ["Word", "What it means"]
+        rows:
+          - ["**Vendor PO**", "SASH's purchase order to a vendor for a John Deere order."]
+          - ["**Vendor PO list**", "John Deere's order file with Vendor Name, PO Qty Issued and the vendor PO number; uploading it records those vendor POs, ticked as Order placed, without a PDF."]
+          - ["**Purchase received**", "The file of vendor invoices (date, invoice number, part, vendor, quantity); each row's quantity goes to that vendor's POs for the part, oldest first."]
+          - ["**Generated here** / **Uploaded list**", "The PO was made with **Place order** in the app, or recorded from a Vendor PO list."]
+          - ["**Order date**", "The day SASH received the John Deere order (its Firm date)."]
+          - ["**Received**", "How much of the PO's quantity has arrived at SASH Faridabad, for example 40 of 100, with a tick once all of it has."]
+          - ["**Goods not received in full**", "Vendor POs whose goods have not all arrived at SASH Faridabad yet."]
+          - ["Receipt", "One delivery from the vendor: the date received, the vendor's invoice number and the quantity."]
+          - ["**Import issues**", "Rows of uploaded files that could not be recorded, for example because the vendor or the order was not found."]
   messages:
     - message: "no vendor PO of … with …"
       meaning: "Upload the Vendor PO list first, then upload the Purchase received file again."
@@ -421,6 +784,41 @@
         - "Click **Add images** to add photos of the part."
       bullets:
         - "A part no longer made can be marked **discontinued**."
+    - heading: "What you can do here"
+      bullets:
+        - "The **Products** tab lists every part with its photo, **Part Number**, **Description**, **SASH Part**, **MOQ**, **Customer / pc**, **Best vendor / pc** and number of **Vendors**."
+        - "Search by part number, SASH part, vendor part or description, and use **Filter** for Commodity Type, Pack, prices, MOQ, vendors, current inventory or commodity conflicts."
+        - "A part can show a **Conflict** tag (its Commodity Type differs in an upload) or a **Discontinued** tag."
+        - "The **Current inventory** tab lists the parts vendors have in stock now, with the vendor and the quantity."
+        - "The **Product summary** tab shows each part's ordered, pending, dispatched, delivered and forecast quantities and revenue; the Warehouse Manager does not see it."
+        - "The **Order summary** tab shows each part's Firm, Addition and Forecast day by day (see its own guide)."
+        - "The **Import issues** tab lists rows of imported vendor files that could not be loaded, to **Fix & add** or **Dismiss**."
+        - "Click a part to open its panel: **Part**, **Images**, **Customer price (Deere)**, **Vendors** and **Price history**."
+        - "**Edit** on the **Part** card changes the description, Commodity Type, SASH Part, Vendor Part, **Pieces per set** and **MOQ**; the Part Number never changes."
+        - "**Add images** adds photos (JPG, PNG, WebP or GIF, up to 5 MB each, at most 10 per part); click a photo to see it large."
+        - "**Customer price (Deere)** shows John Deere's price per piece and per 100 pieces, and can be edited."
+        - "The **Vendors** card shows each vendor's **Price per piece**, **MOQ (pcs)** and **Current Inventory**, with a **Lowest** tag on the cheapest."
+        - "There you can **Add vendor**, change a vendor's price, MOQ and inventory with the pencil, or remove the vendor from the part."
+        - "**Price history** shows every change of the customer price and vendor prices, with when and who or which file."
+        - "**Mark part as discontinued** stops new vendor POs for the part; **Order it again** undoes it."
+        - "When a part has a Commodity Type conflict, pick **Keep …** or **Use …**."
+        - "**Add part** adds a part by hand (Part Number and the vendor that supplies it), and **Import** loads a vendor Excel file."
+        - "Changing anything needs the Products edit permission; without it the page is view only."
+    - heading: "Words on this page"
+      table:
+        columns: ["Word", "What it means"]
+        rows:
+          - ["**MOQ**", "Minimum order quantity: the smallest quantity of the part that should be ordered; the part's MOQ is used for MOQ alerts."]
+          - ["**Pieces per set**", "How many pieces make one set; for a part sold in sets, its MOQ is counted in sets."]
+          - ["**Customer price**", "John Deere's price for the part, taken from the Unit Price (per 100 pieces) in John Deere's DTP order file on each upload."]
+          - ["**Price per piece**", "What one vendor charges SASH for one piece of the part."]
+          - ["**Best vendor / pc**", "The lowest vendor price per piece for the part, and which vendor offers it."]
+          - ["**Current Inventory**", "How many pieces of the part a vendor has in stock now."]
+          - ["**Discontinued**", "No more vendor POs are placed for the part, and it is left out of the MOQ check."]
+          - ["**SASH Part**", "SASH's own number for the part."]
+          - ["**Vendor Part**", "The vendor's own number for the part."]
+          - ["**Commodity Type**", "The kind of part, as given in John Deere's order file."]
+          - ["**Conflict**", "An order file gave the part a different Commodity Type than the one saved; choose which one to keep."]
   video: "Opening a part, changing its MOQ, adding a photo."
 
 - key: vendors
@@ -436,4 +834,29 @@
           page: /vendors
         - "Click **Add vendor** to add a new one, or edit an existing one."
         - "Use **Import** to load the vendor Excel file."
+    - heading: "What you can do here"
+      bullets:
+        - "The **Vendors** tab lists every vendor with its **Vendor Name**, **Code**, **Contact No**, **Place of Supply**, number of **Products** and **Current Inventory**."
+        - "Search by vendor name, code, company or part number, and use **Filter** for parts, current inventory, place of supply or missing details."
+        - "Click a vendor to open its panel; the **Details** tab shows its contact, tax and payment details, address and remarks."
+        - "The **Parts** tab lists what the vendor supplies, with **Price per piece**, **MOQ (pcs)** and **Current Inventory**."
+        - "Click a part there to open it and change its prices; **Add part** links another part to the vendor (the part must already be in **Products**)."
+        - "**Add vendor** adds a new vendor, and **Edit vendor** (or the pencil in the list) changes one: contacts, Vendor Code, GST, payment terms, lead days, address and remarks."
+        - "Vendors cannot be deleted."
+        - "**Import** loads a vendor Excel file: the DTP Details workbook (parts and prices), the vendor details file or the tax officer file."
+        - "The **Import issues** tab lists rows that could not be loaded, to **Fix & add**, **Same as…**, **Add as vendor** or **Dismiss**."
+        - "Changing anything needs the Vendors edit permission; without it the page is view only."
+    - heading: "Words on this page"
+      table:
+        columns: ["Word", "What it means"]
+        rows:
+          - ["**Vendor**", "A company SASH buys parts from."]
+          - ["**Vendor Code**", "The vendor's short code, used in its PO numbers, for example GR in 5500936294/GR/30-04-26."]
+          - ["**Payment Terms**", "When SASH pays the vendor, for example 60 days from date of Dispatch; it is printed on the vendor's PO."]
+          - ["**Lead Days**", "The days the vendor needs from the PO to dispatch; it sets the Vendor Ship Due Date of a new PO."]
+          - ["**GST Rate**", "The vendor's GST rate; vendors at 0.1% (the export rate) get an Intimation Letter with each PO."]
+          - ["**Jurisdictional Tax Officer**", "The tax office address copied on the Intimation Letter."]
+          - ["**Price per piece**", "What the vendor charges SASH for one piece of a part."]
+          - ["**MOQ (pcs)**", "The smallest quantity of a part, in pieces, the vendor sells."]
+          - ["**Current Inventory**", "How many pieces of a part the vendor has in stock now."]
   video: "Opening a vendor, adding a vendor."

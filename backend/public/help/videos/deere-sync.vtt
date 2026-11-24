@@ -1,0 +1,22 @@
+WEBVTT
+
+00:00:00.300 --> 00:00:04.491
+Every morning, the app downloads John Deere's order files by itself.
+
+00:00:04.942 --> 00:00:08.754
+Sometimes John Deere asks for a code sent by SMS.
+
+00:00:08.754 --> 00:00:11.322
+Then this window opens by itself.
+
+00:00:11.773 --> 00:00:15.778
+Type the code from the SMS, and click Submit OTP.
+
+00:00:18.326 --> 00:00:19.802
+You have eight minutes.
+
+00:00:19.802 --> 00:00:23.266
+If the time runs out, click Sync again for a new code.
+
+00:00:23.717 --> 00:00:28.628
+Admins can also start it by hand, with Sync now, in Admin Settings.

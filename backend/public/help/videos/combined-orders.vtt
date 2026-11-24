@@ -1,0 +1,16 @@
+WEBVTT
+
+00:00:00.300 --> 00:00:03.613
+Vendors sell parts in a minimum quantity, the MOQ.
+
+00:00:03.613 --> 00:00:08.120
+Small orders of the same PO and part are joined until they reach it.
+
+00:00:08.570 --> 00:00:12.819
+They show Combined, are ordered from the vendor together, and ship together.
+
+00:00:13.270 --> 00:00:19.470
+Open the order, and click the combined row to see the orders in it, their total, and the MOQ.
+
+00:00:22.834 --> 00:00:30.798
+Until a vendor PO is made, an admin can take an order out with the cross, or add one with Add orders when another small order can join.
