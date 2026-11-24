@@ -124,6 +124,51 @@
       meaning: "The time ran out. Click **Sync again**."
   video: "The sync window and typing an SMS code."
 
+- key: file-changes
+  title: What changed in the new John Deere file
+  category: John Deere orders
+  access: orders
+  summary: "See which quantities and ship dates John Deere changed, and compare any two files."
+  sections:
+    - heading: Steps
+      steps:
+        - text: "After you upload a file, click **details** to open its page. On **Orders**, the **Changes** tab shows the same for the latest file."
+          image: file-changes-boxes
+          page: /orders
+        - text: "The boxes count the changes: **Quantity up**, **Quantity down**, **Rows added** (new ship dates) and **Rescheduled** (same Qty, date moved). To list only one kind, click **Filter**, open **Change** and pick it, for example **↓ Qty down**."
+        - text: "Each row shows the **Change**, the **Difference**, the **Old** and **New** value, and the order it is on. Use the search box or **Filter** to find a PO or part."
+          image: file-changes-list
+          page: /orders
+        - text: "To compare any two files, go to **Orders** and click **Compare versions**."
+          image: compare-button
+          page: /orders
+        - text: "Pick the **Old version** on the left and the **New version** on the right. Click a coloured button, for example **Qty down**, to see only those lines."
+          image: compare-page
+          page: /orders/compare
+    - heading: The kinds of change
+      table:
+        columns: ["Change", "What it means"]
+        rows:
+          - ["Qty up", "John Deere wants more on this order line."]
+          - ["Qty down", "John Deere wants less. 0 means it wants none any more."]
+          - ["Row added / New line", "A new ship date for the order, not in the old file."]
+          - ["Row removed / Line removed", "The line is not in the new file any more."]
+          - ["Date moved", "Same quantity, new ship date (counted under Rescheduled)."]
+          - ["Address / Other change", "Something else changed, for example the Ship To address."]
+    - heading: Good to know
+      bullets:
+        - "**Version** on **Orders** shows the order data of an earlier file."
+        - "Compare versions works within one business: pick **DTP** or **GMBH** first. It needs the Orders edit permission."
+        - "The **Quantity**, **Address**, **MOQ**, **Ship To** and **Ageing** labels on the upload's page show whether that email was sent for this file."
+  messages:
+    - message: "Choose DTP or GMBH"
+      meaning: "Versions are compared within one business. Pick DTP or GMBH in the Business menu at the top."
+    - message: "Two versions are needed to compare"
+      meaning: "Only one file of this business is uploaded. Upload another one first."
+    - message: "Choose two different versions."
+      meaning: "Old and new are the same file. Pick another one on one side."
+  video: "An upload's changes, a box filter, then Compare versions with Qty down."
+
 - key: orders-page
   title: Finding an order
   category: Orders
@@ -132,10 +177,10 @@
   sections:
     - heading: Steps
       steps:
-        - text: "Go to **Orders** and type a PO number or part number in the search box."
+        - text: "Go to **Orders**, open the **All Orders** tab and type a PO number or part number in the search box."
           image: orders-search
           page: /orders
-        - text: "Or click **Filter**, for example to see only late orders (**Past ship date**)."
+        - text: "Or click **Filter**: for example, to see only late orders, pick **Past ship date** under **Ship timing**."
           image: orders-filters
           page: /orders
         - text: "Click the **PO number** to see everything about that order."
@@ -147,6 +192,7 @@
         - "**Dispatched**: sent from India, not yet delivered."
         - "**Orders fulfilled**: delivered to John Deere."
         - "**Changes**: what changed in the latest John Deere file."
+        - "**MOQ alerts**: parts where the quantity still to order is less than the vendor's minimum (MOQ)."
     - heading: Tip
       text: "Click **Columns** to choose which columns you see. Your choice is saved for you."
   video: "Searching a PO, using the Past ship date filter, opening an order."
@@ -218,6 +264,58 @@
         - "Your order shows **Manual**. Open it to edit or delete it."
   video: "Creating an order and saving it."
 
+- key: moq-alerts
+  title: "MOQ alerts: parts below the vendor's minimum"
+  category: Orders
+  access: orders
+  summary: "Parts where what is still to order is less than the vendor's minimum quantity (MOQ)."
+  sections:
+    - heading: Steps
+      steps:
+        - text: "Go to **Orders** and open the **MOQ alerts** tab. The **Below MOQ** box at the top shows how many parts are on it."
+          image: moq-tab
+          page: /orders
+        - "**Qty** is what is still to order for the part: John Deere's Firm quantity less what is already on vendor POs. **MOQ** is the vendor's minimum."
+        - "Search a PO or part number, or click **Export** to download the list."
+    - heading: Good to know
+      bullets:
+        - "A part leaves the list once what is still to order reaches its MOQ, or is all on vendor POs."
+        - "Each upload's page has its own **MOQ alerts** tab, and shows whether the **MOQ** email was sent for that file."
+  video: "The Below MOQ box, the MOQ alerts tab, Export."
+
+- key: order-summary
+  title: "Order summary: quantities day by day"
+  category: Orders
+  access: orders
+  summary: "Each part's Firm, Addition and Forecast for every day with a John Deere file, like SASH's Order Summary Excel."
+  sections:
+    - heading: Steps
+      steps:
+        - text: "Go to **Orders** and click **Order summary**. It is also a tab on **Products**."
+          image: order-summary-button
+          page: /orders
+        - "Pick **DTP** or **GMBH** at the top: the summary is for one business."
+        - text: "Choose the days: **Last 7 days**, **Last 30 days**, **Last 90 days** or **All days**, or set **From** and **To**."
+          image: order-summary-page
+          page: /orders/summary
+        - "To see only some dates side by side, choose **Compare dates** under **Show**."
+        - "Click **Export** to download it as an Excel file."
+    - heading: The columns of each day
+      table:
+        columns: ["Column", "What it shows"]
+        rows:
+          - ["Firm", "The part's Firm and Order quantity in that day's file."]
+          - ["Addition", "Firm less the day before's Firm: green when it went up, red when it went down."]
+          - ["Forecast", "The part's Forecast quantity."]
+    - heading: Good to know
+      bullets:
+        - "The boxes at the top show the newest day at a glance: its **Firm**, what was **Added** and **Taken off** since the day before, how many **Parts changed**, and the **Forecast**."
+        - "Click a part to open its details."
+  messages:
+    - message: "Choose DTP or GMBH"
+      meaning: "The order summary shows the files of one business. Pick DTP or GMBH in the Business menu at the top."
+  video: "Opening Order summary, Last 7 days, Compare dates, Export."
+
 - key: dispatched-list
   title: Uploading the dispatched list from SASH India
   category: Shipping and invoices
@@ -277,7 +375,7 @@
   sections:
     - heading: Steps
       steps:
-        - text: "On **Orders**, open the order and click **Place order**."
+        - text: "On **Orders**, click the order's **PO Number**, then **Place order**. (Clicking the order's **Unit** opens it too.) An order SASH India has already dispatched in full has no Place order."
           image: place-order
           page: /orders
         - "Pick the vendor and the quantity, then click **Generate PO**."
