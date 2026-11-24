@@ -6,3 +6,10 @@ secure_portal_sync:
   queue: "default"
   active_job: true
   description: "Deere portal: order file to upload, at 08:00 IST"
+# Expired cache files (Cache::CleanupJob).
+cache_cleanup:
+  cron: "30 2 * * * Asia/Kolkata"
+  class: "Cache::CleanupJob"
+  queue: "default"
+  active_job: true
+  description: "Delete expired cache files, at 02:30 IST"

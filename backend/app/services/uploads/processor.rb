@@ -125,6 +125,7 @@ module Uploads
       # After commit: the outbox rows are durable, so a lost enqueue can be redelivered later.
       notifications.each { |notification| Notifications::Outbox.dispatch(notification) }
       Ageing::DigestBuilder.dispatch(ageing_digest) if ageing_digest
+      Dashboard::WarmCacheJob.perform_later
     end
 
     # Rows of the file shipped to an address other than the default Ship To (Orders::ShipTo).

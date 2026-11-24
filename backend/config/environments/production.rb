@@ -44,8 +44,10 @@ Rails.application.configure do
   # Don't log any deprecations.
   config.active_support.report_deprecations = false
 
-  # Replace the default in-process memory cache store with a durable alternative.
-  # config.cache_store = :mem_cache_store
+  # Figures that are slow to build (Orders/Dashboard, rebuilt after each upload by Dashboard::WarmCacheJob) are cached in
+  # files, shared by Puma and Sidekiq (same app folder) and kept across restarts and deploys (git pull leaves tmp/ alone).
+  # Entries expire after 2 days; Cache::CleanupJob deletes expired files every night.
+  config.cache_store = :file_store, Rails.root.join("tmp/cache/app"), { expires_in: 2.days }
 
   # Replace the default in-process and non-durable queuing backend for Active Job.
   # config.active_job.queue_adapter = :resque

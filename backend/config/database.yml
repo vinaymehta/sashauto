@@ -2,6 +2,9 @@ default: &default
   adapter: postgresql
   encoding: unicode
   max_connections: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+  # Postgres JIT spends ~1 s compiling the big Orders queries (status, figures) that then run in under 100 ms.
+  variables:
+    jit: "off"
 
 development:
   <<: *default

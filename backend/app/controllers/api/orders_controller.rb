@@ -533,8 +533,11 @@ module Api
       render json: { data: data.sort_by { |d| -d[:revenue_ordered].to_d }, currency: summary_currency }
     end
 
-    # Summary lines of every row of the PO lines of `rows` (the listed page), by [manual, id], for #qty_fields.
+    # Summary lines of every row of the PO lines of `rows` (the listed page), by [manual, id], for #qty_fields. The current
+    # order data's are cached (Orders::CurrentLines); an earlier upload's are built from the page's PO lines.
     def qty_adjustments(rows)
+      return Orders::CurrentLines.new(businesses).qty_changes if current_view?
+
       triples = rows.map { |r| [ r.po_number, r.part_number, r.po_line_number ] }.uniq.to_set
       return {} if triples.empty?
 
@@ -754,13 +757,15 @@ module Api
 
     # ", position" in STATUSES (1 = none) of a listed row's status from Deere's receipts (#receipt_statuses, by its own
     # order key), for #status_sql; blank when no row has one.
+    # A JSON object (order key => position) looked up by the row's key: one lookup per row, where a VALUES list was
+    # scanned for every row (over a second per query on the Orders list and summary).
     def receipt_status_sql
       @receipt_status_sql ||= if receipt_statuses.empty?
         ""
       else
-        values = receipt_statuses.map { |key, status| "(#{OrderRow.connection.quote(key)}, #{STATUSES.index(status) + 1})" }.join(", ")
-        ", COALESCE((SELECT v.position FROM (VALUES #{values}) AS v(order_key, position) " \
-          "WHERE NOT order_rows.manual AND v.order_key = #{Orders::FirmDates.key_sql('order_rows')}), 1)"
+        positions = receipt_statuses.transform_values { |status| STATUSES.index(status) + 1 }
+        ", COALESCE((CASE WHEN order_rows.manual THEN NULL ELSE #{OrderRow.connection.quote(positions.to_json)}::jsonb ->> " \
+          "#{Orders::FirmDates.key_sql('order_rows')} END)::int, 1)"
       end
     end
 

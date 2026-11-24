@@ -71,13 +71,16 @@ module Orders
     end
 
     # The order's Unit Price in the first completed upload that listed it as Firm / Order (by the order's PO + Part + Type,
-    # PO Line and Ship Date, as VendorOrderPlacement.order_key); NULL for a manual order.
+    # PO Line and Ship Date, as VendorOrderPlacement.order_key); NULL for a manual order. Looked up in #came (a JSON
+    # object of order key => price) by the row's key: a subquery per row re-read every earlier upload's rows (over a
+    # second per query on the Orders pages).
     def came_sql(table)
-      "(CASE WHEN #{table}.manual THEN NULL ELSE (SELECT #{number_sql("r.source_data->>'Unit Price'")} FROM order_rows r " \
-        "JOIN upload_batches b ON b.id = r.upload_batch_id AND b.status = 'completed' " \
-        "WHERE r.group_key = #{table}.group_key AND r.po_line_number = #{table}.po_line_number AND r.ship_date = #{table}.ship_date " \
-        "AND r.order_type IN ('Firm', 'Order') AND #{positive_sql('r')} " \
-        "ORDER BY b.completed_at, b.id, r.source_row_number LIMIT 1) END)"
+      return "NULL::numeric" if came.empty?
+
+      prices = OrderRow.connection.quote(came.transform_values { |price| price.to_s("F") }.to_json)
+      key = "encode(sha256(convert_to(concat_ws(chr(31), #{table}.group_key, #{table}.po_line_number, " \
+            "to_char(#{table}.ship_date, 'YYYY-MM-DD')), 'UTF8')), 'hex')"
+      "(CASE WHEN #{table}.manual THEN NULL ELSE (#{prices}::jsonb ->> #{key})::numeric END)"
     end
 
     def number_sql(expr)

@@ -39,44 +39,40 @@ module Orders
       @businesses = Array(businesses)
     end
 
-    def receipt_status_map
-      cached("receipt_statuses") do |lines|
-        lines.each_with_object({}) { |l, map| (status = receipt_status(l)) && map[own_key(l[:row])] = status }
-      end
+    def receipt_status_map = cached(:receipt_statuses)
+    def receipt_delivered_map = cached(:receipt_delivered)
+    def undispatched = cached(:undispatched)
+    def partly_sent_map = cached(:partly_sent)
+    def qty_changes = cached(:qty_changes)
+
+    private
+
+    # The map `name` of the summary lines of the current order data. All maps are built from one pass over the lines and
+    # cached together until the data changes: building the lines is the slow part (seconds), and a Dashboard request
+    # reads several maps.
+    def cached(name)
+      batches = latest_batches
+      Rails.cache.fetch([ "orders/current_lines/v5", businesses, lines_version(batches) ], expires_in: 30.minutes) do
+        maps(lines(batches))
+      end.fetch(name)
     end
 
-    def receipt_delivered_map
-      cached("receipt_delivered") do |lines|
-        lines.each_with_object({}) do |l, map|
+    def maps(lines)
+      {
+        receipt_statuses: lines.each_with_object({}) { |l, map| (status = receipt_status(l)) && map[own_key(l[:row])] = status },
+        receipt_delivered: lines.each_with_object({}) do |l, map|
           row = l[:row]
           next unless RECEIPT_CHECKED.include?(row[:business]) && !row[:manual] && !l[:charge] && l[:delivered].positive?
 
           map[own_key(row)] = l[:delivered]
-        end
-      end
-    end
-
-    def undispatched
-      cached("undispatched") do |lines|
-        lines.select { |l| !l[:charge] && l[:open].positive? && l[:shipped].zero? }.to_set { |l| own_key(l[:row]) }
-      end
-    end
-
-    def partly_sent_map
-      cached("partly_sent") do |lines|
-        lines.select { |l| !l[:charge] && l[:open].positive? && l[:shipped].positive? && l[:pending].positive? }
-             .to_h { |l| [ own_key(l[:row]), [ l[:pending], l[:price] ? l[:pending] * l[:price] / 100 : 0.to_d ] ] }
-      end
-    end
-
-    private
-
-    # The block's result for the summary lines of the current order data, cached under `name` until the data changes.
-    def cached(name)
-      batches = latest_batches
-      Rails.cache.fetch([ "orders/current_lines/#{name}/v2", businesses, lines_version(batches) ], expires_in: 30.minutes) do
-        yield lines(batches)
-      end
+        end,
+        undispatched: lines.select { |l| !l[:charge] && l[:open].positive? && l[:shipped].zero? }.to_set { |l| own_key(l[:row]) },
+        partly_sent: lines.select { |l| !l[:charge] && l[:open].positive? && l[:shipped].positive? && l[:pending].positive? }
+                          .to_h { |l| [ own_key(l[:row]), [ l[:pending], l[:price] ? l[:pending] * l[:price] / 100 : 0.to_d ] ] },
+        # [manual, id] => the line's Ordered, Dispatched and why they differ from the row's (OrdersController#qty_fields).
+        qty_changes: lines.select { |l| l[:qty_change] }
+                          .to_h { |l| [ [ l[:row][:manual] ? true : false, l[:row].id ], l.slice(:ordered, :shipped, :qty_change) ] }
+      }
     end
 
     def latest_batches
