@@ -128,7 +128,8 @@ class SecurePortal
     @session_store.capture_storage(@driver)
   end
 
-  # Asks a person for the SMS code (the OTP box of the Deere sync popup in the app) and types it in. Raises
+  # Asks a person for the SMS code (the OTP box of the Deere sync popup in the app; the people who look after the sync
+  # are alerted as soon as it opens, PortalAlerts.otp_needed) and types it in. Raises
   # OtpHandoff::TimedOut when nobody enters it in time, and fails the run when Deere rejects it: the popup then offers
   # Sync again, which asks for a new code.
   def verify_otp
@@ -140,7 +141,7 @@ class SecurePortal
       sleep 3
     end
 
-    code = handoff.wait_for_code(deadline: deadline)
+    code = handoff.wait_for_code(deadline: deadline, alert: true)
     raise OtpHandoff::TimedOut, "No OTP was entered within #{OtpHandoff::WAIT_TIMEOUT / 60} minutes." unless code
 
     puts "OTP received, submitting"

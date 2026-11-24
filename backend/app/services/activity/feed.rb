@@ -103,9 +103,9 @@ module Activity
     end
 
     # The Deere sync alerts (PortalAlerts), for the people who get them. "#deere-sync": the bell opens the Deere sync
-    # popup. "portal_sync.otp_needed": alerts made before only failures alerted (still shown).
+    # popup.
     PORTAL_ITEMS = {
-      "portal_sync.otp_needed" => [ "otp_needed", "John Deere sync needs the OTP" ],
+      PortalAlerts::EVENTS[:otp_needed] => [ "otp_needed", "John Deere sync needs the OTP" ],
       PortalAlerts::EVENTS[:otp_timed_out] => [ "otp_timed_out", "John Deere sync stopped: no OTP entered" ],
       PortalAlerts::EVENTS[:failed] => [ "sync_failed", "John Deere sync failed" ]
     }.freeze

@@ -1,16 +1,30 @@
-# Alerts when the Deere portal sync (SecurePortalSyncJob) fails, for the people who look after it
+# Alerts about the Deere portal sync (SecurePortalSyncJob) for the people who look after it
 # (User.deere_sync_recipients: the users ticked in Users → Permissions, admins included): an item in their notification bell
 # (read from the audit log by Activity::Feed; it opens the Deere sync popup), one email (PortalSyncMailer) and a Slack
-# post (SlackNotifier; its link opens the popup too). From the popup they run the sync again and enter the OTP. Only
-# failures alert (nobody entered the OTP in time, or any other failure); Deere asking for the OTP does not.
+# post (SlackNotifier; its link opens the popup too). Sent as soon as Deere asks for the SMS OTP (once per request, so
+# the code can be typed in the popup before it expires) and when the sync fails (nobody entered the OTP in time, or any
+# other failure); from the popup they run the sync again and enter the OTP.
 # Never raises: an alert that cannot be sent must not stop the sync.
 module PortalAlerts
   EVENTS = {
+    otp_needed: "portal_sync.otp_needed",
     otp_timed_out: "portal_sync.otp_timed_out",
     failed: "portal_sync.failed"
   }.freeze
 
   module_function
+
+  # Deere sent the SMS code; the sync waits for it in the popup until `expires_at` (OtpHandoff#wait_for_code, once per
+  # request).
+  def otp_needed(expires_at:)
+    zone = Time.find_zone!(AppConfig.ageing_time_zone)
+    minutes = [ ((expires_at - Time.now) / 60).round, 1 ].max
+    deliver(:otp_needed, expires_at: expires_at.utc.iso8601,
+                         message: "John Deere has sent an SMS code to the registered phone.\n" \
+                                  "Open the app and type the code in the John Deere sync window by " \
+                                  "#{expires_at.in_time_zone(zone).strftime('%H:%M IST')} (about #{minutes} minutes from now).\n" \
+                                  "If the time runs out, click Sync again to get a new code.")
+  end
 
   # Nobody entered the OTP in time: the sync stopped.
   def otp_timed_out
@@ -24,7 +38,7 @@ module PortalAlerts
     deliver(:failed, message: [ error, *lines ].compact_blank.join("\n").presence || "The sync failed.")
   end
 
-  SLACK_TITLES = { otp_timed_out: "John Deere sync stopped: no OTP entered", failed: "John Deere sync failed" }.freeze
+  SLACK_TITLES = { otp_needed: "John Deere is asking for the SMS code", otp_timed_out: "John Deere sync stopped: no OTP entered", failed: "John Deere sync failed" }.freeze
 
   # The app with the John Deere sync popup open (the OTP box while the sync waits for the code).
   def popup_url

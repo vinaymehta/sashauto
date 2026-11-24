@@ -118,6 +118,7 @@
           page: /settings
     - heading: Good to know
       bullets:
+        - "You also get an email as soon as John Deere asks for the code."
         - "You only get these messages if your admin turned them on for you."
   messages:
     - message: "The sync is not waiting for a code any more."

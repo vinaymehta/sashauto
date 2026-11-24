@@ -2,10 +2,12 @@
   <h1 style="font-size:20px;font-weight:700;margin:0 0 4px;color:#1d2636;"><%= @title %></h1>
   <p style="margin:0 0 16px;color:#737373;"><%= @at.strftime("%-d %b %Y, %H:%M IST") %></p>
   <% @message.each_line do |line| %>
-    <p style="margin:0 0 8px;color:#a8321f;"><%= line.strip %></p>
+    <p style="margin:0 0 8px;color:<%= @kind == "otp_needed" ? "#171717" : "#a8321f" %>;"><%= line.strip %></p>
   <% end %>
-  <p style="margin:12px 0 0;color:#171717;">
-    Open the app and click <strong>Sync again</strong> in the John Deere sync popup. If Deere asks for the SMS code, enter it there.
-  </p>
+  <% unless @kind == "otp_needed" %>
+    <p style="margin:12px 0 0;color:#171717;">
+      Open the app and click <strong>Sync again</strong> in the John Deere sync popup. If Deere asks for the SMS code, enter it there.
+    </p>
+  <% end %>
   <p style="margin:24px 0 0;"><a href="<%= @url %>" style="display:inline-block;background:#1d2636;color:#ffffff;text-decoration:none;padding:10px 18px;border-radius:6px;font-weight:600;">Open the John Deere sync</a></p>
 </div>

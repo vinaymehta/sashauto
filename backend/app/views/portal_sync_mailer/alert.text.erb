@@ -2,7 +2,9 @@
 <%= @at.strftime("%-d %b %Y, %H:%M IST") %>
 
 <%= @message %>
+<% unless @kind == "otp_needed" %>
 
 Open the app and click Sync again in the John Deere sync popup. If Deere asks for the SMS code, enter it there.
+<% end %>
 
 Open the John Deere sync: <%= @url %>

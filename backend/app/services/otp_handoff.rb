@@ -27,9 +27,11 @@ class OtpHandoff
   end
 
   # Opens a request (the popup's OTP box shows it) and blocks until a code is submitted or the deadline passes. Returns
-  # the code, or nil on timeout. No alert: the people who look after the sync are alerted when the run fails.
-  def wait_for_code(message: nil, deadline: Time.now + WAIT_TIMEOUT)
+  # the code, or nil on timeout. `alert`: once the request is open, tell the people who look after the sync right away
+  # (PortalAlerts.otp_needed: email, Slack and bell), once per request: the polling below never alerts again.
+  def wait_for_code(message: nil, deadline: Time.now + WAIT_TIMEOUT, alert: false)
     open_request(message, deadline)
+    PortalAlerts.otp_needed(expires_at: deadline) if alert
     while Time.now < deadline
       code = take_code
       return code if code
