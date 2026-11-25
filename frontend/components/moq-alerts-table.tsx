@@ -14,6 +14,7 @@ import { TableSkeleton } from "./ui/skeleton";
 import { Pagination, Table, Td, Th } from "./ui/table";
 import { ColumnsMenu } from "./ui/columns-menu";
 import { useTableColumns, type ColumnDef } from "./use-table-columns";
+import { ExportButton, fetchAllRows } from "./ui/export-button";
 
 // The columns of the MOQ alerts table (Columns chooses and orders them per user).
 const MOQ_COLUMNS: ColumnDef[] = [
@@ -51,6 +52,10 @@ export function MoqAlertsTable({ uploadId, manual = false }: { uploadId: number;
           </a>
         )}
         <ColumnsMenu {...columns.menu} />
+        <ExportButton<MoqAlert> filename="moq-alerts" columns={columns.shown}
+          load={() => fetchAllRows<MoqAlert>(`/api/uploads/${uploadId}/moq_alerts`, { q, manual: manual ? 1 : undefined })}
+          value={(c, key) => key === "po" ? c.po_number : key === "part_number" ? c.part_number : key === "part_description" ? c.part_description
+            : key === "type" ? c.order_type : key === "ship_date" ? formatDate(c.ship_date) : key === "qty" ? c.qty : c.moq} />
       </ListToolbar>
       {error ? (
         <div className="p-4"><Alert title="Could not load MOQ alerts">{error.message}</Alert></div>
@@ -67,7 +72,7 @@ export function MoqAlertsTable({ uploadId, manual = false }: { uploadId: number;
           <Table dense stickyHeader>
             <thead>
               <tr>
-                {columns.shown.map((c) => <Th key={c.key} align={c.align}>{c.label}</Th>)}
+                {columns.shown.map((c) => columns.head(c, <Th key={c.key} align={c.align}>{c.label}</Th>))}
               </tr>
             </thead>
             <tbody>

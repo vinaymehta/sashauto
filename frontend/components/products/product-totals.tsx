@@ -15,6 +15,7 @@ import { TableSkeleton } from "../ui/skeleton";
 import { Table, Td, Th } from "../ui/table";
 import { ColumnsMenu } from "../ui/columns-menu";
 import { useTableColumns, type ColumnDef } from "../use-table-columns";
+import { ExportButton } from "../ui/export-button";
 
 type SortKey = "part_number" | "ordered" | "dispatched" | "delivered" | "pending" | "forecast" | "revenue_ordered" | "revenue_delivered";
 const COLUMNS: { key: SortKey; label: string; tone?: string }[] = [
@@ -76,6 +77,9 @@ export function ProductTotalsPanel() {
       <ListToolbar summary={data ? `${formatCount(rows.length)} part${rows.length === 1 ? "" : "s"} · revenue on ordered ${money(String(total("revenue_ordered")))} · on delivered ${money(String(total("revenue_delivered")))}` : ""}>
         <SearchInput label="Search parts" placeholder="Search part number or description" value={search} onSearch={setSearch} className="w-full sm:w-72" />
         <ColumnsMenu {...columns.menu} />
+        <ExportButton<PartsSummaryRow> filename="product-summary" columns={columns.shown} rows={rows}
+          value={(r, key) => key === "part_number" ? r.part_number : key === "description" ? r.description
+            : key === "pos_orders" ? `${r.pos} POs · ${r.orders} orders${r.open_orders > 0 ? ` (${r.open_orders} open)` : ""}` : (r as unknown as Record<string, string>)[key]} />
       </ListToolbar>
       {error ? (
         <div className="p-4"><Alert title="Could not load the product summary">{error.message}</Alert></div>
@@ -88,8 +92,8 @@ export function ProductTotalsPanel() {
           <thead>
             <tr>
               {columns.shown.map((c) => c.key === "description" || c.key === "pos_orders"
-                ? <Th key={c.key} align={c.align}>{c.label}</Th>
-                : <Fragment key={c.key}>{head(c.key as SortKey, c.label, c.align === "left" ? "left" : "right")}</Fragment>)}
+                ? columns.head(c, <Th key={c.key} align={c.align}>{c.label}</Th>)
+                : columns.head(c, <Fragment key={c.key}>{head(c.key as SortKey, c.label, c.align === "left" ? "left" : "right")}</Fragment>))}
             </tr>
           </thead>
           <tbody>

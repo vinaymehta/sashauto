@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type DragEvent } from "react";
-import { ArrowDownIcon, ArrowUpIcon, CheckIcon, TableIcon } from "../icons";
+import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon, CheckIcon, TableIcon } from "../icons";
 import { useSession } from "../session";
 import { useToast } from "../toast";
 import { Button } from "../ui/button";
@@ -24,8 +24,10 @@ const Grip = () => (
 // the panel otherwise drops them. At least one column stays shown. `saved` is the list the change is made to: it also
 // keeps the columns other files have. Default puts the default columns (`defaults`) in the draft; saved, the user's own
 // choice is cleared, so they follow the default columns again.
-export function ColumnsMenu({ columns, shown, saved, defaults, table = "orders" }: {
+export function ColumnsMenu({ columns, shown, saved, defaults, table = "orders", arrange }: {
   columns: { key: string; label: string }[]; shown: string[]; saved: string[]; defaults: string[];
+  // With `arrange`, an Arrange button comes first: while on, the table's headers are dragged to change their order.
+  arrange?: { on: boolean; toggle: () => void };
   table?: string; // the table's name: "orders", or the one the choice is saved under (session saveTableColumns)
 }) {
   const { saveOrdersColumns, saveTableColumns } = useSession();
@@ -92,6 +94,16 @@ export function ColumnsMenu({ columns, shown, saved, defaults, table = "orders" 
 
   return (
     <>
+      {arrange && columns.length > 2 && (
+        <button type="button" onClick={arrange.toggle} aria-pressed={arrange.on}
+                title={arrange.on ? "Save the column order: headers sort again" : "Drag the column headers to change their order"}
+                className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-md px-3 text-base font-medium transition-colors duration-150 ${
+                  arrange.on ? "bg-accent text-white hover:bg-accent/90" : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900"
+                }`}>
+          <ArrowUpDownIcon size={15} className={`rotate-90 ${arrange.on ? "text-white" : "text-ink-muted"}`} />
+          {arrange.on ? "Save" : "Arrange"}
+        </button>
+      )}
       <button
         type="button"
         onClick={openPanel}

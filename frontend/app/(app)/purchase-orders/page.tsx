@@ -26,6 +26,7 @@ import { TableSkeleton } from "@/components/ui/skeleton";
 import { Pagination, Table, Td, Th } from "@/components/ui/table";
 import { ColumnsMenu } from "@/components/ui/columns-menu";
 import { useTableColumns, type ColumnDef } from "@/components/use-table-columns";
+import { ExportButton, fetchAllRows } from "@/components/ui/export-button";
 import { ListUploadSheet } from "@/components/orders/list-upload-sheet";
 import { Tabs } from "@/components/ui/tabs";
 
@@ -104,6 +105,19 @@ export default function PurchaseOrdersPage() {
             <option value="yes">Received in full</option>
           </Select>
           <ColumnsMenu {...columns.menu} />
+          <ExportButton<PurchaseOrderRow> filename="vendor-pos" columns={columns.shown}
+            load={() => fetchAllRows<PurchaseOrderRow>("/api/purchase_orders", { q, source: list.filters.source, received: list.filters.received })}
+            value={(r, key) => {
+              const last = r.receipts[r.receipts.length - 1];
+              switch (key) {
+                case "number": return r.number;
+                case "vendor": return r.vendor_name;
+                case "order": return `${r.part_number} · PO ${r.po_number} · ${r.po_line_number} · ship ${formatDate(r.ship_date)}`;
+                case "order_date": return r.order_date ? formatDate(r.order_date) : "";
+                case "qty": return `${formatQty(r.qty)} ${r.unit ?? ""}`.trim();
+                default: return Number(r.received_qty) > 0 ? `${formatQty(r.received_qty)} of ${formatQty(r.qty)}${last ? ` · ${formatDate(last.received_on)} · inv ${last.invoice_number}` : ""}` : "Not received";
+              }
+            }} />
         </ListToolbar>
         {error ? (
           <div className="p-4"><Alert title="Could not load the purchase orders">{error.message}</Alert></div>
@@ -116,7 +130,7 @@ export default function PurchaseOrdersPage() {
           <Table minWidth="min-w-[960px]" stickyHeader>
             <thead>
               <tr>
-                {columns.shown.map((c) => <Th key={c.key} align={c.align} title={c.key === "order_date" ? "The day SASH received the Deere order (Firm Date)" : undefined}>{c.label}</Th>)}
+                {columns.shown.map((c) => columns.head(c, <Th key={c.key} align={c.align} title={c.key === "order_date" ? "The day SASH received the Deere order (Firm Date)" : undefined}>{c.label}</Th>))}
               </tr>
             </thead>
             <tbody>

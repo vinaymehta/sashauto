@@ -32,6 +32,7 @@ import { SortTh } from "@/components/ui/sort-header";
 import { Pagination, Table, Td, Th } from "@/components/ui/table";
 import { ColumnsMenu } from "@/components/ui/columns-menu";
 import { useTableColumns, type ColumnDef } from "@/components/use-table-columns";
+import { ExportButton, fetchAllRows } from "@/components/ui/export-button";
 
 const SET_MISSING = [{ value: "set", label: "Set" }, { value: "missing", label: "Missing" }];
 
@@ -148,6 +149,20 @@ function ProductsView() {
                        onSearch={(v) => { setSearch(v); list.resetPage(); }} className="w-full sm:w-72" />
           <FilterMenu groups={FILTERS} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
           <ColumnsMenu {...columns.menu} />
+          <ExportButton<Product> filename="products" columns={columns.shown}
+            load={() => fetchAllRows<Product>("/api/products", { q, ...list.filters, sort: list.sort, direction: list.direction })}
+            value={(p, key) => {
+              const best = p.best_vendor_price;
+              switch (key) {
+                case "part_number": return p.part_number;
+                case "description": return p.description;
+                case "sash_part": return p.sash_part;
+                case "moq": return formatMoq(p);
+                case "customer_price": return p.customer_price !== null ? formatCustomer(Number(p.customer_price) / 100, p.customer_currency) : "";
+                case "best_vendor": return best ? `${perPiece(best.amount, best.currency)} ${best.vendor}` : "";
+                default: return p.vendor_count;
+              }
+            }} />
         </ListToolbar>
         <FilterChips groups={FILTERS} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
         {error ? (
@@ -167,9 +182,9 @@ function ProductsView() {
             <Table dense stickyHeader>
               <thead>
                 <tr>
-                  {columns.shown.map((c) => c.sort
+                  {columns.shown.map((c) => columns.head(c, c.sort
                     ? <SortTh key={c.key} label={c.label} sortKey={c.sort} align={c.align} {...sortProps} />
-                    : <Th key={c.key} align={c.align}>{c.label}</Th>)}
+                    : <Th key={c.key} align={c.align}>{c.label}</Th>))}
                   {isAdmin && <Th align="right">Actions</Th>}
                 </tr>
               </thead>

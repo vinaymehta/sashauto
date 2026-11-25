@@ -14,6 +14,7 @@ import { TableSkeleton } from "../ui/skeleton";
 import { Pagination, Table, Td, Th } from "../ui/table";
 import { ColumnsMenu } from "../ui/columns-menu";
 import { useTableColumns, type ColumnDef } from "../use-table-columns";
+import { ExportButton, fetchAllRows } from "../ui/export-button";
 
 // The columns of the Current inventory table (Columns chooses and orders them per user).
 const INVENTORY_COLUMNS: ColumnDef[] = [
@@ -41,6 +42,10 @@ export function AvailablePartsPanel() {
         <SearchInput label="Search current inventory" placeholder="Search part, SASH part, description or vendor" value={search}
                      onSearch={(v) => { setSearch(v); list.resetPage(); }} className="w-full sm:w-72" />
         <ColumnsMenu {...columns.menu} />
+        <ExportButton<VendorProduct> filename="current-inventory" columns={columns.shown}
+          load={() => fetchAllRows<VendorProduct>("/api/available_parts", { q })}
+          value={(i, key) => key === "part_number" ? i.part_number : key === "sash_part" ? i.sash_part : key === "description" ? i.description
+            : key === "vendor" ? i.vendor_name : i.available_qty} />
       </ListToolbar>
       {error ? (
         <div className="p-4"><Alert title="Could not load the current inventory">{error.message}</Alert></div>
@@ -57,7 +62,7 @@ export function AvailablePartsPanel() {
           <Table dense stickyHeader>
             <thead>
               <tr>
-                {columns.shown.map((c) => <Th key={c.key} align={c.align}>{c.label}</Th>)}
+                {columns.shown.map((c) => columns.head(c, <Th key={c.key} align={c.align}>{c.label}</Th>))}
               </tr>
             </thead>
             <tbody>

@@ -17,6 +17,7 @@ import { SortTh } from "./ui/sort-header";
 import { Pagination, Table, Td } from "./ui/table";
 import { ColumnsMenu } from "./ui/columns-menu";
 import { useTableColumns, type ColumnDef } from "./use-table-columns";
+import { ExportButton, fetchAllRows } from "./ui/export-button";
 
 // The columns of the order rows table (Columns chooses and orders them per user).
 const ROW_COLUMNS: ColumnDef[] = [
@@ -65,6 +66,22 @@ export function RowsTable({ uploadId }: { uploadId: number }) {
                      onSearch={(v) => { setSearch(v); list.resetPage(); }} className="w-full sm:w-72" />
         <FilterMenu groups={filters} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
         <ColumnsMenu {...columns.menu} />
+        <ExportButton<SnapshotRowsPage["data"][number]> filename="order-rows" columns={columns.shown}
+          load={() => fetchAllRows(`/api/uploads/${uploadId}/rows`, { q, ...list.filters, today: todayParam(), sort: list.sort, direction: list.direction })}
+          value={(r, key) => {
+            switch (key) {
+              case "excel_row": return r.source_row_numbers.join(", ");
+              case "type": return r.order_type;
+              case "po": return `${r.po_number} / ${r.po_line_number}`;
+              case "part_number": return r.part_number;
+              case "commodity_type": return r.commodity_type;
+              case "ship_date": return formatDate(r.ship_date);
+              case "ship_to": return r.ship_to_location;
+              case "qty": return r.qty;
+              case "previous_qty": return r.previous_qty;
+              default: return r.quantity_source === "unknown" ? "Unknown" : r.effective_qty;
+            }
+          }} />
       </ListToolbar>
       <FilterChips groups={filters} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
       <AgeLegend value={list.filters.age} onChange={(v) => list.setFilter("age", v)} />
@@ -81,7 +98,7 @@ export function RowsTable({ uploadId }: { uploadId: number }) {
           <Table dense>
             <thead>
               <tr>
-                {columns.shown.map((c) => <SortTh key={c.key} label={c.label} sortKey={c.key} align={c.align} {...sortProps} />)}
+                {columns.shown.map((c) => columns.head(c, <SortTh key={c.key} label={c.label} sortKey={c.key} align={c.align} {...sortProps} />))}
               </tr>
             </thead>
             <tbody>

@@ -24,6 +24,7 @@ import { SortTh } from "@/components/ui/sort-header";
 import { Pagination, Table, Td, Th } from "@/components/ui/table";
 import { ColumnsMenu } from "@/components/ui/columns-menu";
 import { useTableColumns, type ColumnDef } from "@/components/use-table-columns";
+import { ExportButton, fetchAllRows } from "@/components/ui/export-button";
 
 const dash = <span className="text-neutral-300">—</span>;
 
@@ -105,6 +106,10 @@ export default function VendorsPage() {
                        onSearch={(v) => { setSearch(v); list.resetPage(); }} className="w-full sm:w-72" />
           <FilterMenu groups={filters} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
           <ColumnsMenu {...columns.menu} />
+          <ExportButton<Vendor> filename="vendors" columns={columns.shown}
+            load={() => fetchAllRows<Vendor>("/api/vendors", { q, ...list.filters, sort: list.sort, direction: list.direction })}
+            value={(v, key) => key === "name" ? v.name : key === "code" ? v.code : key === "phone" ? (v.phone ?? v.mobile) : key === "place_of_supply" ? v.place_of_supply
+              : key === "product_count" ? v.product_count : v.available_count} />
         </ListToolbar>
         <FilterChips groups={filters} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
         {error ? (
@@ -124,9 +129,9 @@ export default function VendorsPage() {
             <Table dense stickyHeader>
               <thead>
                 <tr>
-                  {columns.shown.map((c) => c.sort
+                  {columns.shown.map((c) => columns.head(c, c.sort
                     ? <SortTh key={c.key} label={c.label} sortKey={c.sort} align={c.align} {...sortProps} />
-                    : <Th key={c.key}>{c.label}</Th>)}
+                    : <Th key={c.key}>{c.label}</Th>))}
                   {isAdmin && <Th align="right">Action</Th>}
                 </tr>
               </thead>

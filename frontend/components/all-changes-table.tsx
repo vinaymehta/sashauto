@@ -17,6 +17,7 @@ import { TableSkeleton } from "./ui/skeleton";
 import { Pagination, Table, Td, Th } from "./ui/table";
 import { ColumnsMenu } from "./ui/columns-menu";
 import { useTableColumns, type ColumnDef } from "./use-table-columns";
+import { ExportButton, fetchAllRows } from "./ui/export-button";
 
 // The columns of the Changes table (Columns chooses and orders them per user).
 const CHANGE_COLUMNS: ColumnDef[] = [
@@ -94,6 +95,22 @@ export function AllChangesTable({ uploadId, manual = false, direction }: { uploa
                      onSearch={(v) => { setSearch(v); list.resetPage(); }} className="w-full sm:w-80" />
         <FilterMenu groups={FILTERS} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
         <ColumnsMenu {...columns.menu} />
+        <ExportButton<AnyChange> filename="changes" columns={columns.shown}
+          load={() => fetchAllRows<AnyChange>(`/api/uploads/${uploadId}/all_changes`, { q, ...list.filters, today: todayParam(), manual: manual ? 1 : undefined })}
+          value={(c, key) => {
+            const v = values(c);
+            switch (key) {
+              case "change": return KINDS[c.direction].label;
+              case "difference": return c.direction !== "address" && c.direction !== "rescheduled" ? c.difference : "";
+              case "old": return v.old;
+              case "new": return v.new;
+              case "po": return c.po_number;
+              case "part_number": return c.part_number;
+              case "part_description": return c.part_description;
+              case "type": return "previous_order_type" in c && c.previous_order_type && c.previous_order_type !== c.order_type ? `${c.previous_order_type} → ${c.order_type}` : c.order_type;
+              default: return formatDate(c.ship_date);
+            }
+          }} />
       </ListToolbar>
       <FilterChips groups={FILTERS} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
 
@@ -117,7 +134,7 @@ export function AllChangesTable({ uploadId, manual = false, direction }: { uploa
           <Table dense stickyHeader>
             <thead>
               <tr>
-                {columns.shown.map((c) => <Th key={c.key} align={c.align}>{c.label}</Th>)}
+                {columns.shown.map((c) => columns.head(c, <Th key={c.key} align={c.align}>{c.label}</Th>))}
               </tr>
             </thead>
             <tbody>

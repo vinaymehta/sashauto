@@ -16,6 +16,7 @@ import { InvoiceUploadPanel } from "@/components/orders/invoice-upload-panel";
 import { DispatchImportPanel } from "@/components/orders/dispatch-import-panel";
 import { OrderActions, UploadPicker } from "@/components/orders/orders-menu";
 import { ColumnsMenu } from "@/components/ui/columns-menu";
+import { ExportButton, fetchAllRows } from "@/components/ui/export-button";
 import { QtyChangeTip } from "@/components/orders/qty-change-tip";
 import { DeliveryCell } from "@/components/orders/delivery-cell";
 import { OpenOrderContext, OrderDetailsLink } from "@/components/orders/order-details-modal";
@@ -219,6 +220,36 @@ function buildColumns(columns: { key: string; label: string }[], uploadId?: numb
   });
 }
 
+// The text of a column of an order row for Export: the app's own columns by name, the file's by its header.
+function orderExportValue(r: OrderRow, key: string, label: string, fileDescription: string | undefined): string | number | null {
+  const incInvoices = (r.invoice_moves ?? []).filter((m) => m.kind === "inc");
+  switch (key) {
+    case "status": return r.status ?? "none";
+    case "sash_india_invoice": return r.dispatch_invoice ?? null;
+    case "sash_inc_invoice": return incInvoices.length ? incInvoices[incInvoices.length - 1]!.invoice_number : null;
+    case "file": return r.manual ? "Manual" : r.kept ? `Old file${r.file_day ? ` · ${formatDate(r.file_day)}` : ""}` : "Latest";
+    case "order_qty": return r.order_qty ?? r.qty;
+    case "shipped_qty": return r.shipped_qty ?? null;
+    case "balance_qty": return r.balance_qty ?? r.qty;
+    case "outbound_qty": return r.outbound_qty ?? null;
+    case "came_firm_date": return r.came_firm_date ?? null;
+    case "firm_date": return r.qty === null ? null : r.firm_date ?? null;
+    case "part_description": {
+      const fromFile = fileDescription ? r.source_data?.[fileDescription] : null;
+      return (typeof fromFile === "string" && fromFile.trim()) || r.part_description || null;
+    }
+    case "price_per_piece": {
+      const n = Number(r.source_data?.["Unit Price"]);
+      return r.source_data?.["Unit Price"] == null || Number.isNaN(n) ? null : n / 100;
+    }
+    case "type": return r.order_type;
+  }
+  const own = (r as unknown as Record<string, unknown>)[key];
+  if (typeof own === "string" || typeof own === "number") return own;
+  const fromFile = r.source_data?.[label];
+  return typeof fromFile === "string" || typeof fromFile === "number" ? fromFile : null;
+}
+
 // The Orders table columns a user sees until they choose their own (Columns; its Default button goes back to them): ten
 // at most, with every clickable column: Status (marks), PO Number (Order details), Part Number (Product summary) and
 // Unit (Place order: Generate PO).
@@ -393,6 +424,9 @@ function OrdersView() {
     ));
   }, [COLUMNS, savedColumns]);
   const shownKeys = useMemo(() => shownColumns.map((c) => (typeof c === "string" ? c : c.key)), [shownColumns]);
+  // What Export writes: the shown columns in their order, and the file's own Description column (the Part Description).
+  const exportColumns = useMemo(() => shownKeys.flatMap((k) => chooserColumns.find((c) => c.key === k) ?? []), [shownKeys, chooserColumns]);
+  const fileDescriptionLabel = sourceColumns.find((c) => c.label.trim().toLowerCase() === "description")?.label;
 
   // Columns can also be moved by dragging their header in the table (saved for the user like the Columns panel), while
   // Arrange is on: then the headers do not sort, so a drag never sorts by mistake; off, they sort as usual.
@@ -624,6 +658,12 @@ function OrdersView() {
             </button>
           )}
           {chooserColumns.length > 2 && <ColumnsMenu columns={chooserColumns} shown={shownKeys} saved={savedColumns} defaults={DEFAULT_COLUMNS} />}
+          <ExportButton<OrderRow> filename="orders" columns={exportColumns}
+            load={() => fetchAllRows<OrderRow>("/api/orders", {
+              search: term, ...list.filters, status: statusTab ?? list.filters.status, today: todayParam(), sort: list.sort, direction: list.direction,
+              upload_id: uploadId ?? undefined,
+            })}
+            value={(r, key) => orderExportValue(r, key, COLUMNS.find((c) => c.key === key)?.label ?? key, fileDescriptionLabel)} />
         </ListToolbar>
         <FilterChips groups={listFilters} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
         <AgeLegend value={list.filters.age} onChange={(v) => list.setFilter("age", v)} />

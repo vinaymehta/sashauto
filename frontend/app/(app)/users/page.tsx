@@ -24,6 +24,7 @@ import { SortTh } from "@/components/ui/sort-header";
 import { Pagination, Table, Td, Th } from "@/components/ui/table";
 import { ColumnsMenu } from "@/components/ui/columns-menu";
 import { useTableColumns, type ColumnDef } from "@/components/use-table-columns";
+import { ExportButton, fetchAllRows } from "@/components/ui/export-button";
 
 const iconButton = "inline-flex h-8 w-8 items-center justify-center rounded-md text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-ink";
 
@@ -121,6 +122,10 @@ export default function UsersPage() {
                        onSearch={(v) => { setSearch(v); list.resetPage(); }} className="w-full sm:w-72" />
           <FilterMenu groups={FILTERS} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
           <ColumnsMenu {...columns.menu} />
+          <ExportButton<User> filename="users" columns={columns.shown}
+            load={() => fetchAllRows<User>("/api/users", { q, ...list.filters, sort: list.sort, direction: list.direction })}
+            value={(u, key) => key === "name" ? u.name : key === "email" ? u.email : key === "role" ? ROLE_LABEL[u.role]
+              : key === "status" ? (u.active ? (u.must_change_password ? "Active (password not set yet)" : "Active") : "Inactive") : u.last_login_at ? formatDateTime(u.last_login_at) : "Never"} />
         </ListToolbar>
         <FilterChips groups={FILTERS} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
         {error ? (
@@ -138,9 +143,9 @@ export default function UsersPage() {
             <Table>
               <thead>
                 <tr>
-                  {columns.shown.map((c) => c.sort
+                  {columns.shown.map((c) => columns.head(c, c.sort
                     ? <SortTh key={c.key} label={c.label} sortKey={c.sort} {...sortProps} />
-                    : <Th key={c.key}>{c.label}</Th>)}
+                    : <Th key={c.key}>{c.label}</Th>))}
                   <Th align="right">Action</Th>
                 </tr>
               </thead>
