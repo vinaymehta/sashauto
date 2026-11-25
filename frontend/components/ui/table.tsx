@@ -19,7 +19,13 @@ export function Table({ children, dense = false, fixed = false, minWidth = "min-
   useEffect(() => {
     const el = box.current;
     if (!stickyHeader || !el) return;
-    const size = () => setHeight(Math.max(240, window.innerHeight - 56 - 8));
+    // Whatever sits below the table (pagination, page padding) is kept on screen too: at the very end of the page the
+    // table's top is then exactly under the app bar, so the header row is never scrolled away.
+    const size = () => {
+      const below = document.documentElement.scrollHeight - (window.scrollY + el.getBoundingClientRect().bottom);
+      const h = Math.max(240, Math.round(window.innerHeight - 56 - Math.max(0, below)));
+      setHeight((old) => (old === h ? old : h));
+    };
     const wheel = (e: WheelEvent) => {
       const top = el.getBoundingClientRect().top;
       if (e.deltaY > 0 && !e.shiftKey && top > 60 && el.scrollHeight > el.clientHeight) {
@@ -28,9 +34,11 @@ export function Table({ children, dense = false, fixed = false, minWidth = "min-
       }
     };
     size();
+    const watch = new ResizeObserver(size);
+    watch.observe(document.body);
     window.addEventListener("resize", size);
     el.addEventListener("wheel", wheel, { passive: false });
-    return () => { window.removeEventListener("resize", size); el.removeEventListener("wheel", wheel); };
+    return () => { watch.disconnect(); window.removeEventListener("resize", size); el.removeEventListener("wheel", wheel); };
   }, [stickyHeader]);
   return (
     <div ref={box} style={stickyHeader && height ? { maxHeight: height } : undefined} className={`animate-fade-in ${stickyHeader ? "overflow-auto" : "overflow-x-auto"}`}>
