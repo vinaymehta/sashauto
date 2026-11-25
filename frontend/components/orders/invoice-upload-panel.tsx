@@ -5,6 +5,7 @@ import { api, ApiError } from "@/lib/api";
 import { BUSINESS_LABEL } from "@/lib/business";
 import { formatDate, formatQty } from "@/lib/format";
 import type { InvoiceKind, InvoicePreview } from "@/lib/types";
+import { ExampleLink } from "@/components/ui/example-link";
 import { CheckIcon, FileIcon, TruckIcon, UploadIcon } from "../icons";
 import { useToast } from "../toast";
 import { Badge } from "../ui/badge";
@@ -112,6 +113,10 @@ export function InvoiceUploadPanel({ onClose, onSaved, po, part, only }: { onClo
             {" "}a <b>SASH India</b> invoice gives each order its Balance (Order Qty less what was shipped before), a <b>SASH Inc</b>{" "}
             invoice what was dispatched on SASH India invoices and is not yet outbound, until the line&apos;s Qty is used up.
             {" "}Qty no order takes is listed as unmatched.</p>
+          <p className="flex flex-wrap gap-x-4 gap-y-1">
+            {only !== "india" && <ExampleLink kind="invoice_inc" po={po} part={part} label="Example: SASH Inc invoice to Deere (.xlsx)" />}
+            {only !== "inc" && <ExampleLink kind="invoice_india" po={po} part={part} label="Example: SASH India invoice (.xlsx)" />}
+          </p>
           <p>The PDF of the invoice template is checked; Excel files are read by the same labels (Invoice No. &amp; Date, PO No., Part No., Quantity) and are not yet checked against a real invoice workbook, so look at the preview carefully.</p>
         </div>
       ) : (

@@ -13,6 +13,7 @@ import { useToast } from "../toast";
 import { Alert } from "../ui/feedback";
 import { Button } from "../ui/button";
 import { Skeleton } from "../ui/skeleton";
+import { ExampleLink, type ExampleKind } from "../ui/example-link";
 import { RelatedLink } from "./related-popover";
 import { DeliveryCell } from "./delivery-cell";
 import { InvoiceUploadPanel } from "./invoice-upload-panel";
@@ -47,9 +48,10 @@ export function PoManageSection({ po, uploadId, onChanged }: { po: string; uploa
         </div>
         {current && (
           <div className="flex flex-wrap items-center gap-2">
-            {canInvoice && <Button size="sm" onClick={() => setInvoice("inc")} title="The SASH Inc invoice to Deere: its Qty becomes delivered (outbound)"><TruckIcon size={14} className="text-ink-muted" />Upload Deere invoice</Button>}
-            {me?.role === "admin" && <Button size="sm" onClick={() => setInvoice("india")} title="The SASH India export invoice: its Qty becomes dispatched"><TruckIcon size={14} className="text-ink-muted" />Upload SASH India invoice</Button>}
-            {editor && <VendorPoListButton po={po} onDone={refresh} />}
+            {canInvoice && <InvoiceButton only="inc" po={po} onClick={() => setInvoice("inc")} />}
+            {me?.role === "admin" && <InvoiceButton only="india" po={po} onClick={() => setInvoice("india")} />}
+            {editor && <ListUploadButton kind="orders" po={po} onDone={refresh} />}
+            {editor && <ListUploadButton kind="received" po={po} onDone={refresh} />}
           </div>
         )}
       </div>
@@ -87,12 +89,14 @@ export function PoManageSection({ po, uploadId, onChanged }: { po: string; uploa
   );
 }
 
-// Upload vendor PO list for one PO (and one part when `part` is given): only those rows are taken from the file.
-export function VendorPoListButton({ po, part, onDone }: { po: string; part?: string; onDone: () => void }) {
+// Upload a vendor PO list, or a Purchase Received file, for one PO (and one part when `part` is given): only the rows
+// of that PO's parts are taken from the file. The example link next to it shows the columns.
+function ListUploadButton({ kind, po, part, onDone }: { kind: "orders" | "received"; po: string; part?: string; onDone: () => void }) {
   const notify = useToast();
   const { view: business } = useBusiness();
   const [busy, setBusy] = useState(false);
   const file = useRef<HTMLInputElement>(null);
+  const received = kind === "received";
   const what = part ? `PO ${po} · ${part}` : `PO ${po}`;
   async function upload(chosen: File | undefined) {
     if (file.current) file.current.value = "";
@@ -103,8 +107,8 @@ export function VendorPoListButton({ po, part, onDone }: { po: string; part?: st
     form.append("po_number", po);
     if (part) form.append("part_number", part);
     try {
-      const { data: r } = await api.post<{ data: VendorPoImportInfo }>("/api/purchase_orders/import", form);
-      notify(`${what}: ${formatCount(r.created)} vendor PO${r.created === 1 ? "" : "s"} recorded` +
+      const { data: r } = await api.post<{ data: VendorPoImportInfo }>(received ? "/api/purchase_orders/import_received" : "/api/purchase_orders/import", form);
+      notify(`${what}: ${formatCount(r.created)} ${received ? "receipt row" : "vendor PO"}${r.created === 1 ? "" : "s"} recorded` +
              `${r.skipped.length ? `, ${formatCount(r.skipped.length)} row${r.skipped.length === 1 ? "" : "s"} skipped (${r.skipped[0].reason})` : ""}.`,
              r.skipped.length ? "error" : "success");
       onDone();
@@ -115,13 +119,28 @@ export function VendorPoListButton({ po, part, onDone }: { po: string; part?: st
     }
   }
   return (
-    <>
+    <span className="inline-flex flex-col items-start gap-0.5">
       <input ref={file} type="file" accept=".xlsx" hidden onChange={(e) => upload(e.target.files?.[0])} />
       <Button size="sm" disabled={busy || business === "all"} onClick={() => file.current?.click()}
-              title={business === "all" ? "Choose DTP or GMBH first: a vendor PO list is for one business." : `Only the rows of ${what} are taken from the file`}>
-        <UploadIcon size={14} className="text-ink-muted" />{busy ? "Uploading…" : "Upload vendor PO list"}
+              title={business === "all" ? "Choose DTP or GMBH first: the file is for one business." : `Only the rows of ${what} are taken from the file`}>
+        <UploadIcon size={14} className="text-ink-muted" />{busy ? "Uploading…" : received ? "Upload received" : "Upload vendor PO"}
       </Button>
-    </>
+      <ExampleLink kind={received ? "purchase_received" : "vendor_po_list"} po={po} part={part} />
+    </span>
+  );
+}
+
+// The invoice buttons, each with its example file.
+function InvoiceButton({ only, po, part, onClick }: { only: "inc" | "india"; po: string; part?: string; onClick: () => void }) {
+  const inc = only === "inc";
+  const kind: ExampleKind = inc ? "invoice_inc" : "invoice_india";
+  return (
+    <span className="inline-flex flex-col items-start gap-0.5">
+      <Button size="sm" onClick={onClick} title={inc ? "The SASH Inc invoice to Deere: its Qty becomes delivered (outbound)" : "The SASH India export invoice: its Qty becomes dispatched"}>
+        <TruckIcon size={14} className="text-ink-muted" />{inc ? "Upload Deere invoice" : "Upload SASH India invoice"}
+      </Button>
+      <ExampleLink kind={kind} po={po} part={part} />
+    </span>
   );
 }
 
@@ -134,9 +153,10 @@ export function OrderUploads({ row, onChanged }: { row: OrderRow; onChanged: () 
   return (
     <>
       <DeliveryCell row={row.member_of ? { ...row, id: row.member_of.id, qty: row.member_of.total } : row} role={me?.role} onChanged={onChanged} />
-      {canInvoice && <Button size="sm" onClick={() => setInvoice("inc")} title="The SASH Inc invoice to Deere: its Qty becomes delivered (outbound)"><TruckIcon size={14} className="text-ink-muted" />Upload Deere invoice</Button>}
-      {me?.role === "admin" && <Button size="sm" onClick={() => setInvoice("india")} title="The SASH India export invoice: its Qty becomes dispatched"><TruckIcon size={14} className="text-ink-muted" />Upload SASH India invoice</Button>}
-      {can(me, "orders", "edit") && <VendorPoListButton po={row.po_number} part={row.part_number} onDone={onChanged} />}
+      {canInvoice && <InvoiceButton only="inc" po={row.po_number} part={row.part_number} onClick={() => setInvoice("inc")} />}
+      {me?.role === "admin" && <InvoiceButton only="india" po={row.po_number} part={row.part_number} onClick={() => setInvoice("india")} />}
+      {can(me, "orders", "edit") && <ListUploadButton kind="orders" po={row.po_number} part={row.part_number} onDone={onChanged} />}
+      {can(me, "orders", "edit") && <ListUploadButton kind="received" po={row.po_number} part={row.part_number} onDone={onChanged} />}
       {invoice && <InvoiceUploadPanel po={row.po_number} part={row.part_number} only={invoice} onClose={() => setInvoice(null)} onSaved={onChanged} />}
     </>
   );

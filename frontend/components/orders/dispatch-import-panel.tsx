@@ -9,6 +9,7 @@ import { useToast } from "../toast";
 import { Button } from "../ui/button";
 import { Alert } from "../ui/feedback";
 import { Sheet } from "../ui/sheet";
+import { ExampleLink } from "../ui/example-link";
 import { Table, Td, Th } from "../ui/table";
 
 // Orders → Actions → Import dispatched list (admin): SASH India's List of Dispatched Orders or Book 38 (.xlsx). The
@@ -60,6 +61,7 @@ export function DispatchImportPanel({ onClose, onImported }: { onClose: () => vo
            </>}>
       <input ref={input} type="file" accept=".xlsx" hidden onChange={(e) => importFile(e.target.files?.[0])} />
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
+      <p className="mb-3"><ExampleLink kind="dispatched_list" /></p>
       {!result ? (
         <div className="space-y-2 text-sm text-ink-muted">
           <p>Two files can be imported:</p>

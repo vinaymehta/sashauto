@@ -68,6 +68,8 @@ Rails.application.routes.draw do
       get :fields, on: :collection
     end
     # Purchase orders page: every vendor PO, and uploading a vendor PO list.
+    # Example .xlsx files for the uploads (the columns each reads, sample rows for a PO / part).
+    get "examples/:kind", to: "examples#show", as: :example
     resources :purchase_orders, only: :index do
       post :import, on: :collection
       post :import_received, on: :collection

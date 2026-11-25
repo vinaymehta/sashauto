@@ -24,6 +24,7 @@ import { PageHeader, Panel } from "@/components/ui/panel";
 import { SearchInput } from "@/components/ui/search-input";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { Pagination, Table, Td, Th } from "@/components/ui/table";
+import { ExampleLink } from "@/components/ui/example-link";
 import { Tabs } from "@/components/ui/tabs";
 
 const dash = <span className="text-neutral-300">—</span>;
@@ -267,6 +268,10 @@ function UploadMenu({ business, onDone }: { business: string; onDone: (result: V
                 <span className="text-xs text-ink-muted">{i.hint}</span>
               </button>
             ))}
+            <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 border-t border-line px-4 py-2.5">
+              <ExampleLink kind="vendor_po_list" label="Example vendor PO list" />
+              <ExampleLink kind="purchase_received" label="Example purchase received" />
+            </div>
           </div>
         )}
       </Dropdown>

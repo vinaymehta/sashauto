@@ -22,11 +22,15 @@ module VendorOrders
     MAX_ROWS = 20_000
     EXCEL_EPOCH = Date.new(1899, 12, 30) # a number cell shown as a date: its days since this are the number
 
-    def self.call(path:, filename:, business:, user:)
-      new(path, filename, business, user).call
+    def self.call(path:, filename:, business:, user:, po: nil, part: nil)
+      new(path, filename, business, user, po: po, part: part).call
     end
 
-    def initialize(path, filename, business, user)
+    # `po`: uploaded from one Deere PO's panel (`part`: and one part of it, from an order's panel): only the rows of
+    # that PO's parts are recorded, each against that PO's vendor POs only; the other rows are left out (not issues).
+    def initialize(path, filename, business, user, po: nil, part: nil)
+      @po = po.to_s.strip.presence
+      @part = (OrderRows::Normalizer.part_number(part.to_s) if @po && part.present?)
       @path = path
       @filename = filename.to_s
       @business = business
@@ -35,6 +39,12 @@ module VendorOrders
 
     def call
       rows = read_rows
+      if @po
+        parts = VendorOrderPlacement.where(po_number: @po).distinct.pluck(:part_number)
+        parts &= [ @part ] if @part
+        rows = rows.select { |row| parts.include?(row[:part_number]) }
+        raise InvalidFile, "The file has no row for a part of PO #{@po}#{" · #{@part}" if @part} that has a vendor PO." if rows.empty?
+      end
       record = nil
       VendorOrderReceipt.transaction do
         record = VendorPoImport.create!(kind: "received", business: @business, original_filename: @filename.first(255), uploaded_by: @user,
@@ -117,7 +127,9 @@ module VendorOrders
       vendor ||= (@vendors ||= VendorMatch.new).find(row[:vendor], part_number: row[:part_number]) or return [ "vendor \"#{row[:vendor]}\" is not in Vendors", "vendor" ]
       # A vendor saved twice (under one name, or spelt a little differently: "Pal Shell Cast" / "Pal Shellcast Private
       # Limited", "Polestar Enggineers" / "Polestar Engineers"): the one its POs of the part were recorded with.
-      with_po = VendorOrder.joins(:vendor_order_placement).where(vendor_order_placements: { part_number: row[:part_number] }).distinct.pluck(:vendor_id)
+      with_po = VendorOrder.joins(:vendor_order_placement).where(vendor_order_placements: { part_number: row[:part_number] })
+      with_po = with_po.where(vendor_order_placements: { po_number: @po }) if @po
+      with_po = with_po.distinct.pluck(:vendor_id)
       unless with_po.include?(vendor.id)
         vendor = ((@vendors ||= VendorMatch.new).twins(vendor) + Vendor.where(id: with_po).select { |v| VendorMatch.alike?(v.name, vendor.name) })
                  .find { |v| with_po.include?(v.id) } || vendor
@@ -132,6 +144,7 @@ module VendorOrders
       orders = VendorOrder.joins(:vendor_order_placement).left_joins(vendor_order_placement: :upload_batch)
                           .where(vendor: vendor, vendor_order_placements: { part_number: row[:part_number] })
       orders = orders.where(upload_batches: { business: @business }).or(orders.where(vendor_order_placements: { upload_batch_id: nil }))
+      orders = orders.where(vendor_order_placements: { po_number: @po }) if @po
       return [ "no vendor PO of #{row[:part_number]} with #{vendor.name}", "order" ] unless orders.exists?
       # Recorded by an earlier upload or by hand (one invoice can have several lines of a part: all of this file go in):
       # the same Qty as the earlier file had (or as recorded, by hand) is skipped, another one becomes a conflict.
