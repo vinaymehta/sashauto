@@ -31,7 +31,7 @@ export function PoManageSection({ po, uploadId, onChanged }: { po: string; uploa
   // Only the current order data can be changed: an earlier upload's rows are history.
   const current = uploadId === undefined;
   const { data, error, loading, reload } = useApi<{ data: OrderRow[] }>("/api/orders", { q: po, per_page: 100, upload_id: uploadId });
-  const [invoice, setInvoice] = useState(false);
+  const [invoice, setInvoice] = useState<"inc" | "india" | null>(null);
   const [vendorOf, setVendorOf] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const file = useRef<HTMLInputElement>(null);
@@ -69,7 +69,8 @@ export function PoManageSection({ po, uploadId, onChanged }: { po: string; uploa
         </div>
         {current && (
           <div className="flex flex-wrap items-center gap-2">
-            {canInvoice && <Button size="sm" onClick={() => setInvoice(true)}><TruckIcon size={14} className="text-ink-muted" />Upload invoice</Button>}
+            {canInvoice && <Button size="sm" onClick={() => setInvoice("inc")} title="The SASH Inc invoice to Deere: its Qty becomes delivered (outbound)"><TruckIcon size={14} className="text-ink-muted" />Upload Deere invoice</Button>}
+            {me?.role === "admin" && <Button size="sm" onClick={() => setInvoice("india")} title="The SASH India export invoice: its Qty becomes dispatched"><TruckIcon size={14} className="text-ink-muted" />Upload SASH India invoice</Button>}
             {editor && (
               <>
                 <input ref={file} type="file" accept=".xlsx" hidden onChange={(e) => uploadList(e.target.files?.[0])} />
@@ -111,7 +112,7 @@ export function PoManageSection({ po, uploadId, onChanged }: { po: string; uploa
           ))}
         </ul>
       )}
-      {invoice && <InvoiceUploadPanel po={po} onClose={() => setInvoice(false)} onSaved={refresh} />}
+      {invoice && <InvoiceUploadPanel po={po} only={invoice} onClose={() => setInvoice(null)} onSaved={refresh} />}
     </section>
   );
 }

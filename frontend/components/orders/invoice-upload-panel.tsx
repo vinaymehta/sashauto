@@ -28,7 +28,8 @@ const KIND_TEXT: Record<InvoiceKind, { from: string; moves: string; before: stri
 // India moves the Qty to dispatched, SASH Inc moves dispatched Qty to outbound. An invoice uploaded before is refused.
 // `po`: opened from one PO's panel: the invoice must be for that PO alone (the server refuses one that has lines of
 // other POs), so no other PO's order gets any of its Qty.
-export function InvoiceUploadPanel({ onClose, onSaved, po }: { onClose: () => void; onSaved: () => void; po?: string }) {
+// `only`: the kind the panel takes ("inc": the SASH Inc invoice to Deere); the server refuses a file of the other kind.
+export function InvoiceUploadPanel({ onClose, onSaved, po, only }: { onClose: () => void; onSaved: () => void; po?: string; only?: InvoiceKind }) {
   const notify = useToast();
   const input = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -43,6 +44,7 @@ export function InvoiceUploadPanel({ onClose, onSaved, po }: { onClose: () => vo
     const body = new FormData();
     body.append("file", chosen);
     if (po) body.append("po_number", po);
+    if (only) body.append("kind", only);
     return body;
   };
 
@@ -85,7 +87,7 @@ export function InvoiceUploadPanel({ onClose, onSaved, po }: { onClose: () => vo
   }
 
   return (
-    <Sheet open wide onClose={onClose} title={preview ? `Upload ${preview.label}` : "Upload invoice"} icon={<TruckIcon size={18} />}
+    <Sheet open wide onClose={onClose} title={preview ? `Upload ${preview.label}` : only === "inc" ? "Upload Deere invoice" : only === "india" ? "Upload SASH India invoice" : "Upload invoice"} icon={<TruckIcon size={18} />}
            description={text ? `Export invoice from ${text.from}: its Qty becomes ${text.moves}, oldest Ship Date first.`
              : "A SASH India invoice moves its Qty to dispatched, a SASH Inc invoice moves dispatched Qty to outbound: the file says which."}
            footer={<>
