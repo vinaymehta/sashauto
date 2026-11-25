@@ -33,32 +33,10 @@ export function PoManageSection({ po, uploadId, onChanged }: { po: string; uploa
   const { data, error, loading, reload } = useApi<{ data: OrderRow[] }>("/api/orders", { q: po, per_page: 100, upload_id: uploadId });
   const [invoice, setInvoice] = useState<"inc" | "india" | null>(null);
   const [vendorOf, setVendorOf] = useState<number | null>(null);
-  const [busy, setBusy] = useState(false);
-  const file = useRef<HTMLInputElement>(null);
   const refresh = () => { reload(); onChanged(); };
 
   const rows = (data?.data ?? []).filter((r) => r.po_number === po && (r.order_type === "Firm" || r.order_type === "Order"));
   if (!editor && !canInvoice) return null;
-
-  async function uploadList(chosen: File | undefined) {
-    if (file.current) file.current.value = "";
-    if (!chosen) return;
-    setBusy(true);
-    const form = new FormData();
-    form.append("file", chosen);
-    form.append("po_number", po);
-    try {
-      const { data: r } = await api.post<{ data: VendorPoImportInfo }>("/api/purchase_orders/import", form);
-      notify(`PO ${po}: ${formatCount(r.created)} vendor PO${r.created === 1 ? "" : "s"} recorded` +
-             `${r.skipped.length ? `, ${formatCount(r.skipped.length)} row${r.skipped.length === 1 ? "" : "s"} skipped (${r.skipped[0].reason})` : ""}.`,
-             r.skipped.length ? "error" : "success");
-      refresh();
-    } catch (err) {
-      notify(err instanceof ApiError ? err.message : "The upload failed.", "error");
-    } finally {
-      setBusy(false);
-    }
-  }
 
   return (
     <section className="overflow-hidden rounded-lg border border-line bg-white shadow-card">
@@ -71,15 +49,7 @@ export function PoManageSection({ po, uploadId, onChanged }: { po: string; uploa
           <div className="flex flex-wrap items-center gap-2">
             {canInvoice && <Button size="sm" onClick={() => setInvoice("inc")} title="The SASH Inc invoice to Deere: its Qty becomes delivered (outbound)"><TruckIcon size={14} className="text-ink-muted" />Upload Deere invoice</Button>}
             {me?.role === "admin" && <Button size="sm" onClick={() => setInvoice("india")} title="The SASH India export invoice: its Qty becomes dispatched"><TruckIcon size={14} className="text-ink-muted" />Upload SASH India invoice</Button>}
-            {editor && (
-              <>
-                <input ref={file} type="file" accept=".xlsx" hidden onChange={(e) => uploadList(e.target.files?.[0])} />
-                <Button size="sm" disabled={busy || business === "all"} onClick={() => file.current?.click()}
-                        title={business === "all" ? "Choose DTP or GMBH first: a vendor PO list is for one business." : `Only the rows of PO ${po} are taken from the file`}>
-                  <UploadIcon size={14} className="text-ink-muted" />{busy ? "Uploading…" : "Upload vendor PO list"}
-                </Button>
-              </>
-            )}
+            {editor && <VendorPoListButton po={po} onDone={refresh} />}
           </div>
         )}
       </div>
@@ -114,5 +84,60 @@ export function PoManageSection({ po, uploadId, onChanged }: { po: string; uploa
       )}
       {invoice && <InvoiceUploadPanel po={po} only={invoice} onClose={() => setInvoice(null)} onSaved={refresh} />}
     </section>
+  );
+}
+
+// Upload vendor PO list for one PO (and one part when `part` is given): only those rows are taken from the file.
+export function VendorPoListButton({ po, part, onDone }: { po: string; part?: string; onDone: () => void }) {
+  const notify = useToast();
+  const { view: business } = useBusiness();
+  const [busy, setBusy] = useState(false);
+  const file = useRef<HTMLInputElement>(null);
+  const what = part ? `PO ${po} · ${part}` : `PO ${po}`;
+  async function upload(chosen: File | undefined) {
+    if (file.current) file.current.value = "";
+    if (!chosen) return;
+    setBusy(true);
+    const form = new FormData();
+    form.append("file", chosen);
+    form.append("po_number", po);
+    if (part) form.append("part_number", part);
+    try {
+      const { data: r } = await api.post<{ data: VendorPoImportInfo }>("/api/purchase_orders/import", form);
+      notify(`${what}: ${formatCount(r.created)} vendor PO${r.created === 1 ? "" : "s"} recorded` +
+             `${r.skipped.length ? `, ${formatCount(r.skipped.length)} row${r.skipped.length === 1 ? "" : "s"} skipped (${r.skipped[0].reason})` : ""}.`,
+             r.skipped.length ? "error" : "success");
+      onDone();
+    } catch (err) {
+      notify(err instanceof ApiError ? err.message : "The upload failed.", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <>
+      <input ref={file} type="file" accept=".xlsx" hidden onChange={(e) => upload(e.target.files?.[0])} />
+      <Button size="sm" disabled={busy || business === "all"} onClick={() => file.current?.click()}
+              title={business === "all" ? "Choose DTP or GMBH first: a vendor PO list is for one business." : `Only the rows of ${what} are taken from the file`}>
+        <UploadIcon size={14} className="text-ink-muted" />{busy ? "Uploading…" : "Upload vendor PO list"}
+      </Button>
+    </>
+  );
+}
+
+// Order details actions: status, and the Deere (SASH Inc) invoice / SASH India invoice / vendor PO list uploads, all
+// limited to this order's PO and part (the server refuses an invoice with other lines).
+export function OrderUploads({ row, onChanged }: { row: OrderRow; onChanged: () => void }) {
+  const me = useSession().user;
+  const [invoice, setInvoice] = useState<"inc" | "india" | null>(null);
+  const canInvoice = me?.role === "admin" || me?.role === "warehouse_manager";
+  return (
+    <>
+      <DeliveryCell row={row.member_of ? { ...row, id: row.member_of.id, qty: row.member_of.total } : row} role={me?.role} onChanged={onChanged} />
+      {canInvoice && <Button size="sm" onClick={() => setInvoice("inc")} title="The SASH Inc invoice to Deere: its Qty becomes delivered (outbound)"><TruckIcon size={14} className="text-ink-muted" />Upload Deere invoice</Button>}
+      {me?.role === "admin" && <Button size="sm" onClick={() => setInvoice("india")} title="The SASH India export invoice: its Qty becomes dispatched"><TruckIcon size={14} className="text-ink-muted" />Upload SASH India invoice</Button>}
+      {can(me, "orders", "edit") && <VendorPoListButton po={row.po_number} part={row.part_number} onDone={onChanged} />}
+      {invoice && <InvoiceUploadPanel po={row.po_number} part={row.part_number} only={invoice} onClose={() => setInvoice(null)} onSaved={onChanged} />}
+    </>
   );
 }

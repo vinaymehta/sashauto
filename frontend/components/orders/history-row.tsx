@@ -16,6 +16,7 @@ import { Skeleton } from "../ui/skeleton";
 import { Sheet } from "../ui/sheet";
 import { InvoiceMoves, OrderDetailsBody } from "./order-details-modal";
 import { VendorOrderSection } from "./vendor-order-section";
+import { OrderUploads } from "./po-manage";
 import { FileIcon, PencilIcon, TrashIcon, TruckIcon } from "../icons";
 import { PartThumbnail } from "../products/part-thumbnail";
 
@@ -73,8 +74,9 @@ export function OrderDetailPanel({ row, onClose, onEdit, onDeleted, onPlaced }: 
       description={<>PO <span className="font-medium text-ink">{row.po_number}</span> · {row.part_number} · {row.order_type}{row.manual && <> · <Badge>Manual</Badge></>}</>}
       icon={<PartThumbnail imageUrl={row.image_url} images={row.images} alt={row.part_number} size="md" fallbackIcon={<FileIcon size={18} />} />}
     >
-      {admin && (
-        <div className="mb-4 flex justify-end gap-2">
+      {(admin || me?.role === "warehouse_manager") && (
+        <div className="mb-4 flex flex-wrap items-center justify-end gap-2">
+          <OrderUploads row={row} onChanged={() => { reload(); onPlaced?.(); }} />
           {/* Not for an order SASH India has dispatched in full: nothing is left to make. */}
           {canPlaceOrder(row) && (
             <Button size="sm" variant="primary" onClick={() => setPlacing(true)} title="Generate vendor POs for this order">

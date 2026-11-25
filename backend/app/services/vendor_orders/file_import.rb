@@ -26,14 +26,15 @@ module VendorOrders
     REASON_KINDS = { "vendor " => "vendor", "no " => "order", "already recorded" => "recorded", "the order is already fully" => "recorded",
                      "a Forecast" => "forecast", "this vendor PO is listed twice" => "recorded" }.freeze
 
-    def self.call(path:, filename:, business:, user:, po: nil)
-      new(path, filename, business, user, po: po).call
+    def self.call(path:, filename:, business:, user:, po: nil, part: nil)
+      new(path, filename, business, user, po: po, part: part).call
     end
 
     # `po`: uploaded from one Deere PO's panel: only the rows of that PO are recorded, the others are left out (and
     # not reported as issues); a file with no row of the PO is refused.
-    def initialize(path, filename, business, user, po: nil)
+    def initialize(path, filename, business, user, po: nil, part: nil)
       @po = po.to_s.strip.presence
+      @part = (OrderRows::Normalizer.part_number(part.to_s) if @po && part.present?)
       @path = path
       @filename = filename.to_s
       @business = business
@@ -45,8 +46,8 @@ module VendorOrders
       @ignored = 0
       if @po
         all = rows.size
-        rows = rows.select { |row| row[:po_number] == @po }
-        raise InvalidFile, "The file has no row for PO #{@po}." if rows.empty?
+        rows = rows.select { |row| row[:po_number] == @po && (@part.nil? || row[:part_number] == @part) }
+        raise InvalidFile, "The file has no row for PO #{@po}#{" · #{@part}" if @part}." if rows.empty?
 
         @ignored = all - rows.size
       end

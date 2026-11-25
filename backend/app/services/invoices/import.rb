@@ -14,8 +14,9 @@ module Invoices
 
     # `po`: the invoice is uploaded from one PO's panel: it must be that PO's alone (every line under that PO No.), so
     # no other PO's order can take any of its Qty.
-    def initialize(path:, filename:, kind:, view:, user:, po: nil)
+    def initialize(path:, filename:, kind:, view:, user:, po: nil, part: nil)
       @po = po.to_s.strip.presence
+      @part = (part.to_s.strip.presence if @po) # one part of the PO (from an order's own panel)
       @path = path
       @filename = filename.to_s
       @kind = kind
@@ -51,8 +52,8 @@ module Invoices
     # The allocation of the invoice's lines; for one PO's panel, nothing outside that PO is touched.
     def plan_for(invoice)
       plan = Allocator.call(invoice, view: @view)
-      if @po && (other = plan.allocations.find { |a| a.order.po_number != @po })
-        raise Rejected, "This invoice would also change PO #{other.order.po_number}: upload it from Orders → Actions → Upload invoice."
+      if @po && (other = plan.allocations.find { |a| a.order.po_number != @po || (@part && a.order.part_number != @part) })
+        raise Rejected, "This invoice would also change PO #{other.order.po_number} · #{other.order.part_number}: upload it from Orders → Actions → Upload invoice."
       end
       plan
     end
@@ -78,13 +79,13 @@ module Invoices
     def check_po(invoice)
       return unless @po
 
-      others = invoice.lines.map(&:po_number).uniq - [ @po ]
-      if invoice.lines.none? { |line| line.po_number == @po }
-        raise Rejected, "This invoice has no line for PO #{@po} (its lines are for #{others.compact.first(3).join(', ').presence || 'no PO'})."
-      end
+      mine = ->(line) { line.po_number == @po && (@part.nil? || line.part_number == @part) }
+      what = @part ? "PO #{@po} · #{@part}" : "PO #{@po}"
+      others = invoice.lines.reject(&mine).map { |line| line.po_number ? "#{line.po_number} · #{line.part_number}" : "no PO" }.uniq
+      raise Rejected, "This invoice has no line for #{what} (its lines are for #{others.first(3).join(', ').presence || 'no PO'})." if invoice.lines.none?(&mine)
       return if others.empty?
 
-      raise Rejected, "This invoice also has lines for #{others.map { |po| po || 'no PO' }.first(3).join(', ')}, not only PO #{@po}. " \
+      raise Rejected, "This invoice also has lines for #{others.first(3).join(', ')}, not only #{what}. " \
                       "Upload it from Orders → Actions → Upload invoice so every PO gets its Qty."
     end
 

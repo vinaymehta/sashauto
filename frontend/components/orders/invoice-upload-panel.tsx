@@ -29,7 +29,7 @@ const KIND_TEXT: Record<InvoiceKind, { from: string; moves: string; before: stri
 // `po`: opened from one PO's panel: the invoice must be for that PO alone (the server refuses one that has lines of
 // other POs), so no other PO's order gets any of its Qty.
 // `only`: the kind the panel takes ("inc": the SASH Inc invoice to Deere); the server refuses a file of the other kind.
-export function InvoiceUploadPanel({ onClose, onSaved, po, only }: { onClose: () => void; onSaved: () => void; po?: string; only?: InvoiceKind }) {
+export function InvoiceUploadPanel({ onClose, onSaved, po, part, only }: { onClose: () => void; onSaved: () => void; po?: string; part?: string; only?: InvoiceKind }) {
   const notify = useToast();
   const input = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -44,6 +44,7 @@ export function InvoiceUploadPanel({ onClose, onSaved, po, only }: { onClose: ()
     const body = new FormData();
     body.append("file", chosen);
     if (po) body.append("po_number", po);
+    if (part) body.append("part_number", part);
     if (only) body.append("kind", only);
     return body;
   };
@@ -102,7 +103,7 @@ export function InvoiceUploadPanel({ onClose, onSaved, po, only }: { onClose: ()
              )}
            </>}>
       <input ref={input} type="file" accept=".pdf,.xlsx" hidden onChange={(e) => read(e.target.files?.[0])} />
-      {po && <p className="mb-4 rounded-md bg-tint-violet/60 px-3 py-2 text-sm text-ink">For <b>PO {po}</b> only: an invoice that also has lines of other POs is refused, so no other order gets its Qty.</p>}
+      {po && <p className="mb-4 rounded-md bg-tint-violet/60 px-3 py-2 text-sm text-ink">For <b>PO {po}{part ? ` · ${part}` : ""}</b> only: an invoice that also has lines of {part ? "other parts or POs" : "other POs"} is refused, so no other order gets its Qty.</p>}
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
       {!preview ? (
         <div className="space-y-2 text-sm text-ink-muted">
