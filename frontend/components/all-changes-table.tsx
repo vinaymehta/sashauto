@@ -15,6 +15,21 @@ import { Alert, EmptyState } from "./ui/feedback";
 import { FilterChips, FilterMenu, type FilterGroup } from "./ui/filter-menu";
 import { TableSkeleton } from "./ui/skeleton";
 import { Pagination, Table, Td, Th } from "./ui/table";
+import { ColumnsMenu } from "./ui/columns-menu";
+import { useTableColumns, type ColumnDef } from "./use-table-columns";
+
+// The columns of the Changes table (Columns chooses and orders them per user).
+const CHANGE_COLUMNS: ColumnDef[] = [
+  { key: "change", label: "Change" },
+  { key: "difference", label: "Difference", align: "right" },
+  { key: "old", label: "Old" },
+  { key: "new", label: "New" },
+  { key: "po", label: "PO" },
+  { key: "part_number", label: "Part Number" },
+  { key: "part_description", label: "Part Description" },
+  { key: "type", label: "Type" },
+  { key: "ship_date", label: "Ship Date" },
+];
 
 const dash = <span className="text-neutral-300">—</span>;
 
@@ -60,6 +75,7 @@ export function AllChangesTable({ uploadId, manual = false, direction }: { uploa
   const { data, error, loading } = useApi<AllChangesPage>(`/api/uploads/${uploadId}/all_changes`, {
     q, ...list.filters, today: todayParam(), page: list.page, per_page: list.perPage, manual: manual ? 1 : undefined,
   });
+  const columns = useTableColumns("all_changes", CHANGE_COLUMNS);
   const filtered = q !== "" || Object.values(list.filters).some(Boolean);
   const clearAll = () => { list.clearFilters(); setSearch(""); };
   const link = manual ? undefined : uploadId;
@@ -77,6 +93,7 @@ export function AllChangesTable({ uploadId, manual = false, direction }: { uploa
         <SearchInput label="Search changes" placeholder="Search PO, part number, description, commodity or address" value={search}
                      onSearch={(v) => { setSearch(v); list.resetPage(); }} className="w-full sm:w-80" />
         <FilterMenu groups={FILTERS} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
+        <ColumnsMenu {...columns.menu} />
       </ListToolbar>
       <FilterChips groups={FILTERS} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
 
@@ -100,15 +117,7 @@ export function AllChangesTable({ uploadId, manual = false, direction }: { uploa
           <Table dense stickyHeader>
             <thead>
               <tr>
-                <Th>Change</Th>
-                <Th align="right">Difference</Th>
-                <Th>Old</Th>
-                <Th>New</Th>
-                <Th>PO</Th>
-                <Th>Part Number</Th>
-                <Th>Part Description</Th>
-                <Th>Type</Th>
-                <Th>Ship Date</Th>
+                {columns.shown.map((c) => <Th key={c.key} align={c.align}>{c.label}</Th>)}
               </tr>
             </thead>
             <tbody>
@@ -117,31 +126,48 @@ export function AllChangesTable({ uploadId, manual = false, direction }: { uploa
                 const quantity = c.direction !== "address";
                 return (
                   <tr key={`${quantity ? "q" : "a"}-${c.id}`} className="transition-colors hover:bg-canvas">
-                    <Td>
+                    {columns.shown.map((col) => {
+                      switch (col.key) {
+                        case "change": return (
+                    <Td key={col.key}>
                       <span className={`inline-flex whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-semibold ${KINDS[c.direction].tone}`}>
                         {KINDS[c.direction].label}
                       </span>
                     </Td>
-                    <Td align="right">
+                        );
+                        case "difference": return (
+                    <Td key={col.key} align="right">
                       {quantity && c.direction !== "rescheduled" ? (
                         <span className={`font-semibold tabular ${Number(c.difference) > 0 ? "text-inc" : Number(c.difference) < 0 ? "text-dec" : "text-ink-muted"}`}>
                           {formatDifference(c.difference)}
                         </span>
                       ) : dash}
                     </Td>
-                    {/* A row added had no old value, a row removed has no new one: only the other side is marked. */}
-                    <Td className={v.wide ? "" : "tabular"}>
+                        );
+                        // A row added had no old value, a row removed has no new one: only the other side is marked.
+                        case "old": return (
+                    <Td key={col.key} className={v.wide ? "" : "tabular"}>
                       <span className={`${v.wide ? "inline-block max-w-56 whitespace-normal break-words leading-snug" : "whitespace-nowrap"} ${
                         c.direction === "added" ? "text-ink-muted" : OLD_MARK}`}>{v.old ?? "—"}</span>
                     </Td>
-                    <Td className={v.wide ? "" : "tabular"}>
+                        );
+                        case "new": return (
+                    <Td key={col.key} className={v.wide ? "" : "tabular"}>
                       <span className={`${v.wide ? "inline-block max-w-56 whitespace-normal break-words leading-snug" : "whitespace-nowrap"} ${
                         c.direction === "removed" ? "text-ink-muted" : NEW_MARK}`}>{v.new ?? "—"}</span>
                     </Td>
-                    <Td><RelatedLink kind="po" value={c.po_number} uploadId={link} /></Td>
-                    <Td><RelatedLink kind="part" value={c.part_number} uploadId={link} /></Td>
-                    <Td><span className="block w-64 whitespace-normal break-words py-1 leading-snug">{c.part_description || "—"}</span></Td>
-                    <Td>
+                        );
+                        case "po": return (
+                    <Td key={col.key}><RelatedLink kind="po" value={c.po_number} uploadId={link} /></Td>
+                        );
+                        case "part_number": return (
+                    <Td key={col.key}><RelatedLink kind="part" value={c.part_number} uploadId={link} /></Td>
+                        );
+                        case "part_description": return (
+                    <Td key={col.key}><span className="block w-64 whitespace-normal break-words py-1 leading-snug">{c.part_description || "—"}</span></Td>
+                        );
+                        case "type": return (
+                    <Td key={col.key}>
                       {/* The row's Type changed between the two uploads (e.g. a Forecast date became Firm): show both. */}
                       {"previous_order_type" in c && c.previous_order_type && c.previous_order_type !== c.order_type ? (
                         <span className="whitespace-nowrap" title={`${c.previous_order_type} in the previous upload, ${c.order_type} in this one`}>
@@ -149,10 +175,15 @@ export function AllChangesTable({ uploadId, manual = false, direction }: { uploa
                         </span>
                       ) : c.order_type}
                     </Td>
-                    <Td className="tabular">
+                        );
+                        default: return (
+                    <Td key={col.key} className="tabular">
                       {/* A moved date is the field that changed: green here too. */}
                       <span className={c.direction === "rescheduled" ? NEW_MARK : ""}>{formatDate(c.ship_date)}</span>
                     </Td>
+                        );
+                      }
+                    })}
                   </tr>
                 );
               })}

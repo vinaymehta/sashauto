@@ -11,6 +11,7 @@ export interface User {
   created_at: string;
   permissions: Record<"dashboard" | "orders" | "products" | "vendors" | "settings", "none" | "view" | "edit">; // in effect (admin: edit)
   orders_columns: string[] | null; // keys of the Orders table columns this user shows (null: not chosen, the default ones)
+  table_columns: Record<string, string[]>; // keys of the columns this user shows in each other table, by table name (a table not in it: the default ones)
   deere_sync_alerts: boolean; // gets the John Deere sync popup, bell items and emails (ticked in Users → Permissions, admins too)
 }
 

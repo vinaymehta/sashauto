@@ -22,6 +22,8 @@ import { SearchInput } from "@/components/ui/search-input";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { SortTh } from "@/components/ui/sort-header";
 import { Pagination, Table, Td, Th } from "@/components/ui/table";
+import { ColumnsMenu } from "@/components/ui/columns-menu";
+import { useTableColumns, type ColumnDef } from "@/components/use-table-columns";
 
 const iconButton = "inline-flex h-8 w-8 items-center justify-center rounded-md text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-ink";
 
@@ -32,6 +34,15 @@ const FILTERS: FilterGroup[] = [
 
 // User accounts (admins only): add users, edit name/email/role, reset passwords, deactivate, reactivate and delete.
 // A deactivated or deleted user cannot sign in and is signed out; a deleted user is hidden and their email freed.
+// The columns of the Users table (Columns chooses and orders them per user); Action is always last.
+const USER_COLUMNS: ColumnDef[] = [
+  { key: "name", label: "Name", sort: "name" },
+  { key: "email", label: "Email", sort: "email" },
+  { key: "role", label: "Role", sort: "role" },
+  { key: "status", label: "Status" },
+  { key: "last_login_at", label: "Last sign-in", sort: "last_login_at" },
+];
+
 export default function UsersPage() {
   const { user: me, refresh: refreshSession } = useSession();
   const isAdmin = me?.role === "admin";
@@ -42,6 +53,7 @@ export default function UsersPage() {
   const { data, error, loading, reload } = useApi<Paginated<User>>(isAdmin ? "/api/users" : null, {
     q, ...list.filters, sort: list.sort, direction: list.direction, page: list.page, per_page: list.perPage,
   });
+  const columns = useTableColumns("users", USER_COLUMNS);
   const sortProps = { sort: list.sort, direction: list.direction, onSort: list.toggleSort };
   const filtered = q !== "" || Object.values(list.filters).some(Boolean);
 
@@ -108,6 +120,7 @@ export default function UsersPage() {
           <SearchInput label="Search users" placeholder="Search name or email" value={search}
                        onSearch={(v) => { setSearch(v); list.resetPage(); }} className="w-full sm:w-72" />
           <FilterMenu groups={FILTERS} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
+          <ColumnsMenu {...columns.menu} />
         </ListToolbar>
         <FilterChips groups={FILTERS} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
         {error ? (
@@ -125,11 +138,9 @@ export default function UsersPage() {
             <Table>
               <thead>
                 <tr>
-                  <SortTh label="Name" sortKey="name" {...sortProps} />
-                  <SortTh label="Email" sortKey="email" {...sortProps} />
-                  <SortTh label="Role" sortKey="role" {...sortProps} />
-                  <Th>Status</Th>
-                  <SortTh label="Last sign-in" sortKey="last_login_at" {...sortProps} />
+                  {columns.shown.map((c) => c.sort
+                    ? <SortTh key={c.key} label={c.label} sortKey={c.sort} {...sortProps} />
+                    : <Th key={c.key}>{c.label}</Th>)}
                   <Th align="right">Action</Th>
                 </tr>
               </thead>
@@ -139,18 +150,26 @@ export default function UsersPage() {
                   return (
                     <tr key={u.id} onClick={() => setPermissionsOf(u)} aria-haspopup="dialog" title="Open permissions"
                         className={`cursor-pointer transition-colors hover:bg-neutral-50 ${permissionsOf?.id === u.id ? "shadow-[inset_3px_0_0_var(--color-accent)]" : ""} ${u.active ? "" : "text-ink-muted"}`}>
-                      <Td className="font-medium">
-                        <span className="inline-flex items-center gap-2">{u.name}{self && <Badge>You</Badge>}</span>
-                      </Td>
-                      <Td>{u.email}</Td>
-                      <Td>{u.role === "admin" ? <Badge tone="dark">{ROLE_LABEL[u.role]}</Badge> : ROLE_LABEL[u.role]}</Td>
-                      <Td>
-                        <span className="inline-flex flex-wrap items-center gap-1.5">
-                          {u.active ? <Badge tone="up">Active</Badge> : <Badge>Inactive</Badge>}
-                          {u.active && u.must_change_password && <Badge tone="warn">Password not set yet</Badge>}
-                        </span>
-                      </Td>
-                      <Td className="tabular">{u.last_login_at ? formatDateTime(u.last_login_at) : <span className="text-ink-faint">Never</span>}</Td>
+                      {columns.shown.map((c) => {
+                        switch (c.key) {
+                          case "name": return (
+                            <Td key={c.key} className="font-medium">
+                              <span className="inline-flex items-center gap-2">{u.name}{self && <Badge>You</Badge>}</span>
+                            </Td>
+                          );
+                          case "email": return <Td key={c.key}>{u.email}</Td>;
+                          case "role": return <Td key={c.key}>{u.role === "admin" ? <Badge tone="dark">{ROLE_LABEL[u.role]}</Badge> : ROLE_LABEL[u.role]}</Td>;
+                          case "status": return (
+                            <Td key={c.key}>
+                              <span className="inline-flex flex-wrap items-center gap-1.5">
+                                {u.active ? <Badge tone="up">Active</Badge> : <Badge>Inactive</Badge>}
+                                {u.active && u.must_change_password && <Badge tone="warn">Password not set yet</Badge>}
+                              </span>
+                            </Td>
+                          );
+                          default: return <Td key={c.key} className="tabular">{u.last_login_at ? formatDateTime(u.last_login_at) : <span className="text-ink-faint">Never</span>}</Td>;
+                        }
+                      })}
                       <Td align="right" onClick={(e) => e.stopPropagation()}>
                         <span className="inline-flex items-center gap-1">
                           <button type="button" className={iconButton} onClick={() => setEditing(u)} aria-label={`Edit ${u.name}`} title="Edit user">

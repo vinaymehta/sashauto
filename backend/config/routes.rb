@@ -6,6 +6,7 @@ Rails.application.routes.draw do
     resource :session, only: %i[show create destroy] do
       patch :password
       patch :orders_columns
+      patch :table_columns
     end
     resources :users, only: %i[index create update destroy] do
       post :reset_password, on: :member

@@ -24,8 +24,20 @@ import { PageHeader, Panel } from "@/components/ui/panel";
 import { SearchInput } from "@/components/ui/search-input";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { Pagination, Table, Td, Th } from "@/components/ui/table";
+import { ColumnsMenu } from "@/components/ui/columns-menu";
+import { useTableColumns, type ColumnDef } from "@/components/use-table-columns";
 import { ListUploadSheet } from "@/components/orders/list-upload-sheet";
 import { Tabs } from "@/components/ui/tabs";
+
+// The columns of the vendor POs table (Columns chooses and orders them per user).
+const PO_COLUMNS: ColumnDef[] = [
+  { key: "number", label: "Vendor PO" },
+  { key: "vendor", label: "Vendor" },
+  { key: "order", label: "Order" },
+  { key: "order_date", label: "Order date" },
+  { key: "qty", label: "Qty", align: "right" },
+  { key: "received", label: "Received" },
+];
 
 const dash = <span className="text-neutral-300">—</span>;
 
@@ -39,6 +51,7 @@ export default function PurchaseOrdersPage() {
   const admin = me?.role === "admin";
   const [receipts, setReceipts] = useState<PurchaseOrderRow | null>(null);
   const { view: business } = useBusiness();
+  const columns = useTableColumns("vendor_pos", PO_COLUMNS);
   const list = useListQuery({}, 100);
   const [search, setSearch] = useState("");
   const q = useDebounced(search.trim());
@@ -90,6 +103,7 @@ export default function PurchaseOrdersPage() {
             <option value="no">Not received in full</option>
             <option value="yes">Received in full</option>
           </Select>
+          <ColumnsMenu {...columns.menu} />
         </ListToolbar>
         {error ? (
           <div className="p-4"><Alert title="Could not load the purchase orders">{error.message}</Alert></div>
@@ -102,11 +116,11 @@ export default function PurchaseOrdersPage() {
           <Table minWidth="min-w-[960px]" stickyHeader>
             <thead>
               <tr>
-                <Th>Vendor PO</Th><Th>Vendor</Th><Th>Order</Th><Th title="The day SASH received the Deere order (Firm Date)">Order date</Th><Th align="right">Qty</Th><Th>Received</Th>
+                {columns.shown.map((c) => <Th key={c.key} align={c.align} title={c.key === "order_date" ? "The day SASH received the Deere order (Firm Date)" : undefined}>{c.label}</Th>)}
               </tr>
             </thead>
             <tbody>
-              {data.data.map((row) => <Row key={row.id} row={row} editor={editor} onReceipts={() => setReceipts(row)} />)}
+              {data.data.map((row) => <Row key={row.id} row={row} columns={columns.shown} editor={editor} onReceipts={() => setReceipts(row)} />)}
             </tbody>
           </Table>
           <Pagination meta={data.meta} onPage={list.setPage} onPerPage={list.setPerPage} noun="vendor POs" />
@@ -117,27 +131,40 @@ export default function PurchaseOrdersPage() {
   );
 }
 
-function Row({ row, editor, onReceipts }: { row: PurchaseOrderRow; editor: boolean; onReceipts: () => void }) {
+function Row({ row, columns, editor, onReceipts }: { row: PurchaseOrderRow; columns: ColumnDef[]; editor: boolean; onReceipts: () => void }) {
   const received = Number(row.received_qty);
   const full = received >= Number(row.qty) && received > 0;
   const last = row.receipts[row.receipts.length - 1];
   return (
     <tr className="hover:bg-subtle/60">
-      <Td className="max-w-48 py-2">
+      {columns.map((c) => {
+        switch (c.key) {
+        case "number": return (
+      <Td key={c.key} className="max-w-48 py-2">
         <span className="block truncate font-medium" title={row.number}>{row.number}</span>
         <span className="block truncate text-xs text-ink-muted" title={row.filename ?? undefined}>{row.source === "file" ? "Uploaded list" : "Generated here"}</span>
       </Td>
-      {/* Vendor and part open their panels (the vendor's parts and details; the Product summary). */}
-      <Td className="max-w-44 truncate" title={row.vendor_name}><RelatedLink kind="vendor" value={row.vendor_name} id={row.vendor_id} /></Td>
-      <Td className="py-2">
+        );
+        // Vendor and part open their panels (the vendor's parts and details; the Product summary).
+        case "vendor": return (
+      <Td key={c.key} className="max-w-44 truncate" title={row.vendor_name}><RelatedLink kind="vendor" value={row.vendor_name} id={row.vendor_id} /></Td>
+        );
+        case "order": return (
+      <Td key={c.key} className="py-2">
         <span className="block"><RelatedLink kind="part" value={row.part_number} /></span>
         <span className="block text-xs text-ink-muted">PO {row.po_number} · {row.po_line_number} · ship {formatDate(row.ship_date)}</span>
       </Td>
-      {/* Order date: the day SASH received the Deere order (its first upload as Firm / Order). */}
-      <Td>{row.order_date ? formatDate(row.order_date) : dash}</Td>
-      <Td align="right">{formatQty(row.qty)} <span className="text-xs text-ink-muted">{row.unit}</span></Td>
-      {/* Received: Qty received of the PO's Qty, the last vendor invoice and its date; the button lists or adds receipts. */}
-      <Td className="py-2">
+        );
+        // Order date: the day SASH received the Deere order (its first upload as Firm / Order).
+        case "order_date": return (
+      <Td key={c.key}>{row.order_date ? formatDate(row.order_date) : dash}</Td>
+        );
+        case "qty": return (
+      <Td key={c.key} align="right">{formatQty(row.qty)} <span className="text-xs text-ink-muted">{row.unit}</span></Td>
+        );
+        // Received: Qty received of the PO's Qty, the last vendor invoice and its date; the button lists or adds receipts.
+        default: return (
+      <Td key={c.key} className="py-2">
         <button type="button" onClick={onReceipts} className="group text-left" title="Receipts: date received and vendor invoice">
           <span className={`block font-medium ${full ? "text-inc" : received > 0 ? "text-tint-amber-ink" : "text-ink-muted"}`}>
             {received > 0 ? `${full ? "✓ " : ""}${formatQty(row.received_qty)} of ${formatQty(row.qty)}` : "Not received"}
@@ -147,6 +174,9 @@ function Row({ row, editor, onReceipts }: { row: PurchaseOrderRow; editor: boole
           </span>
         </button>
       </Td>
+        );
+        }
+      })}
     </tr>
   );
 }

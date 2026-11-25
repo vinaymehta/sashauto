@@ -30,6 +30,8 @@ import { PageHeader, Panel } from "@/components/ui/panel";
 import { PanelSkeleton, TableSkeleton } from "@/components/ui/skeleton";
 import { SortTh } from "@/components/ui/sort-header";
 import { Pagination, Table, Td, Th } from "@/components/ui/table";
+import { ColumnsMenu } from "@/components/ui/columns-menu";
+import { useTableColumns, type ColumnDef } from "@/components/use-table-columns";
 
 const SET_MISSING = [{ value: "set", label: "Set" }, { value: "missing", label: "Missing" }];
 
@@ -47,6 +49,17 @@ function productFilters(commodityTypes: string[]): FilterGroup[] {
     { section: "Review", key: "conflicts", label: "Commodity conflicts", options: [{ value: "open", label: "Has open conflicts" }] },
   ];
 }
+
+// The columns of the Products table (Columns chooses and orders them per user); Actions (admins) is always last.
+const PRODUCT_COLUMNS: ColumnDef[] = [
+  { key: "part_number", label: "Part Number", sort: "part_number" },
+  { key: "description", label: "Description", sort: "description" },
+  { key: "sash_part", label: "SASH Part", sort: "sash_part" },
+  { key: "moq", label: "MOQ", sort: "moq", align: "right" },
+  { key: "customer_price", label: "Customer / pc", align: "right" },
+  { key: "best_vendor", label: "Best vendor / pc", align: "right" },
+  { key: "vendors", label: "Vendors", align: "center" },
+];
 
 // The tabs of the Products page.
 const PRODUCTS_TABS = ["list", "available", "totals", "summary", "issues"] as const;
@@ -78,6 +91,7 @@ function ProductsView() {
   const FILTERS = productFilters(commodityTypes);
   const filtered = q !== "" || Object.values(list.filters).some(Boolean);
   const clearAll = () => { list.clearFilters(); setSearch(""); };
+  const columns = useTableColumns("products", PRODUCT_COLUMNS);
   const sortProps = { sort: list.sort, direction: list.direction, onSort: list.toggleSort };
   const [viewing, setViewing] = useState<{ product: Product; edit: boolean } | null>(null);
   const [adding, setAdding] = useState(false);
@@ -133,6 +147,7 @@ function ProductsView() {
           <SearchInput label="Search products" placeholder="Search part, SASH, vendor part or description" value={search}
                        onSearch={(v) => { setSearch(v); list.resetPage(); }} className="w-full sm:w-72" />
           <FilterMenu groups={FILTERS} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
+          <ColumnsMenu {...columns.menu} />
         </ListToolbar>
         <FilterChips groups={FILTERS} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
         {error ? (
@@ -147,25 +162,20 @@ function ProductsView() {
           />
         ) : data ? (
           <div className={`transition-opacity duration-200 ${loading ? "opacity-50" : ""}`}>
-            {/* Columns size to their content and Description takes the rest. On smaller screens SASH Part, Description,
-                MOQ, the vendor count and (on phones) the prices drop out of the table and show under the Part Number
-                instead. A row opens the part panel, where everything about the part is edited. */}
+            {/* Columns are the user's choice (Columns); a click on a row opens the part panel, where everything about the
+                part is edited. */}
             <Table dense stickyHeader>
               <thead>
                 <tr>
-                  <SortTh label="Part Number" sortKey="part_number" {...sortProps} />
-                  <SortTh label="Description" sortKey="description" className="hidden w-full xl:table-cell" {...sortProps} />
-                  <SortTh label="SASH Part" sortKey="sash_part" className="hidden 2xl:table-cell" {...sortProps} />
-                  <SortTh label="MOQ" sortKey="moq" align="right" className="hidden xl:table-cell" {...sortProps} />
-                  <Th align="right" className="hidden sm:table-cell">Customer / pc</Th>
-                  <Th align="right" className="hidden sm:table-cell">Best vendor / pc</Th>
-                  <Th align="center" className="hidden xl:table-cell">Vendors</Th>
+                  {columns.shown.map((c) => c.sort
+                    ? <SortTh key={c.key} label={c.label} sortKey={c.sort} align={c.align} {...sortProps} />
+                    : <Th key={c.key} align={c.align}>{c.label}</Th>)}
                   {isAdmin && <Th align="right">Actions</Th>}
                 </tr>
               </thead>
               <tbody>
                 {data.data.map((p) => (
-                  <ProductRow key={p.id} product={p} active={viewing?.product.id === p.id} canEdit={isAdmin}
+                  <ProductRow key={p.id} product={p} columns={columns.shown} active={viewing?.product.id === p.id} canEdit={isAdmin}
                               onOpen={(edit) => setViewing({ product: p, edit })} />
                 ))}
               </tbody>
@@ -188,52 +198,44 @@ const perPiece = (value: string | null | undefined, currency: string) =>
 // One part: Part Number (with a conflict tag), description, SASH part, MOQ, Deere's price per piece, the lowest vendor
 // price per piece (and which vendor) and how many vendors supply it. A click opens the part panel; the pencil (admins)
 // opens it in edit mode.
-function ProductRow({ product, active, canEdit, onOpen }: { product: Product; active: boolean; canEdit: boolean; onOpen: (edit: boolean) => void }) {
+function ProductRow({ product, columns, active, canEdit, onOpen }: { product: Product; columns: ColumnDef[]; active: boolean; canEdit: boolean; onOpen: (edit: boolean) => void }) {
   const best = product.best_vendor_price;
   const moq = formatMoq(product);
-  const sub = "block max-w-[13rem] truncate text-xs text-ink-muted sm:max-w-[12rem] md:max-w-[16rem]";
   const customer = product.customer_price !== null ? formatCustomer(Number(product.customer_price) / 100, product.customer_currency) : null;
   return (
     <tr onClick={() => onOpen(false)} aria-haspopup="dialog" aria-expanded={active}
         className={`cursor-pointer align-middle transition-colors duration-150 hover:bg-neutral-50 [&>td]:h-14 [&>td]:py-2 ${active ? "shadow-[inset_3px_0_0_var(--color-accent)]" : ""}`}>
-      <Td>
-        <span className="flex items-center gap-2 font-medium">
-          <PartThumbnail
-            imageUrl={product.images?.[0]?.url}
-            images={product.images}
-            alt={product.part_number}
-            size="sm"
-            showFallback
-          />
-          {product.part_number}
-          {product.open_conflicts.length > 0 && <Badge tone="warn">Conflict</Badge>}
-          {product.discontinued && <span title="No more vendor POs for this part"><Badge tone="dark">Discontinued</Badge></span>}
-        </span>
-        {/* Shown here when their own columns are hidden. */}
-        {product.description && <span className={`${sub} xl:hidden`} title={product.description}>{product.description}</span>}
-        {product.sash_part && <span className={`${sub} 2xl:hidden`}>SASH {product.sash_part}</span>}
-        {moq && <span className={`${sub} xl:hidden`}>MOQ {moq}</span>}
-        {(customer || best) && (
-          <span className={`${sub} sm:hidden`}>
-            {customer && `Customer ${customer} / pc`}{customer && best && " · "}{best && `Best ${perPiece(best.amount, best.currency)} ${best.vendor}`}
-          </span>
-        )}
-      </Td>
-      <Td className="hidden max-w-0 truncate text-ink-muted xl:table-cell" title={product.description ?? undefined}>{product.description ?? dash}</Td>
-      <Td className="hidden 2xl:table-cell">{product.sash_part ?? dash}</Td>
-      {/* MOQ text from a vendor file can be long ("2000 pcs (200 of 10 pcs)"): it wraps instead of widening the table. */}
-      <Td align="right" className="hidden min-w-[6rem] max-w-[10rem] whitespace-normal text-sm leading-snug xl:table-cell">{moq ?? dash}</Td>
-      <Td align="right" className="hidden font-medium sm:table-cell">{customer ?? dash}</Td>
-      <Td align="right" className="hidden sm:table-cell" title={best ? best.vendor : undefined}>
-        {best ? <>
-          <span className="block font-medium text-ink">{perPiece(best.amount, best.currency)}</span>
-          {/* The vendor opens its panel (parts, prices and details). */}
-          <span className="ml-auto block max-w-[9rem] truncate text-xs text-ink-muted md:max-w-[11rem]">
-            {best.vendor_id ? <RelatedLink kind="vendor" value={best.vendor} id={best.vendor_id} /> : best.vendor}
-          </span>
-        </> : dash}
-      </Td>
-      <Td align="center" className="hidden xl:table-cell">{product.vendor_count ? formatCount(product.vendor_count) : dash}</Td>
+      {columns.map((c) => {
+        switch (c.key) {
+          case "part_number": return (
+            <Td key={c.key}>
+              <span className="flex items-center gap-2 font-medium">
+                <PartThumbnail imageUrl={product.images?.[0]?.url} images={product.images} alt={product.part_number} size="sm" showFallback />
+                {product.part_number}
+                {product.open_conflicts.length > 0 && <Badge tone="warn">Conflict</Badge>}
+                {product.discontinued && <span title="No more vendor POs for this part"><Badge tone="dark">Discontinued</Badge></span>}
+              </span>
+            </Td>
+          );
+          case "description": return <Td key={c.key} className="max-w-[20rem] truncate text-ink-muted" title={product.description ?? undefined}>{product.description ?? dash}</Td>;
+          case "sash_part": return <Td key={c.key}>{product.sash_part ?? dash}</Td>;
+          // MOQ text from a vendor file can be long ("2000 pcs (200 of 10 pcs)"): it wraps instead of widening the table.
+          case "moq": return <Td key={c.key} align="right" className="min-w-[6rem] max-w-[10rem] whitespace-normal text-sm leading-snug">{moq ?? dash}</Td>;
+          case "customer_price": return <Td key={c.key} align="right" className="font-medium">{customer ?? dash}</Td>;
+          case "best_vendor": return (
+            <Td key={c.key} align="right" title={best ? best.vendor : undefined}>
+              {best ? <>
+                <span className="block font-medium text-ink">{perPiece(best.amount, best.currency)}</span>
+                {/* The vendor opens its panel (parts, prices and details). */}
+                <span className="ml-auto block max-w-[11rem] truncate text-xs text-ink-muted">
+                  {best.vendor_id ? <RelatedLink kind="vendor" value={best.vendor} id={best.vendor_id} /> : best.vendor}
+                </span>
+              </> : dash}
+            </Td>
+          );
+          default: return <Td key={c.key} align="center">{product.vendor_count ? formatCount(product.vendor_count) : dash}</Td>;
+        }
+      })}
       {canEdit && (
         <Td align="right">
           <button type="button" onClick={(e) => { e.stopPropagation(); onOpen(true); }} title={`Edit ${product.part_number}`}

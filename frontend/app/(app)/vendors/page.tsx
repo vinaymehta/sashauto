@@ -22,6 +22,8 @@ import { SearchInput } from "@/components/ui/search-input";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { SortTh } from "@/components/ui/sort-header";
 import { Pagination, Table, Td, Th } from "@/components/ui/table";
+import { ColumnsMenu } from "@/components/ui/columns-menu";
+import { useTableColumns, type ColumnDef } from "@/components/use-table-columns";
 
 const dash = <span className="text-neutral-300">—</span>;
 
@@ -40,6 +42,16 @@ const iconButton = "inline-flex h-8 w-8 items-center justify-center rounded-md t
 
 // Vendors and the parts they supply. Click a vendor to see its parts in the side panel.
 // Admins can add and edit vendors (vendors are not deleted), manage their parts and import the vendor Excel file.
+// The columns of the Vendors table (Columns chooses and orders them per user); Action (admins) is always last.
+const VENDOR_COLUMNS: ColumnDef[] = [
+  { key: "name", label: "Vendor Name", sort: "name" },
+  { key: "code", label: "Code" },
+  { key: "phone", label: "Contact No" },
+  { key: "place_of_supply", label: "Place of Supply" },
+  { key: "product_count", label: "Products", sort: "product_count", align: "center" },
+  { key: "available_count", label: "Current Inventory", sort: "available_count", align: "center" },
+];
+
 export default function VendorsPage() {
   const isAdmin = can(useSession().user, "vendors", "edit"); // Vendors edit permission
   const list = useListQuery({}, 100, { key: "name", direction: "asc" });
@@ -57,6 +69,7 @@ export default function VendorsPage() {
   const filtered = q !== "" || Object.values(list.filters).some(Boolean);
   const clearAll = () => { list.clearFilters(); setSearch(""); };
 
+  const columns = useTableColumns("vendors", VENDOR_COLUMNS);
   const [open, setOpen] = useState<Vendor | null>(null);
   const [editing, setEditing] = useState<Vendor | "new" | null>(null);
   // The list, or the Import issues tab (problems from vendor file imports).
@@ -91,6 +104,7 @@ export default function VendorsPage() {
           <SearchInput label="Search vendors" placeholder="Search vendor or part number" value={search}
                        onSearch={(v) => { setSearch(v); list.resetPage(); }} className="w-full sm:w-72" />
           <FilterMenu groups={filters} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
+          <ColumnsMenu {...columns.menu} />
         </ListToolbar>
         <FilterChips groups={filters} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
         {error ? (
@@ -105,49 +119,39 @@ export default function VendorsPage() {
           />
         ) : data ? (
           <div className={`transition-opacity duration-200 ${loading ? "opacity-50" : ""}`}>
-            {/* The list shows who the vendor is; everything else is in its panel. Columns size to their content and the
-                name takes the rest. On smaller screens Contact No, Place of Supply, Current Inventory and Code drop out of
-                the table; code, phone and place then show under the name. Some phone fields hold names and notes, so the
-                number is cut with "…" (full text on hover). */}
+            {/* The columns are the user's choice (Columns); everything else about a vendor is in its panel. Some phone
+                fields hold names and notes, so the number is cut with "…" (full text on hover). */}
             <Table dense stickyHeader>
               <thead>
                 <tr>
-                  <SortTh label="Vendor Name" sortKey="name" className="w-full" {...sortProps} />
-                  <Th className="hidden sm:table-cell">Code</Th>
-                  <Th className="hidden 2xl:table-cell">Contact No</Th>
-                  <Th className="hidden xl:table-cell">Place of Supply</Th>
-                  <SortTh label="Products" sortKey="product_count" align="center" {...sortProps} />
-                  <SortTh label="Current Inventory" sortKey="available_count" align="center" className="hidden md:table-cell" {...sortProps} />
-                  {isAdmin && <Th align="right" className="hidden sm:table-cell">Action</Th>}
+                  {columns.shown.map((c) => c.sort
+                    ? <SortTh key={c.key} label={c.label} sortKey={c.sort} align={c.align} {...sortProps} />
+                    : <Th key={c.key}>{c.label}</Th>)}
+                  {isAdmin && <Th align="right">Action</Th>}
                 </tr>
               </thead>
               <tbody>
                 {data.data.map((v) => {
                   const phone = v.phone ?? v.mobile;
-                  const sub = "block truncate text-xs text-ink-muted";
                   return (
                     <tr key={v.id} onClick={() => setOpen(v)} aria-haspopup="dialog"
                         className={`cursor-pointer transition-colors hover:bg-neutral-50 [&>td]:h-14 [&>td]:py-2 ${open?.id === v.id ? "shadow-[inset_3px_0_0_var(--color-accent)]" : ""}`}>
-                      <Td className="max-w-0" title={v.name}>
-                        <span className="block truncate font-medium">{v.name}</span>
-                        {/* Shown here when their own columns are hidden. */}
-                        {v.code && <span className={`${sub} sm:hidden`}>{v.code}</span>}
-                        {(phone || v.place_of_supply) && (
-                          <span className={`${sub} 2xl:hidden`} title={phone ?? undefined}>
-                            {phone}
-                            {v.place_of_supply && <span className="xl:hidden">{phone ? " · " : ""}{v.place_of_supply}</span>}
-                          </span>
-                        )}
-                      </Td>
-                      <Td className="hidden font-semibold text-ink-muted sm:table-cell">{v.code ?? dash}</Td>
-                      <Td className="tabular hidden max-w-[12rem] truncate text-ink-muted 2xl:table-cell" title={phone ?? undefined}>{phone ?? dash}</Td>
-                      <Td className="hidden text-ink-muted xl:table-cell">{v.place_of_supply ?? dash}</Td>
-                      <Td align="center" className="tabular">{formatCount(v.product_count)}</Td>
-                      <Td align="center" className="tabular hidden md:table-cell" title={`${formatCount(v.available_count)} of ${formatCount(v.product_count)} parts have Current Inventory`}>
-                        {v.available_count ? <span className="font-semibold text-inc">{formatCount(v.available_count)}</span> : dash}
-                      </Td>
+                      {columns.shown.map((c) => {
+                        switch (c.key) {
+                          case "name": return <Td key={c.key} className="max-w-[24rem]" title={v.name}><span className="block truncate font-medium">{v.name}</span></Td>;
+                          case "code": return <Td key={c.key} className="font-semibold text-ink-muted">{v.code ?? dash}</Td>;
+                          case "phone": return <Td key={c.key} className="tabular max-w-[12rem] truncate text-ink-muted" title={phone ?? undefined}>{phone ?? dash}</Td>;
+                          case "place_of_supply": return <Td key={c.key} className="text-ink-muted">{v.place_of_supply ?? dash}</Td>;
+                          case "product_count": return <Td key={c.key} align="center" className="tabular">{formatCount(v.product_count)}</Td>;
+                          default: return (
+                            <Td key={c.key} align="center" className="tabular" title={`${formatCount(v.available_count)} of ${formatCount(v.product_count)} parts have Current Inventory`}>
+                              {v.available_count ? <span className="font-semibold text-inc">{formatCount(v.available_count)}</span> : dash}
+                            </Td>
+                          );
+                        }
+                      })}
                       {isAdmin && (
-                        <Td align="right" className="hidden space-x-1 sm:table-cell" onClick={(e) => e.stopPropagation()}>
+                        <Td align="right" className="space-x-1" onClick={(e) => e.stopPropagation()}>
                           <button type="button" className={iconButton} onClick={() => setEditing(v)} aria-label={`Edit ${v.name}`} title="Edit vendor">
                             <PencilIcon size={16} />
                           </button>

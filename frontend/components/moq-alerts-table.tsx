@@ -12,10 +12,24 @@ import { ListToolbar } from "./ui/list-toolbar";
 import { SearchInput } from "./ui/search-input";
 import { TableSkeleton } from "./ui/skeleton";
 import { Pagination, Table, Td, Th } from "./ui/table";
+import { ColumnsMenu } from "./ui/columns-menu";
+import { useTableColumns, type ColumnDef } from "./use-table-columns";
+
+// The columns of the MOQ alerts table (Columns chooses and orders them per user).
+const MOQ_COLUMNS: ColumnDef[] = [
+  { key: "po", label: "PO Number" },
+  { key: "part_number", label: "Part Number" },
+  { key: "part_description", label: "Part Description" },
+  { key: "type", label: "Type" },
+  { key: "ship_date", label: "Ship Date" },
+  { key: "qty", label: "Qty", align: "right" },
+  { key: "moq", label: "MOQ", align: "right" },
+];
 
 // MOQ alerts of an upload: parts whose Qty still to order (Firm less PO issued) is below the Part Number's MOQ.
 // `manual`: also list alerts of manual orders created/edited since this (latest) upload.
 export function MoqAlertsTable({ uploadId, manual = false }: { uploadId: number; manual?: boolean }) {
+  const columns = useTableColumns("moq_alerts", MOQ_COLUMNS);
   const list = useListQuery();
   const [search, setSearch] = useState("");
   const q = useDebounced(search.trim());
@@ -36,6 +50,7 @@ export function MoqAlertsTable({ uploadId, manual = false }: { uploadId: number;
             Export
           </a>
         )}
+        <ColumnsMenu {...columns.menu} />
       </ListToolbar>
       {error ? (
         <div className="p-4"><Alert title="Could not load MOQ alerts">{error.message}</Alert></div>
@@ -52,25 +67,23 @@ export function MoqAlertsTable({ uploadId, manual = false }: { uploadId: number;
           <Table dense stickyHeader>
             <thead>
               <tr>
-                <Th>PO Number</Th>
-                <Th>Part Number</Th>
-                <Th>Part Description</Th>
-                <Th>Type</Th>
-                <Th>Ship Date</Th>
-                <Th align="right">Qty</Th>
-                <Th align="right">MOQ</Th>
+                {columns.shown.map((c) => <Th key={c.key} align={c.align}>{c.label}</Th>)}
               </tr>
             </thead>
             <tbody>
               {data.data.map((c) => (
                 <tr key={c.id} className="transition-colors hover:bg-canvas">
-                  <Td><RelatedLink kind="po" value={c.po_number} uploadId={manual ? undefined : uploadId} /></Td>
-                  <Td><RelatedLink kind="part" value={c.part_number} uploadId={manual ? undefined : uploadId} /></Td>
-                  <Td><span className="block w-72 whitespace-normal break-words py-1 leading-snug">{c.part_description || "—"}</span></Td>
-                  <Td>{c.order_type}</Td>
-                  <Td className="tabular">{formatDate(c.ship_date)}</Td>
-                  <Td align="right" className="tabular font-semibold text-down">{formatQty(c.qty)}</Td>
-                  <Td align="right" className="tabular">{formatQty(c.moq)}</Td>
+                  {columns.shown.map((col) => {
+                    switch (col.key) {
+                      case "po": return <Td key={col.key}><RelatedLink kind="po" value={c.po_number} uploadId={manual ? undefined : uploadId} /></Td>;
+                      case "part_number": return <Td key={col.key}><RelatedLink kind="part" value={c.part_number} uploadId={manual ? undefined : uploadId} /></Td>;
+                      case "part_description": return <Td key={col.key}><span className="block w-72 whitespace-normal break-words py-1 leading-snug">{c.part_description || "—"}</span></Td>;
+                      case "type": return <Td key={col.key}>{c.order_type}</Td>;
+                      case "ship_date": return <Td key={col.key} className="tabular">{formatDate(c.ship_date)}</Td>;
+                      case "qty": return <Td key={col.key} align="right" className="tabular font-semibold text-down">{formatQty(c.qty)}</Td>;
+                      default: return <Td key={col.key} align="right" className="tabular">{formatQty(c.moq)}</Td>;
+                    }
+                  })}
                 </tr>
               ))}
             </tbody>

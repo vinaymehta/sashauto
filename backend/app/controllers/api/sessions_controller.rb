@@ -74,6 +74,22 @@ module Api
       end
     end
 
+    # The signed-in user's own choice of columns for one of the other tables (`table`: its name, e.g. "products"): the
+    # keys of the columns they show, in order (`shown`). `default=1`: back to the table's default columns.
+    def table_columns
+      table = params[:table].to_s
+      return render_error("Unknown table", :unprocessable_content) unless table.match?(/\A[a-z0-9_]{1,60}\z/)
+
+      tables = current_user.table_columns.except(table)
+      tables[table] = Array(params.permit(shown: [])[:shown]).map(&:to_s).uniq unless ActiveModel::Type::Boolean.new.cast(params[:default])
+      configurable = current_user.configurable.merge("table_columns" => tables)
+      if current_user.update(configurable: configurable)
+        render json: { user: Serializers.user(current_user) }
+      else
+        render_error current_user.errors.full_messages.to_sentence, :unprocessable_content
+      end
+    end
+
     def destroy
       audit("session.logout")
       reset_session

@@ -16,6 +16,8 @@ interface SessionState {
   refresh: () => Promise<void>;
   // Saves the Orders table columns the signed-in user shows (shown at once; restored if saving fails).
   saveOrdersColumns: (shown: string[] | null) => Promise<void>; // null: back to the default columns
+  // The same for any other table (by its name, e.g. "products").
+  saveTableColumns: (table: string, shown: string[] | null) => Promise<void>;
 }
 
 const SessionContext = createContext<SessionState | null>(null);
@@ -93,8 +95,28 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const saveTableColumns = useCallback(async (table: string, shown: string[] | null) => {
+    let before: string[] | null = null;
+    setUser((u) => {
+      before = u?.table_columns?.[table] ?? null;
+      if (!u) return u;
+      const { [table]: _old, ...rest } = u.table_columns ?? {};
+      return { ...u, table_columns: shown ? { ...rest, [table]: shown } : rest };
+    });
+    try {
+      await api.patch<{ user: User }>("/api/session/table_columns", shown ? { table, shown } : { table, default: true });
+    } catch (err) {
+      setUser((u) => {
+        if (!u) return u;
+        const { [table]: _old, ...rest } = u.table_columns ?? {};
+        return { ...u, table_columns: before ? { ...rest, [table]: before } : rest };
+      });
+      throw err;
+    }
+  }, []);
+
   return (
-    <SessionContext.Provider value={{ user, loading, signIn, signOut, changePassword, refresh, saveOrdersColumns }}>{children}</SessionContext.Provider>
+    <SessionContext.Provider value={{ user, loading, signIn, signOut, changePassword, refresh, saveOrdersColumns, saveTableColumns }}>{children}</SessionContext.Provider>
   );
 }
 

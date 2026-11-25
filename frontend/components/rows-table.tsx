@@ -15,6 +15,22 @@ import { FilterChips, FilterMenu, type FilterGroup } from "./ui/filter-menu";
 import { TableSkeleton } from "./ui/skeleton";
 import { SortTh } from "./ui/sort-header";
 import { Pagination, Table, Td } from "./ui/table";
+import { ColumnsMenu } from "./ui/columns-menu";
+import { useTableColumns, type ColumnDef } from "./use-table-columns";
+
+// The columns of the order rows table (Columns chooses and orders them per user).
+const ROW_COLUMNS: ColumnDef[] = [
+  { key: "excel_row", label: "Excel Row", align: "right" },
+  { key: "type", label: "Type" },
+  { key: "po", label: "PO / Line" },
+  { key: "part_number", label: "Part Number" },
+  { key: "commodity_type", label: "Commodity Type" },
+  { key: "ship_date", label: "Ship Date" },
+  { key: "ship_to", label: "Ship To" },
+  { key: "qty", label: "Qty", align: "right" },
+  { key: "previous_qty", label: "Previous Qty", align: "right" },
+  { key: "effective_qty", label: "Compared Qty", align: "right" },
+];
 
 // The stored order rows of one version: what the uploaded workbook contained after
 // normalization (one row per order key; merged duplicates list all their Excel rows).
@@ -38,6 +54,7 @@ export function RowsTable({ uploadId }: { uploadId: number }) {
     AGE_FILTER,
   ];
   const filtered = q !== "" || Object.values(list.filters).some(Boolean);
+  const columns = useTableColumns("snapshot_rows", ROW_COLUMNS);
   const sortProps = { sort: list.sort, direction: list.direction, onSort: list.toggleSort };
   const [today] = useState(() => new Date());
 
@@ -47,6 +64,7 @@ export function RowsTable({ uploadId }: { uploadId: number }) {
         <SearchInput label="Search rows" placeholder="Search PO, part number or commodity" value={search}
                      onSearch={(v) => { setSearch(v); list.resetPage(); }} className="w-full sm:w-72" />
         <FilterMenu groups={filters} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
+        <ColumnsMenu {...columns.menu} />
       </ListToolbar>
       <FilterChips groups={filters} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
       <AgeLegend value={list.filters.age} onChange={(v) => list.setFilter("age", v)} />
@@ -63,42 +81,41 @@ export function RowsTable({ uploadId }: { uploadId: number }) {
           <Table dense>
             <thead>
               <tr>
-                <SortTh label="Excel Row" sortKey="excel_row" align="right" {...sortProps} />
-                <SortTh label="Type" sortKey="type" {...sortProps} />
-                <SortTh label="PO / Line" sortKey="po" {...sortProps} />
-                <SortTh label="Part Number" sortKey="part_number" {...sortProps} />
-                <SortTh label="Commodity Type" sortKey="commodity_type" {...sortProps} />
-                <SortTh label="Ship Date" sortKey="ship_date" {...sortProps} />
-                <SortTh label="Ship To" sortKey="ship_to" {...sortProps} />
-                <SortTh label="Qty" sortKey="qty" align="right" {...sortProps} />
-                <SortTh label="Previous Qty" sortKey="previous_qty" align="right" {...sortProps} />
-                <SortTh label="Compared Qty" sortKey="effective_qty" align="right" {...sortProps} />
+                {columns.shown.map((c) => <SortTh key={c.key} label={c.label} sortKey={c.key} align={c.align} {...sortProps} />)}
               </tr>
             </thead>
             <tbody>
               {data.data.map((r) => (
                 <tr key={r.id} {...ageRowProps(r.firm_date, today)}>
-                  <Td align="right" className="text-ink-muted" title={r.source_row_numbers.length > 1 ? "Duplicate rows merged into one order row" : undefined}>
-                    {r.source_row_numbers.join(", ")}
-                  </Td>
-                  <Td>{r.order_type}</Td>
-                  <Td><span className="font-medium">{r.po_number}</span><span className="text-ink-faint"> / {r.po_line_number}</span></Td>
-                  <Td>{r.part_number}</Td>
-                  <Td className="text-ink-muted">{r.commodity_type ?? "—"}</Td>
-                  <Td className="tabular">{formatDate(r.ship_date)}</Td>
-                  <Td className="text-ink-muted">{r.ship_to_location}</Td>
-                  <Td align="right">{formatQty(r.qty)}</Td>
-                  <Td align="right" className="text-ink-muted">{formatQty(r.previous_qty)}</Td>
-                  <Td align="right">
-                    {r.quantity_source === "unknown"
-                      ? <Badge tone="neutral">Unknown</Badge>
-                      : <span className="inline-flex items-center gap-1.5">
-                          {r.quantity_source === "previous_qty" && (
-                            <span title="Qty is blank, so Previous Qty is used" className="rounded border border-line bg-subtle px-1 text-2xs font-medium uppercase tracking-wide text-ink-muted">Prev</span>
-                          )}
-                          <span className="font-semibold">{formatQty(r.effective_qty)}</span>
-                        </span>}
-                  </Td>
+                  {columns.shown.map((c) => {
+                    switch (c.key) {
+                      case "excel_row": return (
+                        <Td key={c.key} align="right" className="text-ink-muted" title={r.source_row_numbers.length > 1 ? "Duplicate rows merged into one order row" : undefined}>
+                          {r.source_row_numbers.join(", ")}
+                        </Td>
+                      );
+                      case "type": return <Td key={c.key}>{r.order_type}</Td>;
+                      case "po": return <Td key={c.key}><span className="font-medium">{r.po_number}</span><span className="text-ink-faint"> / {r.po_line_number}</span></Td>;
+                      case "part_number": return <Td key={c.key}>{r.part_number}</Td>;
+                      case "commodity_type": return <Td key={c.key} className="text-ink-muted">{r.commodity_type ?? "—"}</Td>;
+                      case "ship_date": return <Td key={c.key} className="tabular">{formatDate(r.ship_date)}</Td>;
+                      case "ship_to": return <Td key={c.key} className="text-ink-muted">{r.ship_to_location}</Td>;
+                      case "qty": return <Td key={c.key} align="right">{formatQty(r.qty)}</Td>;
+                      case "previous_qty": return <Td key={c.key} align="right" className="text-ink-muted">{formatQty(r.previous_qty)}</Td>;
+                      default: return (
+                        <Td key={c.key} align="right">
+                          {r.quantity_source === "unknown"
+                            ? <Badge tone="neutral">Unknown</Badge>
+                            : <span className="inline-flex items-center gap-1.5">
+                                {r.quantity_source === "previous_qty" && (
+                                  <span title="Qty is blank, so Previous Qty is used" className="rounded border border-line bg-subtle px-1 text-2xs font-medium uppercase tracking-wide text-ink-muted">Prev</span>
+                                )}
+                                <span className="font-semibold">{formatQty(r.effective_qty)}</span>
+                              </span>}
+                        </Td>
+                      );
+                    }
+                  })}
                 </tr>
               ))}
             </tbody>

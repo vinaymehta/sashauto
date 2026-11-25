@@ -12,12 +12,24 @@ import { Panel } from "../ui/panel";
 import { SearchInput } from "../ui/search-input";
 import { TableSkeleton } from "../ui/skeleton";
 import { Pagination, Table, Td, Th } from "../ui/table";
+import { ColumnsMenu } from "../ui/columns-menu";
+import { useTableColumns, type ColumnDef } from "../use-table-columns";
+
+// The columns of the Current inventory table (Columns chooses and orders them per user).
+const INVENTORY_COLUMNS: ColumnDef[] = [
+  { key: "part_number", label: "Part Number" },
+  { key: "sash_part", label: "SASH Part" },
+  { key: "description", label: "Description" },
+  { key: "vendor", label: "Vendor" },
+  { key: "available_qty", label: "Current Inventory", align: "right" },
+];
 
 const dash = <span className="text-neutral-300">—</span>;
 
 // Products page, "Current inventory" tab: the parts a vendor has available now (its "Current Inventory" quantity, entered
 // with the vendor's part), with the vendor and the quantity.
 export function AvailablePartsPanel() {
+  const columns = useTableColumns("current_inventory", INVENTORY_COLUMNS);
   const list = useListQuery({}, 100, { key: "part_number", direction: "asc" });
   const [search, setSearch] = useState("");
   const q = useDebounced(search.trim());
@@ -28,6 +40,7 @@ export function AvailablePartsPanel() {
       <ListToolbar summary={data ? `${formatCount(data.meta.total)} part${data.meta.total === 1 ? "" : "s"} in current inventory` : ""}>
         <SearchInput label="Search current inventory" placeholder="Search part, SASH part, description or vendor" value={search}
                      onSearch={(v) => { setSearch(v); list.resetPage(); }} className="w-full sm:w-72" />
+        <ColumnsMenu {...columns.menu} />
       </ListToolbar>
       {error ? (
         <div className="p-4"><Alert title="Could not load the current inventory">{error.message}</Alert></div>
@@ -41,31 +54,24 @@ export function AvailablePartsPanel() {
         />
       ) : data ? (
         <div className={`transition-opacity duration-200 ${loading ? "opacity-50" : ""}`}>
-          {/* Columns size to their content and Description takes the rest; on smaller screens Description and SASH Part
-              show under the Part Number instead (and on phones the vendor). */}
           <Table dense stickyHeader>
             <thead>
               <tr>
-                <Th>Part Number</Th>
-                <Th className="hidden md:table-cell">SASH Part</Th>
-                <Th className="hidden w-full lg:table-cell">Description</Th>
-                <Th className="hidden sm:table-cell">Vendor</Th>
-                <Th align="right">Current Inventory</Th>
+                {columns.shown.map((c) => <Th key={c.key} align={c.align}>{c.label}</Th>)}
               </tr>
             </thead>
             <tbody>
               {data.data.map((item) => (
                 <tr key={item.id} className="transition-colors hover:bg-neutral-50/60 [&>td]:h-14 [&>td]:py-2">
-                  <Td>
-                    <span className="block font-medium">{item.part_number}</span>
-                    <span className="block max-w-[12rem] truncate text-xs text-ink-muted sm:hidden">{item.vendor_name}</span>
-                    {item.sash_part && <span className="block text-xs text-ink-muted md:hidden">SASH {item.sash_part}</span>}
-                    {item.description && <span className="block max-w-[14rem] truncate text-xs text-ink-muted lg:hidden" title={item.description}>{item.description}</span>}
-                  </Td>
-                  <Td className="hidden md:table-cell">{item.sash_part ?? dash}</Td>
-                  <Td className="hidden max-w-0 truncate text-ink-muted lg:table-cell" title={item.description ?? undefined}>{item.description ?? dash}</Td>
-                  <Td className="hidden max-w-xs truncate sm:table-cell" title={item.vendor_name}>{item.vendor_name}</Td>
-                  <Td align="right" className="font-semibold">{formatQty(item.available_qty!)} pcs</Td>
+                  {columns.shown.map((c) => {
+                    switch (c.key) {
+                      case "part_number": return <Td key={c.key}><span className="block font-medium">{item.part_number}</span></Td>;
+                      case "sash_part": return <Td key={c.key}>{item.sash_part ?? dash}</Td>;
+                      case "description": return <Td key={c.key} className="max-w-[24rem] truncate text-ink-muted" title={item.description ?? undefined}>{item.description ?? dash}</Td>;
+                      case "vendor": return <Td key={c.key} className="max-w-xs truncate" title={item.vendor_name}>{item.vendor_name}</Td>;
+                      default: return <Td key={c.key} align="right" className="font-semibold">{formatQty(item.available_qty!)} pcs</Td>;
+                    }
+                  })}
                 </tr>
               ))}
             </tbody>

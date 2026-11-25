@@ -16,7 +16,7 @@ const Grip = () => (
   </svg>
 );
 
-// "Columns" button beside Filter on the Orders table: opens the list of the table's columns in the right-hand side
+// "Columns" button beside Filter on a table (Orders first, then every other): opens the list of the table's columns in the right-hand side
 // panel, each ticked when shown (`shown`: the keys the table shows now, in its order — the user's choice or the default
 // columns). The shown ones come first in that order and can be dragged (or moved with the arrows) to reorder the table;
 // the hidden ones follow in file order, and a ticked one goes last. Changes are made to a draft and saved for the
@@ -24,10 +24,12 @@ const Grip = () => (
 // the panel otherwise drops them. At least one column stays shown. `saved` is the list the change is made to: it also
 // keeps the columns other files have. Default puts the default columns (`defaults`) in the draft; saved, the user's own
 // choice is cleared, so they follow the default columns again.
-export function ColumnsMenu({ columns, shown, saved, defaults }: {
+export function ColumnsMenu({ columns, shown, saved, defaults, table = "orders" }: {
   columns: { key: string; label: string }[]; shown: string[]; saved: string[]; defaults: string[];
+  table?: string; // the table's name: "orders", or the one the choice is saved under (session saveTableColumns)
 }) {
-  const { saveOrdersColumns } = useSession();
+  const { saveOrdersColumns, saveTableColumns } = useSession();
+  const saveColumns = table === "orders" ? saveOrdersColumns : (list: string[] | null) => saveTableColumns(table, list);
   const notify = useToast();
   const [open, setOpen] = useState(false);
   // The list being edited in the panel (null: nothing changed yet), saved with Save.
@@ -50,7 +52,7 @@ export function ColumnsMenu({ columns, shown, saved, defaults }: {
   const isDefault = current.join("\u0000") === defaults.filter((k) => byKey.has(k)).join("\u0000");
 
   function save() {
-    if (draft) saveOrdersColumns(toDefault ? null : draft).catch(() => notify("The columns could not be saved. Try again.", "error"));
+    if (draft) saveColumns(toDefault ? null : draft).catch(() => notify("The columns could not be saved. Try again.", "error"));
     closePanel();
   }
 

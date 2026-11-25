@@ -64,6 +64,11 @@ class User < ApplicationRecord
     configurable["orders_columns"]
   end
 
+  # Column keys each other table shows, by table name ("products", "vendors", …); a table not in it shows its defaults.
+  def table_columns
+    configurable.fetch("table_columns", {})
+  end
+
   # Every section with the level in effect.
   def effective_permissions
     SECTIONS.to_h { |section| [ section, permission(section) ] }
@@ -102,12 +107,18 @@ class User < ApplicationRecord
     end
   end
 
-  # The user's own settings: orders_columns, a list of 1 to 300 column keys (each a short text), or not set.
+  # The user's own settings: orders_columns (the Orders table) and table_columns (every other table, by name): each a list
+  # of 1 to 300 column keys (each a short text), or not set.
   def configurable_valid
-    shown = configurable.is_a?(Hash) ? configurable.fetch("orders_columns", [ "default" ]) : nil
-    unless configurable.is_a?(Hash) && (configurable.keys - %w[orders_columns]).empty? && shown.is_a?(Array) && shown.size.between?(1, 300) &&
-           shown.all? { |key| key.is_a?(String) && key.present? && key.size <= 200 }
-      errors.add(:configurable, "must hold orders_columns, a list of 1 to 300 column keys")
+    unless configurable.is_a?(Hash) && (configurable.keys - %w[orders_columns table_columns]).empty? &&
+           (!configurable.key?("orders_columns") || column_keys?(configurable["orders_columns"])) &&
+           (!configurable.key?("table_columns") || (configurable["table_columns"].is_a?(Hash) && configurable["table_columns"].size <= 100 &&
+             configurable["table_columns"].all? { |table, keys| table.is_a?(String) && table.match?(/\A[a-z0-9_]{1,60}\z/) && column_keys?(keys) }))
+      errors.add(:configurable, "must hold orders_columns and table_columns, each a list of 1 to 300 column keys")
     end
+  end
+
+  def column_keys?(shown)
+    shown.is_a?(Array) && shown.size.between?(1, 300) && shown.all? { |key| key.is_a?(String) && key.present? && key.size <= 200 }
   end
 end

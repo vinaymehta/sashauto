@@ -15,7 +15,7 @@ import { CreateOrderPanel, UploadOrdersPanel } from "@/components/orders/create-
 import { InvoiceUploadPanel } from "@/components/orders/invoice-upload-panel";
 import { DispatchImportPanel } from "@/components/orders/dispatch-import-panel";
 import { OrderActions, UploadPicker } from "@/components/orders/orders-menu";
-import { ColumnsMenu } from "@/components/orders/columns-menu";
+import { ColumnsMenu } from "@/components/ui/columns-menu";
 import { QtyChangeTip } from "@/components/orders/qty-change-tip";
 import { DeliveryCell } from "@/components/orders/delivery-cell";
 import { OpenOrderContext, OrderDetailsLink } from "@/components/orders/order-details-modal";
