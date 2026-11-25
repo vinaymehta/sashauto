@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode, ThHTMLAttributes, TdHTMLAttributes } from "react";
 import type { PageMeta } from "@/lib/types";
 import { formatCount } from "@/lib/format";
@@ -9,8 +12,28 @@ import { ChevronLeftIcon, ChevronRightIcon } from "../icons";
 export function Table({ children, dense = false, fixed = false, minWidth = "min-w-[720px]", stickyHeader = false }: {
   children: ReactNode; dense?: boolean; fixed?: boolean; minWidth?: string; stickyHeader?: boolean;
 }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState<number>();
+  // A sticky-header table gets the whole screen under the app bar (3.5rem), however far the page is scrolled. The first
+  // downward wheel over it brings its top up under the app bar, so the stat boxes above never eat into the scroll area.
+  useEffect(() => {
+    const el = box.current;
+    if (!stickyHeader || !el) return;
+    const size = () => setHeight(Math.max(240, window.innerHeight - 56 - 8));
+    const wheel = (e: WheelEvent) => {
+      const top = el.getBoundingClientRect().top;
+      if (e.deltaY > 0 && !e.shiftKey && top > 60 && el.scrollHeight > el.clientHeight) {
+        e.preventDefault();
+        window.scrollBy({ top: top - 56 });
+      }
+    };
+    size();
+    window.addEventListener("resize", size);
+    el.addEventListener("wheel", wheel, { passive: false });
+    return () => { window.removeEventListener("resize", size); el.removeEventListener("wheel", wheel); };
+  }, [stickyHeader]);
   return (
-    <div className={`animate-fade-in ${stickyHeader ? "max-h-[calc(100vh-14rem)] overflow-auto" : "overflow-x-auto"}`}>
+    <div ref={box} style={stickyHeader && height ? { maxHeight: height } : undefined} className={`animate-fade-in ${stickyHeader ? "overflow-auto" : "overflow-x-auto"}`}>
       <table className={`w-full border-collapse text-base ${fixed ? `${minWidth} table-fixed` : ""} ${stickyHeader ? "[&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-10 [&_thead_th]:shadow-[inset_0_-1px_0_var(--color-line)]" : ""} ${dense ? "[&_td]:px-3 [&_th]:px-3 [&_td:first-child]:pl-6 [&_th:first-child]:pl-6 [&_td:last-child]:pr-6 [&_th:last-child]:pr-6" : ""}`}>{children}</table>
     </div>
   );

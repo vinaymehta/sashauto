@@ -98,7 +98,7 @@ export default function PurchaseOrdersPage() {
           <EmptyState title={q || list.filters.source || list.filters.received ? "No purchase orders match" : "No purchase orders yet"}
                       description={q ? "Try a different search." : "Generate POs with Place order on the Orders page, or upload a vendor PO list."} />
         ) : data && (<>
-          <Table minWidth="min-w-[960px]">
+          <Table minWidth="min-w-[960px]" stickyHeader>
             <thead>
               <tr>
                 <Th>Vendor PO</Th><Th>Vendor</Th><Th>Order</Th><Th title="The day SASH received the Deere order (Firm Date)">Order date</Th><Th align="right">Qty</Th><Th>Received</Th>
