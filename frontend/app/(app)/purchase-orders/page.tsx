@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { can } from "@/lib/permissions";
 import { formatCount, formatDate, formatQty } from "@/lib/format";
@@ -24,7 +24,7 @@ import { PageHeader, Panel } from "@/components/ui/panel";
 import { SearchInput } from "@/components/ui/search-input";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { Pagination, Table, Td, Th } from "@/components/ui/table";
-import { ExampleLink } from "@/components/ui/example-link";
+import { ListUploadSheet } from "@/components/orders/list-upload-sheet";
 import { Tabs } from "@/components/ui/tabs";
 
 const dash = <span className="text-neutral-300">—</span>;
@@ -224,29 +224,7 @@ function Receipts({ row, editor, admin, onClose, onChanged }: { row: PurchaseOrd
 // One Upload button: its menu uploads a vendor PO list ("orders") or a Purchase Received file ("received"), one .xlsx
 // of the chosen business.
 function UploadMenu({ business, onDone }: { business: string; onDone: (result: VendorPoImportInfo) => void }) {
-  const notify = useToast();
-  const inputs = { orders: useRef<HTMLInputElement>(null), received: useRef<HTMLInputElement>(null) };
-  const [busy, setBusy] = useState<VendorPoImportInfo["kind"] | null>(null);
-  async function upload(kind: VendorPoImportInfo["kind"], file: File | undefined) {
-    if (!file) return;
-    setBusy(kind);
-    const received = kind === "received";
-    const form = new FormData();
-    form.append("file", file);
-    try {
-      const { data } = await api.post<{ data: VendorPoImportInfo }>(received ? "/api/purchase_orders/import_received" : "/api/purchase_orders/import", form);
-      notify(`${formatCount(data.created)} ${received ? "receipt row" : "vendor PO"}${data.created === 1 ? "" : "s"} recorded` +
-             `${data.skipped.length ? `, ${formatCount(data.skipped.length)} row${data.skipped.length === 1 ? "" : "s"} skipped` : ""}.`,
-             data.skipped.length ? "error" : "success");
-      onDone(data);
-    } catch (err) {
-      notify(err instanceof ApiError ? err.message : "The upload failed.", "error");
-    } finally {
-      setBusy(null);
-      const input = inputs[kind].current;
-      if (input) input.value = "";
-    }
-  }
+  const [sheet, setSheet] = useState<VendorPoImportInfo["kind"] | null>(null);
   const items: { kind: VendorPoImportInfo["kind"]; label: string; hint: string }[] = [
     { kind: "orders", label: "Vendor PO list", hint: "Deere dump with Vendor Name, PO Qty Issued and vendor PO number" },
     { kind: "received", label: "Purchase received", hint: "Vendor Invoice Date, Invoice No., Part, vendor, Quantity" },
@@ -256,25 +234,20 @@ function UploadMenu({ business, onDone }: { business: string; onDone: (result: V
   }
   return (
     <>
-      {items.map((i) => <input key={i.kind} ref={inputs[i.kind]} type="file" accept=".xlsx" hidden onChange={(e) => upload(i.kind, e.target.files?.[0])} />)}
-      <Dropdown width="w-80" label={<span className="inline-flex items-center gap-1.5"><UploadIcon size={15} className="text-ink-muted" />{busy ? "Uploading…" : "Upload"}</span>}>
+      <Dropdown width="w-80" label={<span className="inline-flex items-center gap-1.5"><UploadIcon size={15} className="text-ink-muted" />Upload</span>}>
         {(close) => (
           <div className="py-1">
             {items.map((i) => (
-              <button key={i.kind} type="button" role="menuitem" disabled={busy !== null}
-                      onClick={() => { close(); inputs[i.kind].current?.click(); }}
-                      className="flex w-full flex-col px-4 py-2.5 text-left transition-colors hover:bg-canvas disabled:opacity-50">
+              <button key={i.kind} type="button" role="menuitem" onClick={() => { close(); setSheet(i.kind); }}
+                      className="flex w-full flex-col px-4 py-2.5 text-left transition-colors hover:bg-canvas">
                 <span className="text-sm font-medium text-ink">{i.label}</span>
                 <span className="text-xs text-ink-muted">{i.hint}</span>
               </button>
             ))}
-            <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 border-t border-line px-4 py-2.5">
-              <ExampleLink kind="vendor_po_list" label="Example vendor PO list" />
-              <ExampleLink kind="purchase_received" label="Example purchase received" />
-            </div>
           </div>
         )}
       </Dropdown>
+      {sheet && <ListUploadSheet kind={sheet} onClose={() => setSheet(null)} onDone={onDone} />}
     </>
   );
 }

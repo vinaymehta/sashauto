@@ -1,19 +1,16 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import type { OrderRow } from "@/lib/types";
-import type { VendorPoImportInfo } from "@/lib/types";
-import { api, ApiError } from "@/lib/api";
 import { can } from "@/lib/permissions";
-import { formatCount, formatDate, formatQty } from "@/lib/format";
+import { formatDate, formatQty } from "@/lib/format";
 import { useApi } from "../use-api";
 import { useSession } from "../session";
 import { useBusiness } from "../business-switch";
-import { useToast } from "../toast";
 import { Alert } from "../ui/feedback";
 import { Button } from "../ui/button";
 import { Skeleton } from "../ui/skeleton";
-import { ExampleLink, type ExampleKind } from "../ui/example-link";
+import { ListUploadSheet } from "./list-upload-sheet";
 import { RelatedLink } from "./related-popover";
 import { DeliveryCell } from "./delivery-cell";
 import { InvoiceUploadPanel } from "./invoice-upload-panel";
@@ -25,8 +22,6 @@ import { TruckIcon, UploadIcon } from "../icons";
 // other POs, and takes only this PO's rows from a vendor PO list, so no other PO's order is touched.
 export function PoManageSection({ po, uploadId, onChanged }: { po: string; uploadId?: number; onChanged: () => void }) {
   const me = useSession().user;
-  const notify = useToast();
-  const { view: business } = useBusiness();
   const editor = can(me, "orders", "edit");
   const canInvoice = me?.role === "admin" || me?.role === "warehouse_manager";
   // Only the current order data can be changed: an earlier upload's rows are history.
@@ -48,8 +43,8 @@ export function PoManageSection({ po, uploadId, onChanged }: { po: string; uploa
         </div>
         {current && (
           <div className="flex flex-wrap items-center gap-2">
-            {canInvoice && <InvoiceButton only="inc" po={po} onClick={() => setInvoice("inc")} />}
-            {me?.role === "admin" && <InvoiceButton only="india" po={po} onClick={() => setInvoice("india")} />}
+            {canInvoice && <InvoiceButton only="inc" onClick={() => setInvoice("inc")} />}
+            {me?.role === "admin" && <InvoiceButton only="india" onClick={() => setInvoice("india")} />}
             {editor && <ListUploadButton kind="orders" po={po} onDone={refresh} />}
             {editor && <ListUploadButton kind="received" po={po} onDone={refresh} />}
           </div>
@@ -89,58 +84,28 @@ export function PoManageSection({ po, uploadId, onChanged }: { po: string; uploa
   );
 }
 
-// Upload a vendor PO list, or a Purchase Received file, for one PO (and one part when `part` is given): only the rows
-// of that PO's parts are taken from the file. The example link next to it shows the columns.
+// Upload vendor PO / Upload received: the button opens a slider with the file's description, its example and Choose file.
 function ListUploadButton({ kind, po, part, onDone }: { kind: "orders" | "received"; po: string; part?: string; onDone: () => void }) {
-  const notify = useToast();
   const { view: business } = useBusiness();
-  const [busy, setBusy] = useState(false);
-  const file = useRef<HTMLInputElement>(null);
-  const received = kind === "received";
-  const what = part ? `PO ${po} · ${part}` : `PO ${po}`;
-  async function upload(chosen: File | undefined) {
-    if (file.current) file.current.value = "";
-    if (!chosen) return;
-    setBusy(true);
-    const form = new FormData();
-    form.append("file", chosen);
-    form.append("po_number", po);
-    if (part) form.append("part_number", part);
-    try {
-      const { data: r } = await api.post<{ data: VendorPoImportInfo }>(received ? "/api/purchase_orders/import_received" : "/api/purchase_orders/import", form);
-      notify(`${what}: ${formatCount(r.created)} ${received ? "receipt row" : "vendor PO"}${r.created === 1 ? "" : "s"} recorded` +
-             `${r.skipped.length ? `, ${formatCount(r.skipped.length)} row${r.skipped.length === 1 ? "" : "s"} skipped (${r.skipped[0].reason})` : ""}.`,
-             r.skipped.length ? "error" : "success");
-      onDone();
-    } catch (err) {
-      notify(err instanceof ApiError ? err.message : "The upload failed.", "error");
-    } finally {
-      setBusy(false);
-    }
-  }
+  const [open, setOpen] = useState(false);
   return (
-    <span className="inline-flex flex-col items-start gap-0.5">
-      <input ref={file} type="file" accept=".xlsx" hidden onChange={(e) => upload(e.target.files?.[0])} />
-      <Button size="sm" disabled={busy || business === "all"} onClick={() => file.current?.click()}
-              title={business === "all" ? "Choose DTP or GMBH first: the file is for one business." : `Only the rows of ${what} are taken from the file`}>
-        <UploadIcon size={14} className="text-ink-muted" />{busy ? "Uploading…" : received ? "Upload received" : "Upload vendor PO"}
+    <>
+      <Button size="sm" disabled={business === "all"} onClick={() => setOpen(true)}
+              title={business === "all" ? "Choose DTP or GMBH first: the file is for one business." : undefined}>
+        <UploadIcon size={14} className="text-ink-muted" />{kind === "received" ? "Upload received" : "Upload vendor PO"}
       </Button>
-      <ExampleLink kind={received ? "purchase_received" : "vendor_po_list"} po={po} part={part} />
-    </span>
+      {open && <ListUploadSheet kind={kind} po={po} part={part} onClose={() => setOpen(false)} onDone={onDone} />}
+    </>
   );
 }
 
-// The invoice buttons, each with its example file.
-function InvoiceButton({ only, po, part, onClick }: { only: "inc" | "india"; po: string; part?: string; onClick: () => void }) {
+// The invoice buttons: the slider they open has the example.
+function InvoiceButton({ only, onClick }: { only: "inc" | "india"; onClick: () => void }) {
   const inc = only === "inc";
-  const kind: ExampleKind = inc ? "invoice_inc" : "invoice_india";
   return (
-    <span className="inline-flex flex-col items-start gap-0.5">
-      <Button size="sm" onClick={onClick} title={inc ? "The SASH Inc invoice to Deere: its Qty becomes delivered (outbound)" : "The SASH India export invoice: its Qty becomes dispatched"}>
-        <TruckIcon size={14} className="text-ink-muted" />{inc ? "Upload Deere invoice" : "Upload SASH India invoice"}
-      </Button>
-      <ExampleLink kind={kind} po={po} part={part} />
-    </span>
+    <Button size="sm" onClick={onClick} title={inc ? "The SASH Inc invoice to Deere: its Qty becomes delivered (outbound)" : "The SASH India export invoice: its Qty becomes dispatched"}>
+      <TruckIcon size={14} className="text-ink-muted" />{inc ? "Upload Deere invoice" : "Upload SASH India invoice"}
+    </Button>
   );
 }
 
@@ -153,8 +118,8 @@ export function OrderUploads({ row, onChanged }: { row: OrderRow; onChanged: () 
   return (
     <>
       <DeliveryCell row={row.member_of ? { ...row, id: row.member_of.id, qty: row.member_of.total } : row} role={me?.role} onChanged={onChanged} />
-      {canInvoice && <InvoiceButton only="inc" po={row.po_number} part={row.part_number} onClick={() => setInvoice("inc")} />}
-      {me?.role === "admin" && <InvoiceButton only="india" po={row.po_number} part={row.part_number} onClick={() => setInvoice("india")} />}
+      {canInvoice && <InvoiceButton only="inc" onClick={() => setInvoice("inc")} />}
+      {me?.role === "admin" && <InvoiceButton only="india" onClick={() => setInvoice("india")} />}
       {can(me, "orders", "edit") && <ListUploadButton kind="orders" po={row.po_number} part={row.part_number} onDone={onChanged} />}
       {can(me, "orders", "edit") && <ListUploadButton kind="received" po={row.po_number} part={row.part_number} onDone={onChanged} />}
       {invoice && <InvoiceUploadPanel po={row.po_number} part={row.part_number} only={invoice} onClose={() => setInvoice(null)} onSaved={onChanged} />}
