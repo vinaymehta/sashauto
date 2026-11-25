@@ -49,7 +49,7 @@ module Api
         return render_error("The file is larger than #{AppConfig.max_upload_bytes / 1.megabyte} MB.", :unprocessable_content, code: "invalid_file")
       end
 
-      record = VendorOrders::FileImport.call(path: file.path, filename: file.original_filename, business: current_business, user: current_user)
+      record = VendorOrders::FileImport.call(path: file.path, filename: file.original_filename, business: current_business, user: current_user, po: params[:po_number])
       render json: { data: import_json(record) }, status: :created
     rescue VendorOrders::FileImport::InvalidFile => e
       render_error e.message, :unprocessable_content, code: "invalid_file"

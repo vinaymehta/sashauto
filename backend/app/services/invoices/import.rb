@@ -12,7 +12,10 @@ module Invoices
   class Import
     class Rejected < StandardError; end
 
-    def initialize(path:, filename:, kind:, view:, user:)
+    # `po`: the invoice is uploaded from one PO's panel: it must be that PO's alone (every line under that PO No.), so
+    # no other PO's order can take any of its Qty.
+    def initialize(path:, filename:, kind:, view:, user:, po: nil)
+      @po = po.to_s.strip.presence
       @path = path
       @filename = filename.to_s
       @kind = kind
@@ -22,7 +25,7 @@ module Invoices
 
     def preview
       invoice = read
-      summary(invoice, Allocator.call(invoice, view: @view))
+      summary(invoice, plan_for(invoice))
     end
 
     def save
@@ -30,7 +33,7 @@ module Invoices
         # One invoice saved at a time: each allocates from what the ones before it took.
         Invoice.connection.execute("SELECT pg_advisory_xact_lock(#{Zlib.crc32('invoices')})")
         invoice = read
-        plan = Allocator.call(invoice, view: @view)
+        plan = plan_for(invoice)
         # As the upload panel (its Save is off then): an invoice no order takes any Qty of would only block its number.
         if plan.allocations.empty?
           raise Rejected, "No order takes any Qty of #{Invoice::LABELS.fetch(@kind)} #{invoice.invoice_number}, so it was not saved: " \
@@ -45,6 +48,15 @@ module Invoices
 
     private
 
+    # The allocation of the invoice's lines; for one PO's panel, nothing outside that PO is touched.
+    def plan_for(invoice)
+      plan = Allocator.call(invoice, view: @view)
+      if @po && (other = plan.allocations.find { |a| a.order.po_number != @po })
+        raise Rejected, "This invoice would also change PO #{other.order.po_number}: upload it from Orders → Actions → Upload invoice."
+      end
+      plan
+    end
+
     def read
       invoice = Reader.call(path: @path, filename: @filename)
       @kind ||= invoice.kind # no kind given: the one the file is (SASH India or SASH Inc, by its Exporter)
@@ -56,9 +68,24 @@ module Invoices
         raise Rejected, "#{Invoice::LABELS.fetch(@kind)} #{invoice.invoice_number} was already uploaded on " \
                         "#{earlier.created_at.in_time_zone(AppConfig.ageing_time_zone).strftime('%d %b %Y')} by #{earlier.uploaded_by.name}."
       end
+      check_po(invoice)
       invoice
     rescue Reader::InvalidFile => e
       raise Rejected, e.message
+    end
+
+    # Uploaded from a PO's panel: every line of the file is of that PO.
+    def check_po(invoice)
+      return unless @po
+
+      others = invoice.lines.map(&:po_number).uniq - [ @po ]
+      if invoice.lines.none? { |line| line.po_number == @po }
+        raise Rejected, "This invoice has no line for PO #{@po} (its lines are for #{others.compact.first(3).join(', ').presence || 'no PO'})."
+      end
+      return if others.empty?
+
+      raise Rejected, "This invoice also has lines for #{others.map { |po| po || 'no PO' }.first(3).join(', ')}, not only PO #{@po}. " \
+                      "Upload it from Orders → Actions → Upload invoice so every PO gets its Qty."
     end
 
     def create(invoice, plan)

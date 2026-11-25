@@ -11,13 +11,14 @@ import { Skeleton } from "../ui/skeleton";
 import { SortTh, type SortDirection } from "../ui/sort-header";
 import { StatusPill } from "./delivery-cell";
 import { RelatedLink } from "./related-popover";
+import { PoManageSection } from "./po-manage";
 
 // PO summary (opened from a PO Number link): for the PO's Firm / Order lines in the shown order data (`uploadId`;
 // undefined = the current data) what was ordered, dispatched from India, was delivered to Deere and is
 // still to dispatch, with the revenue (Deere prices), then each line with its status. A Part Number opens its Product
 // summary in the same panel.
 export function PoSummaryPanel({ po, uploadId }: { po: string; uploadId?: number }) {
-  const { data, error, loading } = useApi<{ data: PoSummary }>("/api/orders/po_summary", { po, upload_id: uploadId });
+  const { data, error, loading, reload } = useApi<{ data: PoSummary }>("/api/orders/po_summary", { po, upload_id: uploadId });
   const [lineSort, setLineSort] = useState<string>("po_line_number");
   const [lineDir, setLineDir] = useState<SortDirection>("asc");
 
@@ -50,7 +51,7 @@ export function PoSummaryPanel({ po, uploadId }: { po: string; uploadId?: number
   })();
 
   if (error) return <Alert title="Could not load the PO summary">{error.message}</Alert>;
-  if (loading || !data || !s) return <Skeleton className="h-96 w-full" />;
+  if (!data || !s) return <Skeleton className="h-96 w-full" />;
   const t = s.totals;
   const ordered = Number(t.ordered);
   const pct = (v: string) => (ordered > 0 ? Math.min((Number(v) / ordered) * 100, 100) : 0);
@@ -97,6 +98,8 @@ export function PoSummaryPanel({ po, uploadId }: { po: string; uploadId?: number
         </div>
         {t.unpriced > 0 && <p className="text-xs text-amber-700">{formatCount(t.unpriced)} order{t.unpriced === 1 ? "" : "s"} without a Deere price, left out of the revenue.</p>}
       </section>
+
+      <PoManageSection po={s.po_number} uploadId={uploadId} onChanged={reload} />
 
       <section className="overflow-hidden rounded-lg border border-line bg-white shadow-card">
         <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-3">

@@ -26,7 +26,9 @@ const KIND_TEXT: Record<InvoiceKind, { from: string; moves: string; before: stri
 // The file is read and shown first (Preview): each line (PO, Part, Qty) with the order rows of that PO + Part it goes
 // to, oldest Ship Date first, and the Qty no order takes (unmatched, with the reason). Save records the invoice: SASH
 // India moves the Qty to dispatched, SASH Inc moves dispatched Qty to outbound. An invoice uploaded before is refused.
-export function InvoiceUploadPanel({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+// `po`: opened from one PO's panel: the invoice must be for that PO alone (the server refuses one that has lines of
+// other POs), so no other PO's order gets any of its Qty.
+export function InvoiceUploadPanel({ onClose, onSaved, po }: { onClose: () => void; onSaved: () => void; po?: string }) {
   const notify = useToast();
   const input = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -40,6 +42,7 @@ export function InvoiceUploadPanel({ onClose, onSaved }: { onClose: () => void; 
   const form = (chosen: File) => {
     const body = new FormData();
     body.append("file", chosen);
+    if (po) body.append("po_number", po);
     return body;
   };
 
@@ -97,6 +100,7 @@ export function InvoiceUploadPanel({ onClose, onSaved }: { onClose: () => void; 
              )}
            </>}>
       <input ref={input} type="file" accept=".pdf,.xlsx" hidden onChange={(e) => read(e.target.files?.[0])} />
+      {po && <p className="mb-4 rounded-md bg-tint-violet/60 px-3 py-2 text-sm text-ink">For <b>PO {po}</b> only: an invoice that also has lines of other POs is refused, so no other order gets its Qty.</p>}
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
       {!preview ? (
         <div className="space-y-2 text-sm text-ink-muted">

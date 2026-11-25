@@ -26,11 +26,14 @@ module VendorOrders
     REASON_KINDS = { "vendor " => "vendor", "no " => "order", "already recorded" => "recorded", "the order is already fully" => "recorded",
                      "a Forecast" => "forecast", "this vendor PO is listed twice" => "recorded" }.freeze
 
-    def self.call(path:, filename:, business:, user:)
-      new(path, filename, business, user).call
+    def self.call(path:, filename:, business:, user:, po: nil)
+      new(path, filename, business, user, po: po).call
     end
 
-    def initialize(path, filename, business, user)
+    # `po`: uploaded from one Deere PO's panel: only the rows of that PO are recorded, the others are left out (and
+    # not reported as issues); a file with no row of the PO is refused.
+    def initialize(path, filename, business, user, po: nil)
+      @po = po.to_s.strip.presence
       @path = path
       @filename = filename.to_s
       @business = business
@@ -39,6 +42,14 @@ module VendorOrders
 
     def call
       rows = read_rows
+      @ignored = 0
+      if @po
+        all = rows.size
+        rows = rows.select { |row| row[:po_number] == @po }
+        raise InvalidFile, "The file has no row for PO #{@po}." if rows.empty?
+
+        @ignored = all - rows.size
+      end
       batch = UploadBatch.latest_completed(@business) or raise InvalidFile, "#{Business.label(@business)} has no order upload yet."
       @batch = batch
       skipped = []

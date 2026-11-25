@@ -90,7 +90,7 @@ module Api
         raise Invoices::Import::Rejected, "Only an admin can upload a SASH India invoice." if kind && kind != "inc"
         kind = "inc" # a SASH India file is then refused by the import (it is not a SASH Inc invoice)
       end
-      Invoices::Import.new(path: file.path, filename: file.original_filename, kind: kind, view: current_business, user: current_user)
+      Invoices::Import.new(path: file.path, filename: file.original_filename, kind: kind, view: current_business, user: current_user, po: params[:po_number])
     end
 
     # Numbers of the active SASH Inc invoices that delivered more of this invoice's orders than the other SASH India
