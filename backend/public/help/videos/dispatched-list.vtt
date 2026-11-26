@@ -1,16 +1,16 @@
 WEBVTT
 
-00:00:00.300 --> 00:00:06.685
+00:00:00.300 --> 00:00:06.976
 To mark many orders as Dispatched at once, go to Orders, click Actions, then Import dispatched list.
 
-00:00:07.139 --> 00:00:10.738
+00:00:07.427 --> 00:00:10.875
 Choose SASH India's dispatched list, the Excel file.
 
-00:00:11.191 --> 00:00:16.218
+00:00:11.328 --> 00:00:16.413
 The app marks the matching orders as Dispatched, and lists any rows it could not match.
 
-00:00:16.670 --> 00:00:19.314
+00:00:16.864 --> 00:00:19.606
 Uploading the same list twice is safe.
 
-00:00:19.314 --> 00:00:21.053
+00:00:19.606 --> 00:00:21.410
 Nothing is counted twice.

@@ -71,7 +71,7 @@ export function UploadPicker({ uploads, latestId, selectedId, onSelect }: {
 // Orders page actions: upload a file, create an order (admin; `onCreate`), download the shown upload.
 // `onUploadInvoice`: Upload invoice (a SASH India invoice → dispatched, a SASH Inc invoice → outbound; the file says
 // which), and `onImportDispatched`: Import dispatched list; for admins (who set Dispatched). The Warehouse Manager's
-// menu has no Upload file (`onUpload` not given); its Upload invoice takes SASH Inc invoices only.
+// menu has no Upload data dump file (`onUpload` not given); its Upload invoice takes SASH Inc invoices only.
 export function OrderActions({ downloadId, onUpload, onCreate, onUploadInvoice, onImportDispatched }: {
   downloadId?: number; onUpload?: () => void; onCreate?: () => void; onUploadInvoice?: () => void; onImportDispatched?: () => void;
 }) {
@@ -79,8 +79,8 @@ export function OrderActions({ downloadId, onUpload, onCreate, onUploadInvoice, 
     <Dropdown label="Actions" width="w-64">
       {(close) => (
         <div className="py-1">
-          {onUpload && <Item icon={<UploadIcon size={16} />} onClick={() => { close(); onUpload(); }}>Upload file</Item>}
-          {onCreate && <Item icon={<PlusIcon size={16} />} onClick={() => { close(); onCreate(); }}>Create order</Item>}
+          {onUpload && <Item icon={<UploadIcon size={16} />} onClick={() => { close(); onUpload(); }}>Upload data dump file</Item>}
+          {onCreate && <Item icon={<PlusIcon size={16} />} onClick={() => { close(); onCreate(); }}>Create PO</Item>}
           {onUploadInvoice && <Item icon={<TruckIcon size={16} />} onClick={() => { close(); onUploadInvoice(); }}>Upload invoice</Item>}
           {onImportDispatched && <Item icon={<CheckIcon size={16} />} onClick={() => { close(); onImportDispatched(); }}>Import dispatched list</Item>}
           {downloadId !== undefined && (

@@ -16,13 +16,13 @@ import { FormSection } from "../ui/form-section";
 import { Sheet } from "../ui/sheet";
 import { Skeleton } from "../ui/skeleton";
 
-// Side panel behind the Orders page's "Upload file" button. The file is for one business: the one in the top bar, or
+// Side panel behind the Orders page's "Upload data dump file" button. The file is for one business: the one in the top bar, or
 // (in "All") the one chosen here.
 export function UploadOrdersPanel({ onClose, onUploaded }: { onClose: () => void; onUploaded: (upload: UploadDetail) => void }) {
   const { view } = useBusiness();
   const [business, setBusiness] = useState<BusinessKey | null>(view === "all" ? null : view);
   return (
-    <Sheet open onClose={onClose} title="Upload file" icon={<UploadIcon size={18} />}
+    <Sheet open onClose={onClose} title="Upload data dump file" icon={<UploadIcon size={18} />}
            description="Drop or choose a Supplier Requirements .xlsx export to compare quantities.">
       <div className="space-y-4">
         <BusinessChoice value={business} onChange={setBusiness} />
@@ -98,7 +98,7 @@ export function CreateOrderPanel({ order, onClose, onSaved, shipToLocations = []
     <Sheet
       open
       onClose={onClose}
-      title={order ? "Edit order" : "Create order"}
+      title={order ? "Edit order" : "Create PO"}
       description={order ? `PO ${order.po_number} · ${order.order_type}` : "Enter the order details with the columns of the order Excel file."}
       icon={<PencilIcon size={18} />}
       wide
@@ -111,7 +111,7 @@ export function CreateOrderPanel({ order, onClose, onSaved, shipToLocations = []
         <>
           <Button variant="ghost" onClick={onClose} disabled={saving}>Cancel</Button>
           <Button variant="primary" onClick={() => save()} disabled={saving || fields.length === 0}>
-            {saving ? "Saving…" : order ? "Save" : "Create order"}
+            {saving ? "Saving…" : order ? "Save" : "Create PO"}
           </Button>
         </>
       )}

@@ -22,7 +22,7 @@
     - heading: "What you can do here"
       bullets:
         - "Pick **DTP**, **GMBH** or **All** in the **Business** menu at the top: every box and chart follows your choice."
-        - "Click **Upload new file** to load a John Deere order file (needs the Orders edit permission)."
+        - "Click **Upload data dump file** to load a John Deere order file (needs the Orders edit permission)."
         - "When something needs a look, the **Needs attention** bar links to late orders, Commodity Type conflicts and uploads still being processed."
         - "Click **Total Open Value (Sale)** to see each open order line with its open quantity and value."
         - "Click **Total Open Value (Supplier)** to see each vendor PO still to be delivered, with the price used for it."
@@ -187,7 +187,7 @@
         - text: "Go to **Orders** and pick **DTP** or **GMBH** at the top (not All)."
           image: upload-business
           page: /orders
-        - text: "Click **Actions**, then **Upload file**."
+        - text: "Click **Actions**, then **Upload data dump file**."
           image: upload-actions
           page: /orders
         - text: "Click **Choose file**, pick the file you downloaded from John Deere (Excel .xlsx), then click **Upload and compare**."
@@ -197,8 +197,8 @@
           image: upload-result
     - heading: "What you can do here"
       bullets:
-        - "Click **Actions**, then **Upload file**, to open the upload panel (needs the Orders edit permission)."
-        - "On **Dashboard**, **Upload new file** opens the same panel."
+        - "Click **Actions**, then **Upload data dump file**, to open the upload panel (needs the Orders edit permission)."
+        - "On **Dashboard**, **Upload data dump file** opens the same panel."
         - "In the panel, check **DTP** or **GMBH** next to **Business**: a file always belongs to one business."
         - "Drag the file onto the panel or click **Choose file**; click **Remove** to pick another one."
         - "Click **Upload and compare** to load it; loading goes on even if you leave the page."
@@ -234,7 +234,7 @@
       meaning: "This is not John Deere's order file, or its columns were changed. Download it again from John Deere."
     - message: "The upload was rejected. Nothing was imported."
       meaning: "The list below shows which rows have a problem. Fix them in the file and upload again, or ask your admin."
-  video: "Switching to DTP, Orders → Actions → Upload file, the result screen."
+  video: "Switching to DTP, Orders → Actions → Upload data dump file, the result screen."
 
 - key: deere-sync
   title: The daily John Deere download and the SMS code
@@ -380,12 +380,12 @@
         - "**Columns**: tick the columns you want, drag them into order and click **Save**; **Default** brings back the standard columns."
         - "The **Age** boxes under the search box show only the orders of the age groups you tick."
         - "**Version**: see the orders as they were in an earlier John Deere file (Orders edit permission)."
-        - "**Actions**, **Upload file**: load a John Deere order file by hand."
-        - "**Actions**, **Create order**: add an order yourself."
+        - "**Actions**, **Upload data dump file**: load a John Deere order file by hand."
+        - "**Actions**, **Create PO**: add an order yourself."
         - "**Actions**, **Upload invoice**: load a SASH India or SASH Inc invoice (admins and the Warehouse Manager)."
         - "**Actions**, **Import dispatched list**: mark many orders Dispatched from SASH India's list (admins)."
         - "**Actions**, **Download .xlsx**: download the John Deere file whose orders are shown."
-        - "**Upload file**, **Create order** and **Download .xlsx** need the Orders edit permission and are not for the Warehouse Manager."
+        - "**Upload data dump file**, **Create PO** and **Download .xlsx** need the Orders edit permission and are not for the Warehouse Manager."
         - "**Order summary**: each part's quantities day by day (for people who can see **Products**)."
         - "**Compare versions**: compare two John Deere files of **DTP** or **GMBH** (not with **All**; not for the Warehouse Manager)."
         - "Click a **PO Number** to open **Order details**: the order, its Ship To, its **Schedule** and its dispatches and deliveries."
@@ -406,7 +406,7 @@
           - ["**Firm Date**", "The day the order first came as Firm or Order in a John Deere file; for a manual order, the day it was added."]
           - ["**Effective Firm Date**", "The date an order's age is counted from; Forecast orders have none."]
           - ["**Latest** / **Old file**", "In the **File** column: **Latest** is in John Deere's newest file, **Old file** is no longer there but is kept for its shipments, invoices or vendor POs."]
-          - ["**Manual**", "An order added by hand with **Create order**, not from John Deere's file."]
+          - ["**Manual**", "An order added by hand with **Create PO**, not from John Deere's file."]
           - ["**Combined**", "Small orders of the same PO and part joined together until they reach the vendor's minimum (MOQ)."]
     - heading: Good to know
       bullets:
@@ -519,10 +519,10 @@
     - heading: Steps
       steps:
         - "Go to **Orders** and pick **DTP** or **GMBH** at the top."
-        - text: "Click **Actions**, then **Create order**."
+        - text: "Click **Actions**, then **Create PO**."
           image: create-order-actions
           page: /orders
-        - text: "Fill in **Type**, **Ship Date**, **PO Number**, **PO Line Number**, **Part Number** and **Ship to Location** (**Qty** is optional), then click **Create order**."
+        - text: "Fill in **Type**, **Ship Date**, **PO Number**, **PO Line Number**, **Part Number** and **Ship to Location** (**Qty** is optional), then click **Create PO**."
           image: create-order-panel
           page: /orders
       bullets:
@@ -530,7 +530,7 @@
         - "Your order shows **Manual**. Open it to edit or delete it."
     - heading: "What you can do here"
       bullets:
-        - "**Create order** in **Actions** opens a form with every column of John Deere's file (Orders edit permission)."
+        - "**Create PO** in **Actions** opens a form with every column of John Deere's file (Orders edit permission)."
         - "With **All** picked at the top, choose **DTP** or **GMBH** under **Business** in the form."
         - "Fill in the required fields under **Order**: **Type**, **Ship Date**, **PO Number**, **PO Line Number**, **Part Number** and **Ship to Location**."
         - "**Qty** and the other columns are under **Other columns**."
@@ -545,7 +545,7 @@
       table:
         columns: ["Word", "What it means"]
         rows:
-          - ["**Manual** order", "An order added by hand with **Create order**, not from John Deere's file."]
+          - ["**Manual** order", "An order added by hand with **Create PO**, not from John Deere's file."]
           - ["**Type**", "**Firm** and **Order** are confirmed orders; **Forecast** is only what John Deere expects to order later."]
           - ["**PO Line Number**", "One line of a PO; a PO can have several lines, and a line can have several ship dates."]
           - ["**Ship to Location**", "The place the order goes to, as John Deere's file names it; the form suggests the ones already used."]
@@ -1210,7 +1210,7 @@
     - heading: "What you can do here"
       bullets:
         - "The **Product summary** tab lists each part in John Deere's orders for the business you picked, largest **Revenue ordered** first."
-        - "Its columns are **Part Number**, **Description**, **POs · Orders**, **Revenue ordered**, **Revenue delivered**, **Ordered**, **Pending**, **Dispatched**, **Delivered** and **Forecast**."
+        - "Its columns are **Part Number**, **Description**, **POs · Orders**, **Revenue ordered**, **Revenue delivered**, then the six figures in the same order as a part's Product summary: **Total ordered**, **Delivered to Deere**, **In transit**, **Dispatched**, **Pending as per DTP** (GMBH, or Deere with **All**) and **Pending to dispatch**, and last **Forecast**."
         - "Click the **Part Number** heading or a number column's heading to sort by it, and click it again to turn the order around."
         - "The search box finds a part number or description."
         - "The line above the list counts the parts shown and adds up their revenue on ordered and on delivered."

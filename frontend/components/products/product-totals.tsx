@@ -4,7 +4,7 @@ import { Fragment, useMemo, useState } from "react";
 import type { PartsSummaryRow } from "@/lib/types";
 import { formatCount, formatQty } from "@/lib/format";
 import { useApi } from "../use-api";
-import { BusinessPicker } from "../business-switch";
+import { BusinessPicker, useBusiness } from "../business-switch";
 import { RelatedLink } from "../orders/related-popover";
 import { formatCustomer } from "../vendors/price-format";
 import { Alert, EmptyState } from "../ui/feedback";
@@ -17,10 +17,16 @@ import { ColumnsMenu } from "../ui/columns-menu";
 import { useTableColumns, type ColumnDef } from "../use-table-columns";
 import { ExportButton } from "../ui/export-button";
 
-type SortKey = "part_number" | "ordered" | "dispatched" | "delivered" | "pending" | "forecast" | "revenue_ordered" | "revenue_delivered";
-const COLUMNS: { key: SortKey; label: string; tone?: string }[] = [
-  { key: "ordered", label: "Ordered" }, { key: "pending", label: "Pending" },
-  { key: "dispatched", label: "Dispatched", tone: "text-violet-700" }, { key: "delivered", label: "Delivered", tone: "text-green-700" },
+type SortKey = "part_number" | "ordered" | "delivered" | "in_transit" | "dispatched" | "pending_dtp" | "pending" | "forecast" | "revenue_ordered" | "revenue_delivered";
+// The quantity columns, in the order (and colours) of the six figures of a part's Product summary, then Forecast.
+// `due`: shown in amber while above 0. "Pending as per …" names the business shown (Deere for both together).
+const qtyColumns = (business: string): { key: SortKey; label: string; tone?: string; due?: boolean }[] => [
+  { key: "ordered", label: "Total ordered" },
+  { key: "delivered", label: "Delivered to Deere", tone: "text-green-700" },
+  { key: "in_transit", label: "In transit", tone: "text-violet-700" },
+  { key: "dispatched", label: "Dispatched", tone: "text-violet-700" },
+  { key: "pending_dtp", label: `Pending as per ${business}`, due: true },
+  { key: "pending", label: "Pending to dispatch", due: true },
   { key: "forecast", label: "Forecast", tone: "text-ink-muted" },
 ];
 
@@ -31,11 +37,12 @@ const TOTALS_COLUMNS: ColumnDef[] = [
   { key: "pos_orders", label: "POs · Orders", align: "right" },
   { key: "revenue_ordered", label: "Revenue ordered", align: "right" },
   { key: "revenue_delivered", label: "Revenue delivered", align: "right" },
-  ...COLUMNS.map((c): ColumnDef => ({ key: c.key, label: c.label, align: "right" })),
+  ...qtyColumns("DTP").map((c): ColumnDef => ({ key: c.key, label: c.label, align: "right" })),
 ];
 
 // Products page, "Product summary" tab: every part of the shown order data (the Business menu) with what was ordered,
-// dispatched from India, was delivered to Deere and is still to dispatch, its Forecast and the revenue
+// delivered to Deere, is in transit, was dispatched from India, is still open at Deere and still to dispatch (as the
+// six figures of a part's Product summary), its Forecast and the revenue
 // (Deere prices) of what was ordered and delivered; largest revenue first, any column sorts. A part opens its Product
 // summary.
 export function ProductTotalsPanel() {
@@ -43,6 +50,10 @@ export function ProductTotalsPanel() {
   const columns = useTableColumns("product_summary", TOTALS_COLUMNS);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: "revenue_ordered", desc: true });
+  const { view } = useBusiness();
+  const COLUMNS = qtyColumns(view === "gmbh" ? "GMBH" : view === "dtp" ? "DTP" : "Deere");
+  // Column headings follow the business shown ("Pending as per GMBH", or Deere for both).
+  const labelOf = (key: string, label: string) => COLUMNS.find((c) => c.key === key)?.label ?? label;
   const money = (v: string) => (data?.currency ? formatCustomer(v, data.currency, 2) : Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
   const rows = useMemo(() => {
@@ -84,7 +95,7 @@ export function ProductTotalsPanel() {
       {error ? (
         <div className="p-4"><Alert title="Could not load the product summary">{error.message}</Alert></div>
       ) : loading && !data ? (
-        <TableSkeleton rows={10} columns={10} />
+        <TableSkeleton rows={10} columns={12} />
       ) : rows.length === 0 ? (
         <EmptyState title={search ? "No parts match" : "No orders yet"} description={search ? "Try a different search." : "Parts show here once the business has order data."} />
       ) : (
@@ -93,7 +104,7 @@ export function ProductTotalsPanel() {
             <tr>
               {columns.shown.map((c) => c.key === "description" || c.key === "pos_orders"
                 ? columns.head(c, <Th key={c.key} align={c.align}>{c.label}</Th>)
-                : columns.head(c, <Fragment key={c.key}>{head(c.key as SortKey, c.label, c.align === "left" ? "left" : "right")}</Fragment>))}
+                : columns.head(c, <Fragment key={c.key}>{head(c.key as SortKey, labelOf(c.key, c.label), c.align === "left" ? "left" : "right")}</Fragment>))}
             </tr>
           </thead>
           <tbody>
@@ -116,7 +127,7 @@ export function ProductTotalsPanel() {
                     default: {
                       const c = COLUMNS.find((x) => x.key === col.key)!;
                       return (
-                        <Td key={c.key} align="right" className={`${c.key === "pending" && Number(r.pending) > 0 ? "font-semibold text-amber-700" : c.tone ?? "text-ink"}`}>
+                        <Td key={c.key} align="right" className={`${c.due && Number(r[c.key]) > 0 ? "font-semibold text-amber-700" : c.tone ?? "text-ink"}`}>
                           {Number(r[c.key]) === 0 ? <span className="text-neutral-300">—</span> : formatQty(r[c.key] as string)}
                         </Td>
                       );

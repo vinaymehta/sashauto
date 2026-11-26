@@ -135,7 +135,7 @@ export default function DashboardPage() {
       description="Open orders with Deere and vendors, where they stand, and Deere's spend with SASH this financial year."
       actions={<div className="flex flex-wrap items-center gap-2"><BusinessPicker />
         {/* Uploading is an Orders action: only for users who may edit the Orders. */}
-        {canUpload && <Link href="/orders?upload=1"><Button variant="primary"><UploadIcon size={15} />Upload new file</Button></Link>}</div>}
+        {canUpload && <Link href="/orders?upload=1"><Button variant="primary"><UploadIcon size={15} />Upload data dump file</Button></Link>}</div>}
     />
   );
 

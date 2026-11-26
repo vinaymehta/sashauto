@@ -1,19 +1,19 @@
 WEBVTT
 
-00:00:00.300 --> 00:00:06.867
-To upload John Deere's order file, go to Orders, and pick DTP or GMBH at the top.
+00:00:00.300 --> 00:00:06.523
+To upload John Deere's data dump file, go to Orders, and pick DTP or GMBH at the top.
 
-00:00:06.867 --> 00:00:07.516
-Not All.
+00:00:06.976 --> 00:00:09.762
+Click Actions, then Upload data dump file.
 
-00:00:07.966 --> 00:00:10.021
-Click Actions, then Upload file.
-
-00:00:11.441 --> 00:00:16.096
+00:00:10.508 --> 00:00:15.064
 Click Choose file, and pick the Excel file you downloaded from John Deere.
 
-00:00:16.096 --> 00:00:17.984
+00:00:15.064 --> 00:00:16.911
 Then click Upload and compare.
 
-00:00:18.435 --> 00:00:23.358
+00:00:17.362 --> 00:00:22.552
 When it is done, the app shows what changed since the last file, and emails the team.
+
+00:00:28.839 --> 00:00:32.554
+On the Dashboard, Upload data dump file opens the same panel.

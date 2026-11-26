@@ -1,19 +1,22 @@
 WEBVTT
 
-00:00:00.300 --> 00:00:06.581
+00:00:00.300 --> 00:00:06.569
 The Product summary tab on Products shows every part John Deere ordered, with its quantities and revenue.
 
-00:00:07.033 --> 00:00:11.189
+00:00:07.020 --> 00:00:16.459
+Its columns follow the part's summary: total ordered, delivered to Deere, in transit, dispatched, pending as per DTP, and pending to dispatch.
+
+00:00:16.910 --> 00:00:20.706
 Search a part, and click its part number to open the product summary.
 
-00:00:14.523 --> 00:00:20.432
+00:00:25.052 --> 00:00:30.718
 At the top you see the MOQ, the pack, the vendors, and the P Os and orders of the part.
 
-00:00:20.884 --> 00:00:28.152
+00:00:31.169 --> 00:00:38.367
 Six numbers follow the part: total ordered, delivered to Deere, in transit, dispatched, and what is still pending.
 
-00:00:28.603 --> 00:00:35.941
+00:00:38.819 --> 00:00:45.739
 Revenue shows the value of what was ordered, dispatched and delivered, and Vendors and prices shows each vendor's price.
 
-00:00:36.392 --> 00:00:41.733
+00:00:46.191 --> 00:00:51.415
 By PO lists each PO of the part, with what was ordered, dispatched and delivered.

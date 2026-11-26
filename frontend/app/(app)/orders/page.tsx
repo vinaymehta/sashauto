@@ -326,7 +326,7 @@ function OrdersView() {
   // The Warehouse Manager sees only the order rows (no uploads, versions or detections) and marks deliveries.
   const manager = !admin;
   // The Warehouse Manager (SASH US), with or without Orders edit: their Actions are Upload invoice only (SASH Inc; no
-  // Upload file, Create order or Download .xlsx), and Compare versions is not shown.
+  // Upload data dump file, Create PO or Download .xlsx), and Compare versions is not shown.
   const usManager = role === "warehouse_manager";
 
   // Which upload's order data is shown: null = the current data (latest upload + manual orders).
@@ -516,7 +516,7 @@ function OrdersView() {
     && (current ? !dashboard.data && !dashboard.error : !previous.data && !previous.error);
   const activeTab: TabKey = tabs.some((t) => t.key === tab) || changesLoading ? tab : "orders";
 
-  // ?upload=1 (the dashboard's "Upload new file") opens the upload panel.
+  // ?upload=1 (the dashboard's "Upload data dump file") opens the upload panel.
   // "india" / "inc": the invoice upload of that kind.
   const [panel, setPanel] = useState<"upload" | "create" | "invoice" | "dispatched" | null>(() => (params.get("upload") === "1" && !manager ? "upload" : null));
   // …once: ?upload=1 is then dropped from the address, so the panel does not open again when the page is shown anew
@@ -675,7 +675,7 @@ function OrdersView() {
         ) : data && data.data.length === 0 ? (
           <EmptyState
             title={filtered ? "No order rows match" : "No order data yet"}
-            description={filtered ? "Try a different search or clear the filters." : "Upload a Supplier Requirements export with Upload file."}
+            description={filtered ? "Try a different search or clear the filters." : "Upload a Supplier Requirements export with Upload data dump file."}
             action={filtered ? <Button size="sm" onClick={clearAll}>Clear search and filters</Button> : undefined}
           />
         ) : data ? (
