@@ -1,0 +1,22 @@
+WEBVTT
+
+00:00:00.300 --> 00:00:03.946
+Open a part on Products to see its vendors and their prices.
+
+00:00:07.870 --> 00:00:13.489
+Each vendor shows its price per piece, its MOQ in pieces, and its current inventory.
+
+00:00:13.943 --> 00:00:16.547
+The pencil lets you change these figures.
+
+00:00:16.547 --> 00:00:18.198
+Type them, and click Save.
+
+00:00:22.259 --> 00:00:27.054
+Add vendor adds another vendor with its price, and the bin removes a vendor from the part.
+
+00:00:27.504 --> 00:00:33.007
+Price history keeps every change of the customer price and the vendor prices, with when and who changed it.
+
+00:00:44.210 --> 00:00:48.680
+On Vendors, a vendor's Parts tab lists the price of every part it supplies.

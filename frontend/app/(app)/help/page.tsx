@@ -246,8 +246,8 @@ function TopicView({ topic, related, previous, next, onOpen }: {
                 <dl className="divide-y divide-neutral-100">
                   {topic.messages!.map((m, i) => (
                     <div key={i} className="grid gap-1 px-4 py-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] sm:gap-4">
-                      <dt className="text-sm font-medium text-ink"><span className="mr-1 text-2xs font-semibold uppercase tracking-wider text-ink-faint sm:hidden">Message:</span>&ldquo;{m.message}&rdquo;</dt>
-                      <dd className="text-sm text-ink-muted"><span className="mr-1 text-2xs font-semibold uppercase tracking-wider text-ink-faint sm:hidden">What to do:</span><Rich text={m.meaning} /></dd>
+                      <dt className="text-[14px] font-medium leading-6 text-ink"><span className="mr-1 text-2xs font-semibold uppercase tracking-wider text-ink-faint sm:hidden">Message:</span>&ldquo;{m.message}&rdquo;</dt>
+                      <dd className="text-[14px] leading-6 text-ink-soft"><span className="mr-1 text-2xs font-semibold uppercase tracking-wider text-ink-faint sm:hidden">What to do:</span><Rich text={m.meaning} /></dd>
                     </div>
                   ))}
                 </dl>
@@ -356,35 +356,63 @@ function OnThisPage({ topic, contents }: { topic: HelpTopic; contents: Contents[
   );
 }
 
+// A line under the guides' standard section headings, saying what the section is.
+const SECTION_HINTS: Record<string, string> = {
+  "What you can do here": "Everything this page lets you do.",
+  "Words on this page": "What the words and labels on this page mean.",
+  Notes: "Good to know about these steps.",
+};
+
 function SectionView({ section, id }: { section: HelpSection; id?: string }) {
+  const features = section.heading === "What you can do here";
+  const hint = section.heading ? SECTION_HINTS[section.heading] : undefined;
   return (
     <section id={id} className="scroll-mt-20">
       {section.heading && <h3 className="text-lg font-semibold text-ink">{section.heading}</h3>}
-      {section.text && <p className="mt-2 max-w-prose text-base leading-relaxed text-ink"><Rich text={section.text} /></p>}
+      {hint && <p className="mt-0.5 text-sm text-ink-muted">{hint}</p>}
+      {section.text && <p className="mt-2 max-w-prose text-[15px] leading-7 text-ink-soft"><Rich text={section.text} /></p>}
       {section.steps && (
         <ol className="mt-3 max-w-prose space-y-2">
           {section.steps.map((step, i) => (
-            <li key={i} className="flex gap-3 text-base text-ink">
+            <li key={i} className="flex gap-3 text-[15px] text-ink-soft">
               <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent/10 text-sm font-semibold text-accent">{i + 1}</span>
-              <span className="leading-relaxed"><Rich text={asStep(step).text} /></span>
+              <span className="leading-7"><Rich text={asStep(step).text} /></span>
             </li>
           ))}
         </ol>
       )}
-      {section.bullets && (
-        <ul className="mt-3 max-w-prose list-disc space-y-1.5 pl-5 text-base leading-relaxed text-ink marker:text-ink-faint">
-          {section.bullets.map((b, i) => <li key={i}><Rich text={b} /></li>)}
+      {section.bullets && (features ? (
+        // Each thing the page does on its own row, with a tick: easy to scan.
+        <ul className="mt-3 divide-y divide-neutral-100 rounded-lg border border-line">
+          {section.bullets.map((b, i) => (
+            <li key={i} className="flex gap-3 px-4 py-2.5 text-[14.5px] leading-6 text-ink-soft">
+              <span aria-hidden className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-inc-bg text-inc"><CheckIcon size={12} /></span>
+              <span><Rich text={b} strong="font-medium" /></span>
+            </li>
+          ))}
         </ul>
-      )}
+      ) : (
+        <ul className="mt-3 max-w-prose space-y-2 text-[15px] leading-7 text-ink-soft">
+          {section.bullets.map((b, i) => (
+            <li key={i} className="flex gap-3">
+              <span aria-hidden className="mt-[11px] h-1.5 w-1.5 shrink-0 rounded-full bg-neutral-400" />
+              <span><Rich text={b} /></span>
+            </li>
+          ))}
+        </ul>
+      ))}
       {section.table && (
-        <div className="mt-3 overflow-x-auto rounded-md border border-line">
-          <table className="w-full text-left text-sm">
+        <div className="mt-3 overflow-x-auto rounded-lg border border-line">
+          <table className="w-full table-fixed text-left text-[14px] leading-6">
+            <colgroup><col className="w-[34%]" /><col /></colgroup>
             <thead className="bg-neutral-50 text-2xs uppercase tracking-wider text-ink-muted">
-              <tr>{section.table.columns.map((c) => <th key={c} className="px-3 py-2 font-semibold">{c}</th>)}</tr>
+              <tr>{section.table.columns.map((c) => <th key={c} className="px-4 py-2 font-semibold">{c}</th>)}</tr>
             </thead>
             <tbody className="divide-y divide-neutral-100">
               {section.table.rows.map((row, i) => (
-                <tr key={i}>{row.map((cell, j) => <td key={j} className={`px-3 py-2 align-top ${j === 0 ? "font-medium text-ink" : "text-ink-muted"}`}><Rich text={cell} /></td>)}</tr>
+                <tr key={i} className="hover:bg-neutral-50/60">
+                  {row.map((cell, j) => <td key={j} className={`px-4 py-2.5 align-top ${j === 0 ? "font-semibold text-ink" : "text-ink-soft"}`}><Rich text={cell} /></td>)}
+                </tr>
               ))}
             </tbody>
           </table>
@@ -524,10 +552,10 @@ function Lightbox({ name, alt, onClose }: { name: string; alt: string; onClose: 
   );
 }
 
-// Text with **bold** words.
-function Rich({ text }: { text: string }) {
+// Text with **bold** words (`strong`: their weight; lighter in long lists so labels don't crowd the line).
+function Rich({ text, strong = "font-semibold" }: { text: string; strong?: string }) {
   const parts: ReactNode[] = text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
-    part.startsWith("**") && part.endsWith("**") ? <b key={i} className="font-semibold">{part.slice(2, -2)}</b> : part);
+    part.startsWith("**") && part.endsWith("**") ? <b key={i} className={`${strong} text-ink`}>{part.slice(2, -2)}</b> : part);
   return <>{parts}</>;
 }
 

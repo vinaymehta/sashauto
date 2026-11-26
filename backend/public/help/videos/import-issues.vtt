@@ -1,0 +1,19 @@
+WEBVTT
+
+00:00:00.300 --> 00:00:07.487
+Rows of an uploaded vendor PO list or purchase received file that the app could not record wait under Import issues.
+
+00:00:07.940 --> 00:00:10.341
+Open shows what still needs a look.
+
+00:00:10.341 --> 00:00:13.565
+Right now there are none, so the list is empty.
+
+00:00:14.016 --> 00:00:18.370
+Resolved shows the rows fixed since, for example by choosing the right vendor.
+
+00:00:18.822 --> 00:00:24.488
+Dismiss closes a row you do not need, and Reopen, under Dismissed, brings it back.
+
+00:00:24.940 --> 00:00:29.352
+Products and Vendors have their own Import issues tab, for their Excel files.

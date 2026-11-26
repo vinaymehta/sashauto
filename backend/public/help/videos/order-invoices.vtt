@@ -1,0 +1,19 @@
+WEBVTT
+
+00:00:00.300 --> 00:00:04.410
+To see an order's invoices, click its PO number on Orders.
+
+00:00:07.490 --> 00:00:15.571
+At the bottom, Dispatches and deliveries shows the order quantity, what is still to dispatch, what was dispatched, and what was delivered.
+
+00:00:16.023 --> 00:00:24.034
+SASH India invoices show under Dispatched from India, and SASH Inc invoices under Delivered to Deere, each with its quantity and balance.
+
+00:00:24.485 --> 00:00:29.210
+Click Preview to see the invoice as it was uploaded, or the arrow to download it.
+
+00:00:29.661 --> 00:00:32.633
+Only an admin can remove an invoice, with the bin.
+
+00:00:33.084 --> 00:00:38.436
+Above, Delivery lists the status marks set by hand, with who set them, and when.

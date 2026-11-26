@@ -1,0 +1,22 @@
+WEBVTT
+
+00:00:00.300 --> 00:00:06.604
+On Orders, the Dispatched tab lists what has left SASH Faridabad, but has not reached SASH US yet.
+
+00:00:07.058 --> 00:00:11.423
+Dispatch means part of the order was sent, and Dispatched means all of it.
+
+00:00:11.875 --> 00:00:15.381
+Orders fulfilled lists what John Deere has received in full.
+
+00:00:15.833 --> 00:00:23.078
+Columns adds Shipped Qty, Balance Qty and Outbound Qty, so you see what went on which invoice.
+
+00:00:26.241 --> 00:00:29.673
+Orders at Inbound or Partial outbound are on neither tab.
+
+00:00:29.673 --> 00:00:32.563
+Find them on All Orders, with the Status filter.
+
+00:00:33.014 --> 00:00:37.995
+On the Dashboard, In transit under Fulfilment counts every piece sent but not yet delivered.
