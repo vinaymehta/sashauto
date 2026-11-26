@@ -1,7 +1,7 @@
 module Api
   # SASH invoices uploaded on the Orders page (Actions → Upload SASH India invoice / Upload SASH Inc invoice, .pdf or
   # .xlsx, Invoices::Import): `preview` reads the file and shows which order rows its lines go to, `create` saves it
-  # (SASH India: dispatched Qty; SASH Inc: outbound Qty). An admin uploads and removes both; the Warehouse Manager only
+  # (SASH India: dispatched Qty; SASH Inc: outbound Qty). An admin (or an employee with Orders edit) uploads and removes both; the Warehouse Manager only
   # uploads SASH Inc invoices (delivered to Deere, as the Outbound mark is theirs) and removes none. Anyone with view of
   # the Orders downloads an invoice's file.
   class InvoicesController < ApplicationController
@@ -53,7 +53,9 @@ module Api
     private
 
     def require_uploader
-      render_error "Only an admin or the Warehouse Manager can upload or remove invoices.", :forbidden unless current_user.admin? || inc_only?
+      return if current_user.admin? || inc_only? || (current_user.role == "employee" && current_user.can?("orders", "edit"))
+
+      render_error "Only an admin, an employee with Orders edit, or the Warehouse Manager can upload or remove invoices.", :forbidden
     end
 
     # Why the file was refused; for the Warehouse Manager's SASH India file, also who uploads those.

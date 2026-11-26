@@ -12,7 +12,7 @@ import { Sheet } from "../ui/sheet";
 import { ExampleLink } from "../ui/example-link";
 import { Table, Td, Th } from "../ui/table";
 
-// Orders → Actions → Import dispatched list (admin): SASH India's List of Dispatched Orders or Book 38 (.xlsx). The
+// Orders → Actions → Import dispatched list (admin or employee with Orders edit): SASH India's List of Dispatched Orders or Book 38 (.xlsx). The
 // orders it matches (PO + Part + Ship Date or Due Date; when the file's PO does not fit, the Part's order on that date
 // under our PO) are marked Dispatched with their invoice numbers; the rows marked under our PO and the rows it skipped
 // (with the reason, to be marked by hand) are listed. Importing the same file again only skips what is already marked.

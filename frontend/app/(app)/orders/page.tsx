@@ -560,8 +560,8 @@ function OrdersView() {
             <UploadPicker uploads={uploads.data?.data ?? []} latestId={latest?.id} selectedId={uploadId} onSelect={chooseUpload} />
             <OrderActions downloadId={usManager ? undefined : source?.upload_id} onUpload={usManager ? undefined : () => setPanel("upload")}
                           onCreate={admin && !usManager ? () => setPanel("create") : undefined}
-                          onUploadInvoice={role === "admin" || role === "warehouse_manager" ? () => setPanel("invoice") : undefined}
-                          onImportDispatched={role === "admin" ? () => setPanel("dispatched") : undefined} />
+                          onUploadInvoice={role === "admin" || role === "warehouse_manager" || (role === "employee" && admin) ? () => setPanel("invoice") : undefined}
+                          onImportDispatched={admin && (role === "admin" || role === "employee") ? () => setPanel("dispatched") : undefined} />
             </>}
             {/* One Actions menu: a Warehouse Manager without Orders edit gets one with only Upload invoice (SASH Inc, the
                 US invoices: delivered to Deere). */}

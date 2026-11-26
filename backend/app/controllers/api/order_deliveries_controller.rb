@@ -49,11 +49,11 @@ module Api
     end
 
     # SASH India's list of dispatched orders (.xlsx, Orders::DispatchImport): the matching orders are marked Dispatched
-    # with their invoice numbers; the rows that could not be matched come back with the reason. Admins only (they set
-    # Dispatched).
+    # with their invoice numbers; the rows that could not be matched come back with the reason. Admins and employees
+    # (with edit of the Orders); the Warehouse Manager does not set Dispatched.
     def import
-      unless OrderDelivery::ROLE_KINDS.fetch(current_user.role, []).include?("dispatched")
-        return render_error("Only an admin can import the dispatched orders.", :forbidden)
+      unless current_user.admin? || current_user.role == "employee"
+        return render_error("Only an admin or an employee can import the dispatched orders.", :forbidden)
       end
       file = params.require(:file)
       unless file.respond_to?(:path) && File.extname(file.original_filename.to_s).casecmp?(".xlsx")
