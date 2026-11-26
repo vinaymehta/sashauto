@@ -42,6 +42,7 @@ const USER_COLUMNS: ColumnDef[] = [
   { key: "role", label: "Role", sort: "role" },
   { key: "status", label: "Status" },
   { key: "last_login_at", label: "Last sign-in", sort: "last_login_at" },
+  { key: "last_login_ip", label: "IP address" },
 ];
 
 export default function UsersPage() {
@@ -125,7 +126,7 @@ export default function UsersPage() {
           <ExportButton<User> filename="users" columns={columns.shown}
             load={() => fetchAllRows<User>("/api/users", { q, ...list.filters, sort: list.sort, direction: list.direction })}
             value={(u, key) => key === "name" ? u.name : key === "email" ? u.email : key === "role" ? ROLE_LABEL[u.role]
-              : key === "status" ? (u.active ? (u.must_change_password ? "Active (password not set yet)" : "Active") : "Inactive") : u.last_login_at ? formatDateTime(u.last_login_at) : "Never"} />
+              : key === "status" ? (u.active ? (u.must_change_password ? "Active (password not set yet)" : "Active") : "Inactive") : key === "last_login_ip" ? u.last_login_ip ?? "" : u.last_login_at ? formatDateTime(u.last_login_at) : "Never"} />
         </ListToolbar>
         <FilterChips groups={FILTERS} values={list.filters} onChange={list.setFilter} onClear={list.clearFilters} />
         {error ? (
@@ -172,6 +173,7 @@ export default function UsersPage() {
                               </span>
                             </Td>
                           );
+                          case "last_login_ip": return <Td key={c.key} className="tabular text-ink-muted">{u.last_login_ip ?? <span className="text-ink-faint">—</span>}</Td>;
                           default: return <Td key={c.key} className="tabular">{u.last_login_at ? formatDateTime(u.last_login_at) : <span className="text-ink-faint">Never</span>}</Td>;
                         }
                       })}

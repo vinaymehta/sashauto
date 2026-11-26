@@ -8,6 +8,7 @@ export interface User {
   active: boolean;
   must_change_password: boolean; // created or reset by an admin: must choose a password before using the app
   last_login_at: string | null;
+  last_login_ip: string | null; // IP address of the last sign-in
   created_at: string;
   permissions: Record<"dashboard" | "orders" | "products" | "vendors" | "settings", "none" | "view" | "edit">; // in effect (admin: edit)
   orders_columns: string[] | null; // keys of the Orders table columns this user shows (null: not chosen, the default ones)

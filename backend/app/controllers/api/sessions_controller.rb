@@ -27,7 +27,7 @@ module Api
       reset_session # prevents session fixation
       session[:user_id] = user.id
       session[:authenticated_at] = Time.current.to_i
-      user.update_column(:last_login_at, Time.current)
+      user.update_columns(last_login_at: Time.current, last_login_ip: request.remote_ip)
       @current_user = user
       audit("session.login")
       remember_signed_in

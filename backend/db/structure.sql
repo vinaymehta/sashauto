@@ -1291,6 +1291,7 @@ CREATE TABLE public.users (
     configurable jsonb DEFAULT '{}'::jsonb NOT NULL,
     read_notification_ids jsonb DEFAULT '[]'::jsonb NOT NULL,
     deere_sync_alerts boolean DEFAULT false NOT NULL,
+    last_login_ip character varying(45),
     CONSTRAINT users_role_valid CHECK (((role)::text = ANY (ARRAY[('admin'::character varying)::text, ('warehouse_manager'::character varying)::text, ('employee'::character varying)::text])))
 );
 
@@ -3660,6 +3661,7 @@ ALTER TABLE ONLY public.address_changes
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261126000001'),
 ('20261123000002'),
 ('20261123000001'),
 ('20261120000001'),

@@ -3,7 +3,7 @@ module Serializers
   module_function
 
   def user(user)
-    user.slice(:id, :name, :email, :role, :active, :must_change_password, :last_login_at, :created_at)
+    user.slice(:id, :name, :email, :role, :active, :must_change_password, :last_login_at, :last_login_ip, :created_at)
         .merge(permissions: user.effective_permissions, orders_columns: user.orders_columns, table_columns: user.table_columns, deere_sync_alerts: user.deere_sync_alerts?)
   end
 
